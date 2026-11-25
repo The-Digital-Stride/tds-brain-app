@@ -1,6 +1,8 @@
 import type { LiveSession, PastSession, TodoItem } from '../../../shared/contract.ts';
+import type { ProjectCard } from '../../../shared/projects-contract.ts';
 import { isFavourite, splitFavourites } from './chat-favourites.ts';
 import { sortChats } from './chats.ts';
+import { isOpenProject } from './projects.ts';
 import { splitFavouriteTodos } from './todo-favourites.ts';
 
 /** How many rows a pinned card shows on Home; the rest are one click away in the drawer or app. */
@@ -34,4 +36,14 @@ export function pinnedChats(live: LiveSession[], past: PastSession[], favs: read
 /** Newest pin first: the star list is stored oldest first, so a new pin is never hidden by the row cap. */
 export function pinnedFileIds(favs: readonly string[]): string[] {
   return [...favs].reverse();
+}
+
+/**
+ * The projects Home lists under "Recent projects": open, non-archived ones with a known last-worked date,
+ * newest first (`lastChanged.at` is the last git commit on the project's folder).
+ */
+export function recentProjects(cards: readonly ProjectCard[] | undefined): ProjectCard[] {
+  return (cards ?? [])
+    .filter((c) => isOpenProject(c) && Boolean(c.lastChanged))
+    .sort((a, b) => Date.parse(b.lastChanged?.at ?? '') - Date.parse(a.lastChanged?.at ?? ''));
 }

@@ -13,11 +13,17 @@ import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { skillsMenuVisible } from '../help/visibility.ts';
 import { homeOrderKey } from '../state/card-order.ts';
 import { projectIfClientMatches } from '../state/chat-project.ts';
-import { clientForProject, clientSlugOf, projectChoice, useProjectChoice } from '../state/client-choice.ts';
+import {
+  clientForProject,
+  clientSlugOf,
+  projectChoice,
+  projectPageRequest,
+  useProjectChoice,
+} from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
-import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
-import { filterOptions, todoPlaceParts, useProjects } from '../state/projects.ts';
+import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos, recentProjects } from '../state/home-pins.ts';
+import { filterOptions, projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
 import { todoProjectKey } from '../state/todo-filter.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
@@ -51,6 +57,18 @@ function metaParts(
 }
 
 const ALL = 'all';
+
+/** "24 Nov" (with the year when it isn't this one): the day a project was last worked on. */
+function whenDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
 
 /**
  * The app-wide picker (decision 11), as one control: "Working on [project]", every live project under its
@@ -89,7 +107,7 @@ function ProjectPicker({
 }
 
 /** Every Home card that can show, in the default order (Ads approvals only while something waits). */
-const HOME_CARDS = ['meetings', 'ads', 'todos', 'chats', 'files', 'skills'];
+const HOME_CARDS = ['meetings', 'ads', 'todos', 'projects', 'chats', 'files', 'skills'];
 
 const AUTO = '@auto';
 const NONE = '@none';
@@ -131,6 +149,7 @@ export function Home() {
   // Pinned cards opened with "Show N more". Not saved: Home starts compact each visit.
   const [expanded, setExpanded] = useState<Record<PinnedCard, boolean>>({
     todos: false,
+    projects: false,
     chats: false,
     files: false,
   });
@@ -229,12 +248,15 @@ export function Home() {
 
   // The cards' order, as this person dragged it (kept in this browser, per person). Ads approvals only while
   // something waits; its saved place is kept while it's hidden.
+  // Recent projects only while some project has been worked on; its saved place is kept while it's hidden.
+  const projectsShown = recentProjects(projectList?.projects).length > 0;
   const adsShown = Boolean(ads?.visible && ads.waiting > 0);
   const order = useCardOrder(
     [
       { id: 'meetings', title: 'Meetings' },
       ...(adsShown ? [{ id: 'ads', title: 'Ads approvals' }] : []),
       { id: 'todos', title: 'Favourite tasks' },
+      ...(projectsShown ? [{ id: 'projects', title: 'Recent projects' }] : []),
       { id: 'chats', title: 'Favourite chats' },
       { id: 'files', title: 'Favourite files' },
       { id: 'skills', title: 'Favourite skills' },
@@ -249,6 +271,7 @@ export function Home() {
   const mine = todos?.mine ?? [];
   // Only a chosen project narrows Home; a client alone behaves as it always has.
   const inProject = <T extends TodoItem>(t: T) => !project || todoProjectKey(t) === project;
+  const recentProjectRows = recentProjects(projectList?.projects);
   const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []).filter(
     inProject,
   );
@@ -616,6 +639,58 @@ export function Home() {
                 ),
               },
               {
+                id: 'projects',
+                node: (
+                  <section
+                    key="projects"
+                    className="card"
+                    aria-labelledby="home-projects"
+                    tabIndex={-1}
+                    {...order.cardProps('projects')}
+                  >
+                    <div className="card-head">
+                      {order.grip('projects')}
+                      <h2 id="home-projects">Recent projects</h2>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        onClick={() => openView('app:projects')}
+                      >
+                        All projects
+                      </button>
+                    </div>
+
+                    <ul className="drawer-list">
+                      {recentProjectRows.slice(0, rowsShown('projects')).map((p) => (
+                        <HomeRow
+                          key={p.key}
+                          onOpen={() => {
+                            projectPageRequest.set(p.key);
+                            openView('app:projects');
+                          }}
+                          star={null}
+                        >
+                          <span className="line-text">
+                            <span className="line-title">{projectText(p, clients)}</span>
+                            <span className="line-meta">
+                              Last worked on {whenDate(p.lastChanged?.at ?? '')}
+                            </span>
+                          </span>
+                        </HomeRow>
+                      ))}
+                    </ul>
+                    <MoreLink
+                      total={recentProjectRows.length}
+                      noun={['project', 'projects']}
+                      expanded={expanded.projects}
+                      onToggle={() => toggleCard('projects')}
+                    />
+                  </section>
+                ),
+              },
+              {
                 id: 'chats',
                 node: (
                   <section
@@ -837,7 +912,7 @@ export function Home() {
   );
 }
 
-type PinnedCard = 'todos' | 'chats' | 'files';
+type PinnedCard = 'todos' | 'projects' | 'chats' | 'files';
 
 /**
  * A Home card row: the open button and the star sit side by side (a button can't hold a button), so the

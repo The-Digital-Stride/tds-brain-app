@@ -20,6 +20,7 @@ import {
   homeShortcutKey,
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
+  parseHomeShortcut,
   SECTION_ID_PATTERN,
   SECTIONS_MAX,
   SESSION_UUID_PATTERN,
@@ -85,30 +86,12 @@ function cleanHomeHidden(v: unknown): string[] | undefined {
 }
 
 /** One shortcut, rebuilt from known fields only; undefined for an unknown kind or a field outside its pattern. */
-function cleanHomeShortcut(v: unknown): HomeShortcut | undefined {
-  if (!isRecord(v)) return undefined;
-  if (v.kind === 'skill') {
-    return typeof v.name === 'string' && SKILL_NAME_PATTERN.test(v.name)
-      ? { kind: 'skill', name: v.name }
-      : undefined;
-  }
-  if (v.kind === 'tool') {
-    return typeof v.section === 'string' &&
-      SECTION_ID_PATTERN.test(v.section) &&
-      typeof v.tool === 'string' &&
-      SECTION_ID_PATTERN.test(v.tool)
-      ? { kind: 'tool', section: v.section, tool: v.tool }
-      : undefined;
-  }
-  return undefined;
-}
-
 /** Home shortcuts once each by key, first wins, in order, at most HOME_SHORTCUTS_MAX. */
 function cleanHomeShortcuts(v: unknown): HomeShortcut[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const byKey = new Map<string, HomeShortcut>();
   for (const x of v) {
-    const s = cleanHomeShortcut(x);
+    const s = parseHomeShortcut(x);
     if (s && !byKey.has(homeShortcutKey(s))) byKey.set(homeShortcutKey(s), s);
   }
   return [...byKey.values()].slice(0, HOME_SHORTCUTS_MAX);

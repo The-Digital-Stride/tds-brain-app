@@ -187,6 +187,26 @@ describe('app store', () => {
     expect(after.homeShortcuts).toEqual(skills.slice(0, 6));
   });
 
+  it('keeps place and drawer shortcuts from the fixed lists only, rebuilt from known fields', async () => {
+    const store = createAppStore(fresh());
+    const place = { kind: 'place', place: 'documents' } as const;
+    const drawer = { kind: 'drawer', drawer: 'chats' } as const;
+    const saved = await store.update({
+      homeShortcuts: [
+        { ...place, extra: 'x' },
+        { kind: 'place', place: 'settings' },
+        { kind: 'place', place: 'app:projects' },
+        { kind: 'place' },
+        { kind: 'drawer', drawer: 'skills' },
+        { kind: 'drawer', drawer: 'help' },
+        drawer,
+        { kind: 'place', place: 'documents' },
+        { kind: 'drawer', drawer: 'chats' },
+      ] as never,
+    });
+    expect(saved.homeShortcuts).toEqual([place, drawer]);
+  });
+
   it('validates types: pins unique strings, max 100; booleans are booleans', async () => {
     const store = createAppStore(fresh());
     const many = Array.from({ length: 150 }, (_, i) => `s${i}`);

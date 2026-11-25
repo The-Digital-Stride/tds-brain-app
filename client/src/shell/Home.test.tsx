@@ -1031,6 +1031,24 @@ describe('Home: choosing what shows', () => {
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
+  it('a drawer shortcut opens its drawer and a place shortcut opens the place', async () => {
+    withPrefs({
+      homeHidden: [],
+      homeShortcuts: [
+        { kind: 'drawer', drawer: 'todos' },
+        { kind: 'place', place: 'documents' },
+      ],
+    });
+    await renderHome();
+    const row = within(document.querySelector('.home-shortcuts') as HTMLElement);
+    const drawer = () => document.getElementById('drawer') as HTMLElement;
+    fireEvent.click(row.getByRole('button', { name: 'Tasks' }));
+    await waitFor(() => expect(drawer().hasAttribute('inert')).toBe(false));
+    expect(within(drawer()).getByRole('heading', { name: 'Tasks' })).toBeTruthy();
+    fireEvent.click(row.getByRole('button', { name: 'Documents' }));
+    await screen.findByRole('heading', { level: 1, name: 'Documents' });
+  });
+
   it('has no shortcut row when there is nothing to show', async () => {
     withPrefs({ homeHidden: [], homeShortcuts: [] });
     await renderHome();

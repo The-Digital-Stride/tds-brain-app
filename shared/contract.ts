@@ -1176,14 +1176,66 @@ export const HOME_SHORTCUTS_MAX = 6;
 /** A skill's name, as the server checks it for pins and Home shortcuts. */
 export const SKILL_NAME_PATTERN = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 
-/** Skills and tools only in v1. A newer app may add kinds; an older server drops unknown kinds on clean. */
+/** Places a Home shortcut can open (the rail's apps; plan 2026-11-25-home-shortcuts-places). Never Settings. */
+export const HOME_SHORTCUT_PLACES = ['projects', 'images', 'documents'] as const; // rail order
+export type HomeShortcutPlace = (typeof HOME_SHORTCUT_PLACES)[number];
+/** Drawers a Home shortcut can open: the ones everyone has (Skills is for owners and scouts only). */
+export const HOME_SHORTCUT_DRAWERS = ['chats', 'todos'] as const; // rail order
+export type HomeShortcutDrawer = (typeof HOME_SHORTCUT_DRAWERS)[number];
+
+/**
+ * A skill, a tool, a place or a drawer. A newer app may add kinds; an older app drops kinds it doesn't know when it
+ * cleans its settings (so a downgrade forgets them), and the server only ever talks to the client it serves.
+ */
 export type HomeShortcut =
   | { kind: 'skill'; name: string } // name matches SKILL_NAME_PATTERN
-  | { kind: 'tool'; section: string; tool: string }; // both match SECTION_ID_PATTERN
+  | { kind: 'tool'; section: string; tool: string } // both match SECTION_ID_PATTERN
+  | { kind: 'place'; place: HomeShortcutPlace }
+  | { kind: 'drawer'; drawer: HomeShortcutDrawer };
 
-/** Same shortcut twice = same key. Used for de-duplication on both sides, e.g. 'skill:gm', 'tool:workbench/ads'. */
+/**
+ * Same shortcut twice = same key. Used for de-duplication on both sides, e.g. 'skill:gm', 'tool:workbench/ads',
+ * 'place:projects', 'drawer:todos'.
+ */
 export function homeShortcutKey(s: HomeShortcut): string {
-  return s.kind === 'skill' ? `skill:${s.name}` : `tool:${s.section}/${s.tool}`;
+  switch (s.kind) {
+    case 'skill':
+      return `skill:${s.name}`;
+    case 'tool':
+      return `tool:${s.section}/${s.tool}`;
+    case 'place':
+      return `place:${s.place}`;
+    case 'drawer':
+      return `drawer:${s.drawer}`;
+  }
+}
+
+/**
+ * One Home shortcut rebuilt from known fields only, or undefined when it isn't one. Both the save check (routes) and
+ * the clean on read (app store) use this, so they can't drift apart.
+ */
+export function parseHomeShortcut(v: unknown): HomeShortcut | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = (x: unknown): x is string => typeof x === 'string' && SECTION_ID_PATTERN.test(x);
+  switch (o.kind) {
+    case 'skill':
+      return typeof o.name === 'string' && SKILL_NAME_PATTERN.test(o.name)
+        ? { kind: 'skill', name: o.name }
+        : undefined;
+    case 'tool':
+      return id(o.section) && id(o.tool) ? { kind: 'tool', section: o.section, tool: o.tool } : undefined;
+    case 'place':
+      return (HOME_SHORTCUT_PLACES as readonly unknown[]).includes(o.place)
+        ? { kind: 'place', place: o.place as HomeShortcutPlace }
+        : undefined;
+    case 'drawer':
+      return (HOME_SHORTCUT_DRAWERS as readonly unknown[]).includes(o.drawer)
+        ? { kind: 'drawer', drawer: o.drawer as HomeShortcutDrawer }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 export interface AppPrefs {
@@ -1248,7 +1300,8 @@ export interface AppPrefs {
   homeHidden?: string[];
   /**
    * Home shortcut buttons (plan 2026-11-25-home-card-library): in the order added, at most HOME_SHORTCUTS_MAX, no
-   * repeats by homeShortcutKey. Skills and tools only; an unknown kind is dropped on clean. Start my day is not stored
+   * repeats by homeShortcutKey. Skills, tools, places and drawers (plan 2026-11-25-home-shortcuts-places); an unknown
+   * kind is dropped on clean. Start my day is not stored
    * here. This server always sends it; optional because an older server sends none, which reads as [].
    */
   homeShortcuts?: HomeShortcut[];

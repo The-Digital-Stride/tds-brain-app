@@ -41,7 +41,12 @@ vi.mock('./useHomeShortcuts.ts', () => ({
       ],
       tools: h.tools,
       toolTitle: (_s: string, t: string) => (t === 'ads' ? 'Ads Manager' : undefined),
-      actions: { startSkill: vi.fn(), openTool: vi.fn() },
+      places: [
+        { id: 'projects', title: 'Projects' },
+        { id: 'images', title: 'Images' },
+      ],
+      drawers: [{ id: 'todos', title: 'Tasks' }],
+      actions: { startSkill: vi.fn(), openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() },
     },
   }),
 }));
@@ -205,9 +210,35 @@ describe('CustomiseHome', () => {
     expect(screen.getByRole('status').textContent).toBe('Ads Manager removed from Home');
   });
 
+  it('offers places and drawers in their own groups, and names a row by its kind', () => {
+    const { rerender } = render(<CustomiseHome />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a shortcut' }));
+    const menu = screen.getByRole('menu', { name: 'Add a shortcut' });
+    const groups = within(menu)
+      .getAllByRole('group')
+      .map((g) => g.getAttribute('aria-label'));
+    expect(groups).toEqual(['Skills', 'Tools', 'Places', 'Drawers']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Tasks' }));
+    expect(h.addHomeShortcut).toHaveBeenCalledWith({ kind: 'drawer', drawer: 'todos' });
+    h.shortcuts = [
+      { kind: 'drawer', drawer: 'todos' },
+      { kind: 'place', place: 'projects' },
+    ];
+    rerender(<CustomiseHome />);
+    expect(screen.getByText('Drawer')).toBeTruthy();
+    expect(screen.getByText('Place')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Projects from Home' })).toBeTruthy();
+  });
+
   it('disables Add, with a hint and no menu, when everything is already on Home', () => {
     h.tools = [];
-    h.shortcuts = [skill('seo-audit'), skill('report')];
+    h.shortcuts = [
+      skill('seo-audit'),
+      skill('report'),
+      { kind: 'place', place: 'projects' },
+      { kind: 'place', place: 'images' },
+      { kind: 'drawer', drawer: 'todos' },
+    ];
     render(<CustomiseHome />);
     const add = screen.getByRole('button', { name: 'Add a shortcut' });
     expect(add.getAttribute('aria-disabled')).toBe('true');

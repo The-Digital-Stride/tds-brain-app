@@ -5,7 +5,7 @@ import {
   type HomeShortcut,
   homeShortcutKey,
 } from '../../../shared/contract.ts';
-import { panelItems, resolveShortcut, shortcutChoices } from '../state/home-layout.ts';
+import { panelItems, resolveShortcut, SHORTCUT_GROUPS, shortcutChoices } from '../state/home-layout.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { useHomeShortcuts } from './useHomeShortcuts.ts';
@@ -15,6 +15,14 @@ import { useHomeShortcuts } from './useHomeShortcuts.ts';
  * the focus moves; this is the lists only. Every change applies at once, and one polite status line says what
  * changed, because Home is dimmed behind the panel on a narrow window.
  */
+/** What each kind of shortcut is called under its name in the list. */
+const KIND_META: Record<HomeShortcut['kind'], string> = {
+  skill: 'Skill',
+  tool: 'Tool',
+  place: 'Place',
+  drawer: 'Drawer',
+};
+
 export function CustomiseHome() {
   const {
     homeHidden,
@@ -70,7 +78,8 @@ export function CustomiseHome() {
   const label = (s: HomeShortcut): string => {
     const r = resolveShortcut(s, sources);
     if (r.state !== 'waiting') return r.label;
-    return s.kind === 'tool' ? (sources.toolTitle?.(s.section, s.tool) ?? s.tool) : s.name;
+    // Only a tool waits (for the tool list to load).
+    return s.kind === 'tool' ? (sources.toolTitle?.(s.section, s.tool) ?? s.tool) : homeShortcutKey(s);
   };
 
   const toggle = (id: HomeItemId, title: string, shown: boolean) => {
@@ -184,7 +193,7 @@ export function CustomiseHome() {
             ref={pop}
             onKeyDown={popKeys}
           >
-            {(['Skills', 'Tools'] as const).map((group) => {
+            {SHORTCUT_GROUPS.map((group) => {
               const rows = choices.filter((c) => c.group === group);
               return rows.length === 0 ? null : (
                 // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
@@ -223,7 +232,7 @@ export function CustomiseHome() {
                 <span className="line-text">
                   <span className="line-title">{name}</span>
                   <span className="line-meta">
-                    {r.state === 'gone' ? 'No longer in your Brain' : s.kind === 'skill' ? 'Skill' : 'Tool'}
+                    {r.state === 'gone' ? 'No longer in your Brain' : KIND_META[s.kind]}
                   </span>
                 </span>
                 <button

@@ -1851,6 +1851,26 @@ describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
     });
   });
 
+  it('accepts place and drawer shortcuts from the fixed lists, and refuses any other', async () => {
+    const place = { kind: 'place', place: 'images' };
+    const drawer = { kind: 'drawer', drawer: 'todos' };
+    expect(await validatePrefsPatch({ homeShortcuts: [place, drawer, { ...place }] }, brain)).toEqual({
+      homeShortcuts: [place, drawer],
+    });
+    for (const bad of [
+      { kind: 'place', place: 'settings' },
+      { kind: 'place', place: 'app:projects' },
+      { kind: 'place' },
+      { kind: 'drawer', drawer: 'skills' },
+      { kind: 'drawer', drawer: 'section' },
+      { kind: 'drawer' },
+    ]) {
+      await expect(validatePrefsPatch({ homeShortcuts: [bad] }, brain), JSON.stringify(bad)).rejects.toThrow(
+        'The Home shortcuts were not understood.',
+      );
+    }
+  });
+
   it('refuses each bad hidden list with a clear message', async () => {
     const bad: unknown[] = [
       'files',

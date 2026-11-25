@@ -40,6 +40,16 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
    6. Add the card to `Home.tsx`.
 4. **A card of something new that isn't starred** (e.g. recent files): same as 2, but decide the order and cap in
    the plan, and add the empty-state sentence.
+5. **A new kind of Home shortcut** (the places and drawers recipe, v0.87.0):
+   1. Add the kind to `HomeShortcut`, `homeShortcutKey` and `parseHomeShortcut` in `shared/contract.ts`. Prefer a
+      fixed list (like `HOME_SHORTCUT_PLACES`) over a pattern when the targets are known. The app store and the
+      prefs route both use `parseHomeShortcut`, so there is one rule to change.
+   2. Give `ShortcutSources` (`state/home-layout.ts`) the list and an action, and add a `case` to
+      `resolveShortcut` and a group to `SHORTCUT_GROUPS` and `shortcutChoices`.
+   3. Fill the list and action in `useHomeShortcuts.ts`, using the rail's own names, and add the kind's word to
+      `KIND_META` in `CustomiseHome.tsx`.
+   4. Tests: `home-layout.test.ts`, `app-store.test.ts`, `routes.test.ts`, `prefs-routes.test.ts`, the panel
+      test, and one `Home.test.tsx` test that clicks the real shortcut.
 
 ## Rules that decided past arguments
 
@@ -75,6 +85,7 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 - A failed pinned-files lookup shows a message but doesn't retry until a star or the library changes.
 - With two tabs open, the last change to hidden items or shortcuts wins (the same gap as favourites).
 - Going back to an older version forgets the Home set-up: an older app drops `homeHidden` and `homeShortcuts` on its next settings save, so everything shows again.
+- Going back to v0.85 or v0.86 keeps skill and tool shortcuts but drops place and drawer ones, which those versions don't know.
 - An older server sends neither field, so Customise Home is hidden until the server updates.
 - A save sent a moment before a page reload begins, which the server reads before it writes, can show the old list
   until the next change (`pref-list.ts` `keepBoot`; about a millisecond on a local server, accepted).

@@ -119,7 +119,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'cards',
     anchor: '.sheet-bar button[aria-label="Customise Home"]',
     title: 'Make Home yours',
-    text: 'Customise Home lets you hide cards you don’t use and add shortcut buttons for your skills and tools. You can also drag a card by its grip to put your cards in your order.',
+    text: 'Customise Home lets you hide cards you don’t use and add shortcut buttons for the skills, tools, places and drawers you use most. You can also drag a card by its grip to put your cards in your order.',
   },
   {
     id: 'search',

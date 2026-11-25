@@ -71,6 +71,7 @@ import {
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
   type PermissionReply,
+  parseHomeShortcut,
   type QuestionReply,
   ROUTES,
   SECTION_ID_PATTERN,
@@ -401,20 +402,6 @@ const SEEN_KEY_MAX = TODO_KEY_MAX;
 const SEEN_VALUE_MAX = 40;
 
 /** A Home shortcut of a kind this server knows, with every field in its pattern. Extra fields are dropped. */
-function isHomeShortcut(v: unknown): v is HomeShortcut {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
-  const o = v as Record<string, unknown>;
-  if (o.kind === 'skill') return typeof o.name === 'string' && SKILL_NAME_PATTERN.test(o.name);
-  if (o.kind === 'tool') {
-    return (
-      typeof o.section === 'string' &&
-      SECTION_ID_PATTERN.test(o.section) &&
-      typeof o.tool === 'string' &&
-      SECTION_ID_PATTERN.test(o.tool)
-    );
-  }
-  return false;
-}
 
 /** `PUT /api/prefs`: only known keys, each of the right type. */
 export async function validatePrefsPatch(
@@ -525,11 +512,16 @@ export async function validatePrefsPatch(
         break;
       }
       case 'homeShortcuts': {
-        if (!Array.isArray(value) || value.length > HOME_SHORTCUTS_MAX || !value.every(isHomeShortcut)) {
+        const parsed = Array.isArray(value) ? value.map(parseHomeShortcut) : [];
+        if (
+          !Array.isArray(value) ||
+          value.length > HOME_SHORTCUTS_MAX ||
+          parsed.some((v) => v === undefined)
+        ) {
           throw bad('The Home shortcuts were not understood.');
         }
         const byKey = new Map<string, HomeShortcut>();
-        for (const v of value as HomeShortcut[])
+        for (const v of parsed as HomeShortcut[])
           if (!byKey.has(homeShortcutKey(v))) byKey.set(homeShortcutKey(v), v);
         patch.homeShortcuts = [...byKey.values()];
         break;

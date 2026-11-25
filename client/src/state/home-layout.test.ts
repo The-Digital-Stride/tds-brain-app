@@ -8,7 +8,7 @@ import {
   shortcutChoices,
 } from './home-layout.ts';
 
-const actions = { startSkill: vi.fn(), openTool: vi.fn() };
+const actions = { startSkill: vi.fn(), openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() };
 const src = (over: Partial<ShortcutSources> = {}): ShortcutSources => ({
   skills: [
     { name: 'gm', title: 'Good morning' },
@@ -16,6 +16,14 @@ const src = (over: Partial<ShortcutSources> = {}): ShortcutSources => ({
     { name: 'meeting-notes', title: 'Meeting notes' },
   ],
   tools: [{ section: 'workbench', tool: 'ad-manager', title: 'Ads Manager' }],
+  places: [
+    { id: 'projects', title: 'Projects' },
+    { id: 'documents', title: 'Documents' },
+  ],
+  drawers: [
+    { id: 'todos', title: 'Tasks' },
+    { id: 'chats', title: 'Chats' },
+  ],
   actions,
   ...over,
 });
@@ -70,6 +78,31 @@ describe('resolveShortcut', () => {
   });
 });
 
+describe('resolveShortcut for places and drawers', () => {
+  it('a place is ready, labelled by its title, and opens it', () => {
+    const r = resolveShortcut({ kind: 'place', place: 'documents' }, src());
+    expect(r).toMatchObject({ state: 'ready', key: 'place:documents', label: 'Documents' });
+    if (r.state === 'ready') r.run();
+    expect(actions.openPlace).toHaveBeenCalledWith('documents');
+  });
+  it('a drawer is ready, labelled by its title, and opens it', () => {
+    const r = resolveShortcut({ kind: 'drawer', drawer: 'todos' }, src());
+    expect(r).toMatchObject({ state: 'ready', key: 'drawer:todos', label: 'Tasks' });
+    if (r.state === 'ready') r.run();
+    expect(actions.openDrawer).toHaveBeenCalledWith('todos');
+  });
+  it('a place or drawer this app no longer has is gone', () => {
+    expect(resolveShortcut({ kind: 'place', place: 'images' }, src())).toMatchObject({
+      state: 'gone',
+      label: 'images',
+    });
+    expect(resolveShortcut({ kind: 'drawer', drawer: 'chats' }, src({ drawers: [] }))).toMatchObject({
+      state: 'gone',
+      label: 'chats',
+    });
+  });
+});
+
 describe('resolveShortcut with a static tool title', () => {
   it('a gone tool uses the static title, then the raw id', () => {
     const t: { kind: 'tool'; section: string; tool: string } = {
@@ -93,6 +126,10 @@ describe('shortcutChoices', () => {
       ['Skills', 'Standup'],
       ['Skills', 'Meeting notes'],
       ['Tools', 'Ads Manager'],
+      ['Places', 'Projects'],
+      ['Places', 'Documents'],
+      ['Drawers', 'Tasks'],
+      ['Drawers', 'Chats'],
     ]);
   });
   it('leaves out what is already added', () => {
@@ -100,10 +137,12 @@ describe('shortcutChoices', () => {
       [
         { kind: 'skill', name: 'standup' },
         { kind: 'tool', section: 'workbench', tool: 'ad-manager' },
+        { kind: 'place', place: 'projects' },
+        { kind: 'drawer', drawer: 'chats' },
       ],
       src(),
     );
-    expect(c.map((x) => x.label)).toEqual(['Meeting notes']);
+    expect(c.map((x) => x.label)).toEqual(['Meeting notes', 'Documents', 'Tasks']);
   });
   it('has no tools while the tool list loads', () => {
     expect(shortcutChoices([], src({ tools: null })).some((x) => x.group === 'Tools')).toBe(false);

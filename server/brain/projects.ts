@@ -919,7 +919,10 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       }
       // Decision 5: a backfill of every card is an owner's or a scout's alone (the script checks too).
       if (action.all === true && identity.role !== 'owner' && identity.role !== 'scout') {
-        throw new ProjectsError('not-allowed', 'Only an owner or a scout can give every project a code at once.');
+        throw new ProjectsError(
+          'not-allowed',
+          'Only an owner or a scout can give every project a code at once.',
+        );
       }
     }
     if ('key' in action && action.key !== undefined) {

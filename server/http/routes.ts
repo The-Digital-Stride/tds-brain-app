@@ -1478,7 +1478,11 @@ async function projectsRoute(
       throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
     // Project codes: a backfill of every card is the brain Owner's alone, refused before the script runs.
     if (action.kind === 'ref' && action.all === true && who.role !== 'owner' && who.role !== 'scout')
-      throw new HttpError(403, 'not-allowed', 'Only an owner or a scout can give every project a code at once.');
+      throw new HttpError(
+        403,
+        'not-allowed',
+        'Only an owner or a scout can give every project a code at once.',
+      );
     const chatEntry = action.kind === 'update' && action.entry.kind === 'chat' ? action.entry : null;
     const savedKey =
       chatEntry && action.kind === 'update' ? await checkChatSummarySave(ctx, action.key, chatEntry) : null;

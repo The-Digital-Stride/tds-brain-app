@@ -353,7 +353,9 @@ export function createBrainReaders(
       // Refused early for a clear message; the script checks all of this again.
       if (scope === null || scope === 'personal' || scope === LEGACY_PROJECTS_SCOPE)
         throw new FilesChangeError('not-allowed');
-      if (scope === 'shared:templates' ? who.role !== 'owner' && who.role !== 'scout' : who.role === 'unknown')
+      if (
+        scope === 'shared:templates' ? who.role !== 'owner' && who.role !== 'scout' : who.role === 'unknown'
+      )
         throw new FilesChangeError('not-allowed');
       const file = await library.file(id);
       if (!file) throw new FilesChangeError('not-found');

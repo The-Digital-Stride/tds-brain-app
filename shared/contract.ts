@@ -55,6 +55,50 @@ export function sessionCookieName(port: number): string {
 export const MAX_LIVE_SESSIONS = 4;
 
 // ---------------------------------------------------------------------------
+// The merge-and-push card (plan 2026-11-25-app-change-guards)
+// ---------------------------------------------------------------------------
+
+/** What a confirmed publish does. `merge-and-push` is `wt-finish --merge --push`. */
+export type PublishKind = 'push' | 'merge' | 'merge-and-push';
+
+/** What the merge-and-push card shows. Every field but `kind`, `isApp` and `command` may be unknown (null). */
+export interface PublishFacts {
+  kind: PublishKind;
+  /** `owner/name` from the repo's origin URL, e.g. "The-Digital-Stride/tds-brain-app". */
+  repo: string | null;
+  /** True when the repo is TDS Cortex itself. */
+  isApp: boolean;
+  /** The branch being merged or pushed, e.g. "app-change-guards". */
+  branch: string | null;
+  /** Where it lands, e.g. "main". */
+  target: string | null;
+  /** The app's package.json version when `isApp`, e.g. "0.82.3". */
+  version: string | null;
+  /** Up to 20 one-line commits going out, newest first ("abc1234 fix: …"). */
+  commits: string[] | null;
+  /** How many commits go out in total (may be more than `commits.length`). */
+  commitCount: number | null;
+  /** The exact command or tool call. */
+  command: string;
+}
+
+const PUBLISH_WORDS: Record<PublishKind, string> = {
+  push: 'push',
+  merge: 'merge',
+  'merge-and-push': 'merge and push',
+};
+
+/** The card's title, e.g. "Are you sure you want to merge and push?". */
+export function publishTitle(kind: PublishKind): string {
+  return `Are you sure you want to ${PUBLISH_WORDS[kind]}?`;
+}
+
+/** The card's Yes button, e.g. "Yes, merge and push". The No button is always "No, not now". */
+export function publishYesLabel(kind: PublishKind): string {
+  return `Yes, ${PUBLISH_WORDS[kind]}`;
+}
+
+// ---------------------------------------------------------------------------
 // Who is using this copy of the brain
 // ---------------------------------------------------------------------------
 
@@ -1584,6 +1628,11 @@ export type ChatEvent =
        * treat it as optional. If it had to be cut short, `warning` says so.
        */
       change?: ProposedChange;
+      /**
+       * Set when the call merges or pushes (plan 2026-11-25-app-change-guards): the page shows the
+       * merge-and-push card. `sessionAllowLabel` is then always null. Older pages ignore it.
+       */
+      publish?: PublishFacts;
     }
   | { type: 'question-request'; requestId: string; questions: AskQuestion[] }
   | { type: 'request-resolved'; requestId: string; outcome: 'allowed' | 'denied' | 'answered' | 'cancelled' }

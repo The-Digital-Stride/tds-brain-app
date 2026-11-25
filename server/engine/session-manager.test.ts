@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -52,6 +61,13 @@ import type { ContextReadingStore } from '../store/context-readings.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
+  APP_CODE_LINE,
+  PUBLISH_LINE,
+  TEAM_APP_NOTICE,
+  TEAM_APP_REFUSAL,
+  UNKNOWN_ROLE_NOTICE,
+} from './change-guards.ts';
+import {
   AT_ONCE_REASON,
   appModelReason,
   BACKGROUND_REASON,
@@ -86,6 +102,8 @@ import {
 import { TrashMissingError } from './trash-session.ts';
 
 const BRAIN = '/tmp/fake-brain-root';
+/** The merge-and-push and app-code lines every chat gets (plan 2026-11-25-app-change-guards, decision 11). */
+const GUARD_LINES = `${PUBLISH_LINE}\n${APP_CODE_LINE}`;
 const KEYS = '/tmp/fake-email-keys';
 /** The email deny rules every chat carries (overseer ruling): drafts and approve keys, read and edit. */
 const DRAFTS_REAL = `${(() => {
@@ -381,10 +399,16 @@ function setup(
     chatPlaces?: ChatScopeStore;
     projectsIndex?: () => Promise<ProjectsIndex>;
     chatSummaryStore?: ChatSummaryStore;
+    appRoot?: string;
+    home?: string;
+    brainRoot?: string;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    appRoot: opts.appRoot,
+    // Never the real home folder (or the real installed app) in tests.
+    home: opts.home ?? '/tmp/fake-home',
     chatSummaryStore: opts.chatSummaryStore,
     chatPlaces: opts.chatPlaces,
     projectsIndex: opts.projectsIndex,
@@ -401,7 +425,7 @@ function setup(
     dataDir: opts.dataDir,
     chatKinds: opts.chatKinds,
     brain: fakeBrain(opts.brain),
-    brainRoot: BRAIN,
+    brainRoot: opts.brainRoot ?? BRAIN,
     emailKeysDir: KEYS,
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
     engine: fx.engine,
@@ -444,7 +468,7 @@ describe('a new chat', () => {
     expect(o.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
     // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
@@ -548,10 +572,12 @@ describe('a new chat', () => {
     expect(sp.append).toContain('offer `clients/urban-cooling/reports/` first');
     expect(sp.append).toContain('ask even for a quick chart or page');
     // The client line first, then the files line (decision 7), the tasks word line, then the summary line (context decision 9).
-    expect(sp.append?.split('\n')).toHaveLength(4);
-    expect(sp.append?.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(
-      true,
-    );
+    expect(sp.append?.split('\n')).toHaveLength(6);
+    expect(
+      sp.append?.endsWith(
+        `\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      ),
+    ).toBe(true);
     await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
   });
 
@@ -1539,7 +1565,7 @@ describe('reopening a past chat (A4)', () => {
     expect(fx.queries[0]?.options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -3704,7 +3730,7 @@ describe('levels', () => {
     expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
     expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
     expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
     expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBeUndefined();
     expect(o?.hooks?.PreToolUse?.[1]?.matcher).toBe('Agent|Task');
@@ -3716,7 +3742,7 @@ describe('levels', () => {
     await flush();
     expect(queries[0]?.options.agents).toBeUndefined();
     expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
   });
 
@@ -4995,7 +5021,7 @@ describe('context management', () => {
     expect(o?.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -6346,7 +6372,9 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect(lines[1]).toBe(PROJECT_LINE);
     expect(text).not.toContain('offer `clients/urban-cooling/reports/` first');
     expect(text).not.toContain('This client has these open projects');
-    expect(text.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
+    expect(
+      text.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`),
+    ).toBe(true);
   });
 
   it('the same client may be given with its project', async () => {
@@ -6583,7 +6611,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
   });
 
   it('reopening never fails because of the place: a store or index failure, or a gone client, opens it plain', async () => {
-    const plain = `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
+    const plain = `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
     const broken: ChatScopeStore = {
       placeOf: () => Promise.reject(new Error('boom')),
       all: () => Promise.reject(new Error('boom')),
@@ -6866,5 +6894,243 @@ describe('chat summaries', () => {
         hasEntry: async () => false,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('app change guards (plan 2026-11-25-app-change-guards)', () => {
+  type HookFn = (i: unknown, id?: string) => Promise<unknown>;
+  let dir: string;
+  let appRoot: string;
+  let home: string;
+  let repo: string;
+
+  beforeEach(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'acg-sm-')));
+    appRoot = join(dir, 'app');
+    home = join(dir, 'home');
+    repo = join(dir, 'repo');
+    mkdirSync(appRoot, { recursive: true });
+    mkdirSync(home, { recursive: true });
+    mkdirSync(repo, { recursive: true });
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, env });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/o/r.git'], { cwd: repo, env });
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The change guard: second in the first, matcher-less PreToolUse entry, after the drafts guard. */
+  function changeGuard(q: FakeQuery | undefined): HookFn {
+    const all = (q?.options.hooks as Record<string, { matcher?: string; hooks: HookFn[] }[]> | undefined)
+      ?.PreToolUse;
+    const hook = all?.find((m) => m.matcher === undefined)?.hooks[1];
+    if (!hook) throw new Error('no change guard');
+    return hook;
+  }
+
+  const call = (tool_name: string, tool_input: Record<string, unknown>, cwd: string, extra = {}) => ({
+    hook_event_name: 'PreToolUse',
+    tool_name,
+    tool_input,
+    tool_use_id: 'toolu_1',
+    cwd,
+    ...extra,
+  });
+
+  const as = (role: Identity['role']) => ({
+    identity: async (): Promise<Identity> => ({ ...IDENTITY, role }),
+  });
+
+  async function started(brain: Partial<BrainReaders> = as('owner')) {
+    const fx = setup(undefined, { appRoot, home, brain });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    return { fx, s, q: fx.queries[0] as FakeQuery };
+  }
+
+  it('a publish asks, and its card carries the facts and no "Allow for this chat"', async () => {
+    const { s, q } = await started();
+    const cmd = `git -C "${repo}" push --force`;
+    expect(await changeGuard(q)(call('Bash', { command: cmd }, BRAIN), 'toolu_1')).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'ask',
+        permissionDecisionReason: expect.stringContaining('confirm'),
+      },
+    });
+    const suggestions: PermissionUpdate[] = [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Bash', ruleContent: 'git:*' }],
+        behavior: 'allow',
+        destination: 'session',
+      },
+    ];
+    const { promise } = q.ask('Bash', { command: cmd }, { suggestions });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({
+      type: 'permission-request',
+      sessionAllowLabel: null,
+      warning: expect.stringContaining('force push'),
+      publish: { kind: 'push', repo: 'o/r', isApp: false, command: cmd },
+    });
+    expect(req && 'publish' in req && req.publish && 'warning' in req.publish).toBe(false);
+    // Decision 9: never remembered for the chat.
+    await expectCode(
+      mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow-session' }),
+      'bad-request',
+    );
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    expect(await promise).toEqual({ behavior: 'allow', updatedInput: { command: cmd } });
+  });
+
+  it('a GitHub merge tool asks too, and an ordinary call goes through', async () => {
+    const { q } = await started();
+    const guard = changeGuard(q);
+    expect(
+      await guard(call('mcp__github__merge_pull_request', { pull_number: 3 }, BRAIN), 'toolu_1'),
+    ).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
+    });
+    expect(await guard(call('Bash', { command: 'ls' }, BRAIN), 'toolu_2')).toEqual({ continue: true });
+  });
+
+  it('without stored facts the card still comes from the call, and leftovers go at turn end', async () => {
+    const { s, q } = await started();
+    await changeGuard(q)(call('Bash', { command: 'git push' }, repo), 'toolu_1');
+    // The turn ends before Claude Code asks: the stored facts go.
+    q.result();
+    await flush();
+    q.ask('Bash', { command: 'git push' });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({
+      sessionAllowLabel: null,
+      publish: { kind: 'push', repo: null, command: 'git push' },
+    });
+  });
+
+  it("the brain's own plain push of main shows the ordinary card, with no publish facts", async () => {
+    const env = {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'T',
+      GIT_AUTHOR_EMAIL: 't@example.com',
+      GIT_COMMITTER_NAME: 'T',
+      GIT_COMMITTER_EMAIL: 't@example.com',
+    };
+    const g = (...args: string[]) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8' }).trim();
+    writeFileSync(join(repo, 'x.txt'), 'x\n');
+    g('add', '.');
+    g('commit', '-q', '-m', 'x');
+    g('update-ref', 'refs/remotes/origin/main', g('rev-parse', 'HEAD'));
+    g('config', 'branch.main.remote', 'origin');
+    g('config', 'branch.main.merge', 'refs/heads/main');
+    const fx = setup(undefined, { appRoot, home, brain: as('owner'), brainRoot: repo });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const q = fx.queries[0] as FakeQuery;
+    expect(await changeGuard(q)(call('Bash', { command: 'git push' }, repo), 'toolu_1')).toEqual({
+      continue: true,
+    });
+    const suggestions: PermissionUpdate[] = [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Bash', ruleContent: 'git:*' }],
+        behavior: 'allow',
+        destination: 'session',
+      },
+    ];
+    // Claude Code may still ask (no allow rule): the card is the ordinary one.
+    const { promise } = q.ask('Bash', { command: 'git push' }, { suggestions });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({ type: 'permission-request', sessionAllowLabel: expect.any(String) });
+    expect(req && 'publish' in req).toBe(false);
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    expect(await promise).toMatchObject({ behavior: 'allow' });
+  });
+
+  it("refuses a team member's edit to the app's code, and tells the person", async () => {
+    const { s, q } = await started(as('team'));
+    const out = await changeGuard(q)(
+      call('Write', { file_path: join(appRoot, 'server', 'x.ts'), content: 'x' }, BRAIN),
+    );
+    expect(out).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: TEAM_APP_REFUSAL,
+      },
+    });
+    expect(events(mgr, s.id)).toContainEqual({ type: 'notice', level: 'warning', text: TEAM_APP_NOTICE });
+  });
+
+  it("refuses a team helper's edit too, but not an owner's or a brain file", async () => {
+    const team = await started(as('team'));
+    const write = (path: string) =>
+      call('Write', { file_path: path, content: 'x' }, BRAIN, { agent_id: 'a1' });
+    expect(await changeGuard(team.q)(write(join(appRoot, 'x.ts')))).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+    expect(
+      await changeGuard(team.q)(
+        write('/tmp/fake-brain-root/clients/the-digital-stride/projects/tds-brain-app/x.md'),
+      ),
+    ).toEqual({ continue: true });
+    const owner = await started(as('owner'));
+    expect(await changeGuard(owner.q)(write(join(appRoot, 'x.ts')))).toEqual({ continue: true });
+  });
+
+  it('reuses a role read in the last 10 minutes when the role is briefly unknown, then fails closed', async () => {
+    let role: Identity['role'] = 'scout';
+    const { s, q } = await started({ identity: async () => ({ ...IDENTITY, role }) });
+    const guard = changeGuard(q);
+    const edit = call('Edit', { file_path: join(appRoot, 'x.ts'), old_string: 'a', new_string: 'b' }, BRAIN);
+    expect(await guard(edit)).toEqual({ continue: true });
+    role = 'unknown';
+    vi.setSystemTime(Date.now() + 9 * 60 * 1000);
+    expect(await guard(edit)).toEqual({ continue: true });
+    vi.setSystemTime(Date.now() + 2 * 60 * 1000);
+    expect(await guard(edit)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: UNKNOWN_ROLE_NOTICE },
+    });
+    expect(events(mgr, s.id)).toContainEqual({ type: 'notice', level: 'warning', text: UNKNOWN_ROLE_NOTICE });
+  });
+
+  it('a role that cannot be read at all is refused', async () => {
+    const { q } = await started({
+      identity: async () => {
+        throw new Error('roles.json unreadable');
+      },
+    });
+    expect(
+      await changeGuard(q)(call('Write', { file_path: join(appRoot, 'x.ts'), content: 'x' }, BRAIN)),
+    ).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: UNKNOWN_ROLE_NOTICE },
+    });
+  });
+
+  it('runs on levelled chats too', async () => {
+    const fx = setup(undefined, {
+      appRoot,
+      home,
+      levels: { teamLevels: async () => ({}), ownLevel: async () => null },
+      picker: {
+        pick: () => ({ now: Promise.resolve(null), settled: Promise.resolve(null) }),
+        prewarm: () => {},
+      },
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const q = fx.queries[0];
+    expect(q?.options.hooks?.PreToolUse?.[0]?.hooks).toHaveLength(2);
+    expect(await changeGuard(q)(call('Bash', { command: 'gh pr merge 4' }, BRAIN))).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
+    });
   });
 });

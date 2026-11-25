@@ -4,8 +4,10 @@ import type {
   ChangeLine,
   PermissionDecision,
   ProposedChange,
+  PublishFacts,
   QuestionReply,
 } from '../../../shared/contract.ts';
+import { publishTitle, publishYesLabel } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
 import { Icon } from '../shell/Icon.tsx';
 import type { Outcome, PermissionItem, QuestionItem } from '../state/chat-reducer.ts';
@@ -169,7 +171,150 @@ interface CardProps<T> {
   onAnswered?: () => void;
 }
 
-export function PermissionCard({ item, sessionId, onAnswered }: CardProps<PermissionItem>) {
+export function PermissionCard(props: CardProps<PermissionItem>) {
+  return props.item.publish ? (
+    <PublishCard {...props} publish={props.item.publish} />
+  ) : (
+    <OrdinaryPermissionCard {...props} />
+  );
+}
+
+function PublishFactsList({ publish, listId }: { publish: PublishFacts; listId: string }) {
+  const { repo, isApp, branch, target, version, commits, commitCount } = publish;
+  // The team reads "tds-website", not "The-Digital-Stride/tds-website"; Cortex itself by name.
+  const where = isApp
+    ? `TDS Cortex${version ? `, version ${version}` : ''}`
+    : (repo?.split('/').pop() ?? "Couldn't read which repo this is");
+  const shown = commits?.length ?? 0;
+  const more = commitCount !== null && commitCount > shown ? commitCount - shown : 0;
+  return (
+    <ul className="publish-facts">
+      <li>
+        <strong>Where: </strong>
+        {where}
+      </li>
+      <li>
+        <strong>Branch: </strong>
+        {branch && target ? `${branch} \u2192 ${target}` : "Couldn't read which branch is going where"}
+      </li>
+      <li>
+        <strong>Commits: </strong>
+        {commits === null ? (
+          "Couldn't read which commits will go out"
+        ) : commits.length === 0 ? (
+          'None to send'
+        ) : (
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard.
+          <section className="publish-commits-box" tabIndex={0} aria-labelledby={listId}>
+            <span className="visually-hidden" id={listId}>
+              The commits going out
+            </span>
+            <ul className="publish-commits">
+              {commits.map((c, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: two commits can share a line of text.
+                <li key={i}>{c}</li>
+              ))}
+              {more > 0 ? <li>and {more} more</li> : null}
+            </ul>
+          </section>
+        )}
+      </li>
+    </ul>
+  );
+}
+
+function PublishCard({
+  item,
+  publish,
+  sessionId,
+  onAnswered,
+}: CardProps<PermissionItem> & { publish: PublishFacts }) {
+  const { run, requestComposerFocus } = useStore();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ref = useFocusOnAppear<HTMLElement>(item.outcome === null);
+
+  if (item.outcome !== null) {
+    return (
+      <p className="record">
+        {OUTCOME_WORDS[item.outcome]}: {item.title}
+      </p>
+    );
+  }
+
+  const decide = async (decision: PermissionDecision) => {
+    if (busy) return;
+    setBusy(true);
+    const ok = await run(() =>
+      api.answerPermission(sessionId, {
+        requestId: item.requestId,
+        decision,
+        ...(decision === 'deny' && note.trim() ? { note: note.trim() } : {}),
+      }),
+    );
+    if (ok) (onAnswered ?? requestComposerFocus)();
+    else setBusy(false);
+  };
+
+  const titleId = `perm-${item.requestId}-title`;
+  const detailId = `perm-${item.requestId}-detail`;
+  return (
+    <section className="approval approval-publish" aria-labelledby={titleId} tabIndex={-1} ref={ref}>
+      <div className="approval-tag">Needs your approval</div>
+      <div className="approval-title" id={titleId}>
+        {publishTitle(publish.kind)}
+      </div>
+      {/* A force push or delete is said first, before the list can push it out of view. */}
+      {item.warning ? (
+        <p className="approval-warning">
+          <strong>Take care: </strong>
+          {item.warning}
+        </p>
+      ) : null}
+      <PublishFactsList publish={publish} listId={`perm-${item.requestId}-commits`} />
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard. */}
+      <section className="approval-detail" tabIndex={0} aria-labelledby={detailId}>
+        <span className="visually-hidden" id={detailId}>
+          The exact command Claude will run
+        </span>
+        <pre>
+          <code>{publish.command}</code>
+        </pre>
+      </section>
+      <label className="form-field approval-note">
+        <span className="label">If you say no, tell Claude why (optional)</span>
+        <input
+          className="field"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          disabled={busy}
+          maxLength={500}
+        />
+      </label>
+      <div className="answer-actions">
+        <button
+          type="button"
+          className="btn"
+          data-variant="primary"
+          aria-disabled={busy || undefined}
+          onClick={() => void decide('allow')}
+        >
+          {publishYesLabel(publish.kind)}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          aria-disabled={busy || undefined}
+          onClick={() => void decide('deny')}
+        >
+          No, not now
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function OrdinaryPermissionCard({ item, sessionId, onAnswered }: CardProps<PermissionItem>) {
   const { run, requestComposerFocus } = useStore();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);

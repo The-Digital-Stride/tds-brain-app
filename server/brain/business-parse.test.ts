@@ -78,6 +78,12 @@ Nothing.
 
 const TEXT = (s: ReturnType<typeof parseBusiness>) => Object.fromEntries(s.facts.map((f) => [f.id, f.value]));
 
+/**
+ * Each hostile input must parse within this. Unfixed, these took from 12 seconds to hours; fixed, a few
+ * milliseconds. The limit is loose so a busy machine (other sessions' test runs) never fails it.
+ */
+const LIMIT_MS = 4000;
+
 describe('parseBusiness: key facts', () => {
   it('picks every fact from a template file (PPC)', () => {
     const { facts } = parseBusiness(TEMPLATE, null, ['ppc']);
@@ -342,9 +348,9 @@ describe('reading stays quick on hostile text (2026-11-25)', () => {
     for (const [name, text] of Object.entries(cases)) {
       const start = Date.now();
       parseBusiness(text, text, ['ppc']);
-      expect(Date.now() - start, name).toBeLessThan(1000);
+      expect(Date.now() - start, name).toBeLessThan(LIMIT_MS);
     }
-  });
+  }, 60_000);
 
   it('a heading reads as before: level, then the text without a closing run of #s', () => {
     const read = (line: string) => {

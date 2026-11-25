@@ -5,6 +5,12 @@ import { parseContacts } from './business-contacts.ts';
 /** Synthetic throughout: the SHAPES found in the brain's client files (2026-11-25), none of their content. */
 const one = (business: string | null, profile: string | null = null) => parseContacts(business, profile);
 
+/**
+ * Each hostile input must parse within this. Unfixed, these took from 12 seconds to hours; fixed, a few
+ * milliseconds. The limit is loose so a busy machine (other sessions' test runs) never fails it.
+ */
+const LIMIT_MS = 4000;
+
 describe('parseContacts: label lines', () => {
   it('reads "Name (address) — role" from a Main contact line and marks it main', () => {
     expect(one('**Main contact:** Kim Example (kim@acme.test.uk) — marketing lead\n')).toEqual([
@@ -264,8 +270,8 @@ describe('parseContacts: what is kept and left out', () => {
   it('a very long line of at signs returns quickly', () => {
     const start = Date.now();
     expect(one(`**Main contact:** ${'a@'.repeat(60000)}\n## Contacts\n${'x'.repeat(100000)}@\n`)).toEqual([]);
-    expect(Date.now() - start).toBeLessThan(1500);
-  });
+    expect(Date.now() - start).toBeLessThan(LIMIT_MS);
+  }, 60_000);
 });
 
 describe('parseContacts: review fixes (2026-11-25)', () => {
@@ -284,9 +290,9 @@ describe('parseContacts: review fixes (2026-11-25)', () => {
     for (const text of cases) {
       const start = Date.now();
       parseContacts(text, text);
-      expect(Date.now() - start, text.slice(0, 30)).toBeLessThan(1000);
+      expect(Date.now() - start, text.slice(0, 30)).toBeLessThan(LIMIT_MS);
     }
-  });
+  }, 60_000);
 
   it('someone struck through is skipped however the marks are nested', () => {
     const got = one(
@@ -439,5 +445,45 @@ describe('parseContacts: review fixes (2026-11-25)', () => {
       { name: null, email: 'accounts@acme.co.uk', main: false },
       { name: 'Tom Brown', email: 'tom.brown@acme.co.uk', main: false },
     ]);
+  });
+
+  // Third look (2026-11-25): one rule for which name goes with an address.
+  it('the only person named before an address is that person, with a role, phone or link in between', () => {
+    const named = (line: string) => one(line)[0]?.name;
+    expect(named('## Contacts\n- Sarah Jones (MD) — hello@acme.co.uk\n')).toBe('Sarah Jones');
+    expect(named('**Main contact:** **Sarah Jones** (MD): hello@acme.co.uk\n')).toBe('Sarah Jones');
+    expect(named('**Main contact:** Sarah Jones (07700 900123, hello@acme.co.uk)\n')).toBe('Sarah Jones');
+    expect(named('## Contacts\n- **Sarah Jones** — MD — `hello@acme.co.uk`\n')).toBe('Sarah Jones');
+    expect(named('## Contacts\n- [Sarah Jones](mailto:hello@acme.co.uk)\n')).toBe('Sarah Jones');
+    expect(named('**Main contact:** Bob Smith, owner — hello@acme.co.uk\n')).toBe('Bob Smith');
+  });
+
+  it('two possible names before an address: the one the address looks like, else no name', () => {
+    const named = (line: string) => one(line)[0]?.name;
+    // A job title or company that is not a known role word is a second possible name.
+    expect(named('**Main contact:** Sarah Jones, Senior Designer (hello@acme.co.uk)\n')).toBeNull();
+    expect(named('## Contacts\n- Sarah Jones, Acme Heating (hello@acme.co.uk)\n')).toBeNull();
+    expect(named('## Contacts\n- **Sarah Jones**, MD at **Acme Heating** — hello@acme.co.uk\n')).toBeNull();
+    expect(named('## Contacts\n- **Sarah Jones** — Brand Ambassador (hello@acme.co.uk)\n')).toBeNull();
+    expect(named('**Main contact:** Sarah Jones, General Counsel <legal@acme.co.uk>\n')).toBeNull();
+    expect(named('**Main contact:** **Lee** — owner, PA is Jan Lee (pa@acme.co.uk)\n')).toBeNull();
+    // The address settles it, whichever side the right name is on.
+    expect(named('**Main contact:** Sarah Jones, Senior Designer (sarah@acme.co.uk)\n')).toBe('Sarah Jones');
+    expect(named('**Main contact:** Tom Jones, or Sarah Jones (sj@acme.co.uk)\n')).toBe('Sarah Jones');
+    expect(named('**Main contact:** **Lee** — owner, PA is Jan Lee (jan@acme.co.uk)\n')).toBe('Jan Lee');
+    // Both look like it: the one written beside the address.
+    expect(named('## Contacts\n- **Sarah Jones** — MD, PA is Sara Lee (sara@acme.co.uk)\n')).toBe('Sara Lee');
+  });
+
+  it('a later address on the line takes the name that starts its own part', () => {
+    expect(one('**Main contact:** Kim (kim@acme.co.uk), Tom Brown (info@acme.co.uk)\n')).toEqual([
+      { name: 'Kim', email: 'kim@acme.co.uk', main: true },
+      { name: 'Tom Brown', email: 'info@acme.co.uk', main: true },
+    ]);
+    expect(
+      one(
+        '**Main contact:** Kim (kim@acme.co.uk); Sarah Jones, Senior Designer (hello@acme.co.uk); Jo Day, Buyer (jo@acme.co.uk)\n',
+      ).map((c) => c.name),
+    ).toEqual(['Kim', null, 'Jo Day']);
   });
 });

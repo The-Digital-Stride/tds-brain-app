@@ -157,17 +157,20 @@ export interface BusinessSection {
  * line that says "main contact" or "primary contact".
  *
  * The name is a best reading of free text, and the rule is: better no name than the wrong one (the picker
- * then shows the address alone). The name that leads a line, list item, table row or label value (its bold
- * start, or the capitalised words before the first comma, dash or bracket) is only ever a candidate for the
- * first address on it.
- * - The leading name wins when it sits right beside that first address ("Bob Smith (robert@…)").
- * - Otherwise a name written beside the address (a bold name ending right before it, or "Name (" straight
- *   before it; after a `;`, `·`, table bar or the end of a sentence also the capitalised words that start
- *   that part) and the leading name are both candidates, and the one the address looks like wins: a word of
- *   the name in the part before the @, or their initials. "…, PA is Jan Lee (jan@…)" is Jan Lee; "Kim Example,
- *   Acme Heating (kim@…)" is Kim Example.
- * - When the address looks like neither, a name beside it is used; the leading name is not ("Sarah Jones (on
- *   leave, cover: jan@…)" and a table's "Invoices to accounts@…" in Sarah's row name nobody).
+ * then shows the address alone). Each address is read against the name that starts its part of the line: the
+ * name that leads the line, item, row or label value (its bold start, or the capitalised words before the
+ * first comma, dash or bracket) for the first address when nothing separates them; after a `;`, `·`, table
+ * bar or the end of a sentence, and for every later address, the capitalised words that start that part.
+ * - That name is used when it is the only person named before the address: nothing but a role, a phone
+ *   number or punctuation in between ("Sarah Jones (MD) — hello@…", "Bob Smith (robert@…)").
+ * - Otherwise there may be two people (that name, and a name touching the address: a bold name ending right
+ *   before it, or "Name (" before it), and the address decides: the one it looks like (a word of the name in
+ *   the part before the @, or their initials), the touching one when both do. "…, PA is Jan Lee (jan@…)" is
+ *   Jan Lee. When it looks like neither, nobody is named: "Sarah Jones, Senior Designer (hello@…)" could be
+ *   two people, and "Sarah Jones (on leave, cover: jan@…)" is not Sarah's address.
+ * - When a part names nobody, the first address may take the line's leading name (a table's first cell, a
+ *   list item's bold name), but only when it looks like that person's. "Invoices to accounts@…" in Sarah's
+ *   row is not Sarah.
  * - Job and team words ("Director", "Accounts", "PA") are never a name or part of one.
  *
  * Left out: someone struck through (`~~Name~~`, however nested, or a struck address: they have left; a struck

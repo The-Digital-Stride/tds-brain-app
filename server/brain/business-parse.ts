@@ -73,9 +73,10 @@ function withoutComments(t: string): string {
  * 64,000 of them took over 15 s).
  */
 export function plain(s: string): string {
-  return s
-    .replace(/!?\[([^\]]{0,300})\]\([^)]{0,1000}\)/g, '$1')
-    .replace(/<[^>]{0,500}>/g, '')
+  // A link needs `](` and a tag needs `>`: text with neither skips those two passes altogether.
+  const links = s.includes('](') ? s.replace(/!?\[([^\]]{0,300})\]\([^)]{0,1000}\)/g, '$1') : s;
+  const tags = links.includes('>') ? links.replace(/<[^>]{0,500}>/g, '') : links;
+  return tags
     .replace(/`([^`]*)`/g, '$1')
     .replace(/(\*\*|__|~~)/g, '')
     .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=$|[\s).,;:!?])/g, '$1$2')

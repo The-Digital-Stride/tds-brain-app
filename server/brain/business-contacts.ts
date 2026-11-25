@@ -183,47 +183,69 @@ const MARKS = /[`*_~]/g;
 /** What may sit between a name and its address: spaces, an opening bracket, a dash, a colon or a comma. */
 const CONNECTORS = /[\s(<[`—–:,-]+$/;
 
-/**
- * The name written beside an address, in `tail`: the words between the last separator (or the address
- * before) and this address. A bold name that ends right before it; else "Name (" straight before it; else,
- * when `loose`, the capitalised words that start the tail, where a lone word must also look like the
- * address ("Prefers kim@…" names nobody).
- */
-function nameBeside(tail: string, email: string, loose: boolean): string | null {
-  const bold = /\*\*([^*]+)\*\*$/.exec(tail.replace(CONNECTORS, ''));
+/** The name written straight before an address: a bold name that ends there, else "Name (" or "Name <". */
+function nameTouching(part: string): string | null {
+  const bold = /\*\*([^*]+)\*\*$/.exec(part.replace(CONNECTORS, ''));
   const fromBold = bold ? asName(bold[1] ?? '') : null;
   if (fromBold) return fromBold;
-  const t = tail.replace(MARKS, '');
-  const opener = NAME_BEFORE_OPENER.exec(t);
-  const beforeOpener = opener ? asName(opener[1] ?? '') : null;
-  if (beforeOpener || !loose) return beforeOpener;
-  const fromCapital = /(?:^|[^\p{L}])(\p{Lu}[\s\S]*)$/u.exec(t);
-  const name = fromCapital ? asName(fromCapital[1] ?? '') : null;
-  if (!name) return null;
-  return name.includes(' ') || related(name, email) ? name : null;
+  const opener = NAME_BEFORE_OPENER.exec(part.replace(MARKS, ''));
+  return opener ? asName(opener[1] ?? '') : null;
+}
+
+/** The name that starts a part of a line (after a separator or an earlier address): its first capitalised words. */
+function nameStarting(part: string): string | null {
+  const fromCapital = /(?:^|[^\p{L}])(\p{Lu}[\s\S]*)$/u.exec(part.replace(MARKS, ''));
+  return fromCapital ? asName(fromCapital[1] ?? '') : null;
 }
 
 /**
- * The name for the address that starts at `start`, given where the address before it ended. Better no name
- * than the wrong one:
- * - the name that leads the line, when it sits right beside the first address ("Bob Smith (robert@…)");
- * - else a name written beside the address, or the leading name, whichever the address looks like
- *   ("…, PA is Jan Lee (jan@…)" is Jan; "Kim Example, Acme Heating (kim@…)" is Kim);
- * - else the name beside it; and when there is none, the leading name only if the address looks like theirs
- *   ("Sarah Jones (on leave, cover: jan@…)" and a table's "Invoices to accounts@…" name nobody).
- * The leading name is only ever a candidate for the first address on the line.
+ * True when nothing but a role, a phone number or punctuation sits between `name` and the end of `part`
+ * ("Sarah Jones (MD) — ", "Sarah Jones, Director (", a mailto link's `](mailto:`): the name is then the only
+ * person the address can belong to. Any other word ("Senior Designer", "PA is Jan Lee", "the office is")
+ * could be another name or say whose address it is, so it is not.
+ */
+function onlyNameBefore(part: string, name: string): boolean {
+  const text = part.replace(MARKS, '');
+  const at = text.indexOf(name);
+  if (at < 0) return false;
+  const between = text.slice(at + name.length).replace(/\]\((?:mailto:)?/i, ' ');
+  return between.split(/[^\p{L}]+/u).every((w) => w === '' || NOT_A_NAME.has(w.toLowerCase()));
+}
+
+/**
+ * Which name goes with the address at the end of `part`, where `first` is the name that starts the part.
+ * Better no name than the wrong one:
+ * - `first`, when it is the only person named before the address;
+ * - else there may be two (`first`, and a name touching the address): the one the address looks like, the
+ *   touching one when both do;
+ * - else a touching name when the part starts with nobody; otherwise nobody.
+ */
+function pick(part: string, first: string | null, email: string): string | null {
+  if (first && onlyNameBefore(part, first)) return first;
+  const touching = nameTouching(part);
+  if (touching && related(touching, email)) return touching;
+  if (first && related(first, email)) return first;
+  return first ? null : touching;
+}
+
+/**
+ * The name for the address that starts at `start`, given where the address before it ended. The first
+ * address on a line with nothing separating it from the start is read against the name that leads the line.
+ * After a separator, and for every later address, it is read against the name that starts its own part of
+ * the line ("…; her PA Kate Lee (kate@…)"). When that part names nobody, the first address may still take
+ * the leading name, but only when it looks like that person's (a table's first cell, a list item's bold
+ * name; "Invoices to accounts@…" in Sarah's row is not Sarah).
  */
 function nameFor(b: Block, n: number, prevEnd: number, start: number, email: string): string | null {
   const seg = b.raw.slice(Math.max(prevEnd, start - LOOK), start);
   let cut = -1;
   for (const m of seg.matchAll(SEPARATOR)) cut = (m.index ?? 0) + m[0].length;
   const separated = cut >= 0 || start - prevEnd > LOOK;
-  const lead = n === 0 ? b.lead : null;
-  if (lead && !separated && seg.replace(MARKS, '').replace(CONNECTORS, '').endsWith(lead)) return lead;
-  const beside = nameBeside(cut >= 0 ? seg.slice(cut) : seg, email, separated || n > 0);
-  if (beside && related(beside, email)) return beside;
-  if (lead && related(lead, email)) return lead;
-  return beside;
+  if (n === 0 && !separated) return pick(seg, b.lead, email);
+  const part = cut >= 0 ? seg.slice(cut) : seg;
+  const name = pick(part, nameStarting(part), email);
+  if (name) return name;
+  return n === 0 && b.lead && related(b.lead, email) ? b.lead : null;
 }
 
 interface Block {

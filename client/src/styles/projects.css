@@ -512,6 +512,17 @@
   .proj-ref > .proj-note {
     padding-inline: 0;
   }
+  /* "Email to" and Write an email. The row keeps its height while the contacts are read, so nothing below moves. */
+  .proj-ref-email {
+    min-height: 32px;
+  }
+  .proj-ref-to {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: min(100%, 340px);
+    text-overflow: ellipsis;
+  }
 }
 
 @layer features {

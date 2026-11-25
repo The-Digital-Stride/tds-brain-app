@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   projectFiles: vi.fn(),
   projectTodos: vi.fn(),
   projectArtifact: vi.fn(),
+  projectBusiness: vi.fn(),
 }));
 vi.mock('../../api.ts', () => ({
   api,
@@ -39,7 +40,9 @@ vi.mock('../../api.ts', () => ({
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({ useShell: () => ({ dispatch: vi.fn() }) }));
 
+import type { BusinessContact } from '../../../../shared/project-business-contract.ts';
 import { gmailComposeUrl } from '../../../../shared/project-email-threads-contract.ts';
+import { composeWindowFeatures } from './compose.ts';
 
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
@@ -60,8 +63,22 @@ async function openProject(project = mk(), over: Parameters<typeof projectList>[
   await screen.findByRole('region', { name: 'Details' });
 }
 
+const business = (contacts?: BusinessContact[]) => ({
+  state: 'ok' as const,
+  client: { slug: 'skyseal', name: 'Skyseal', status: null },
+  path: null,
+  facts: [],
+  sections: [],
+  ...(contacts ? { contacts } : {}),
+});
+const KIM = { name: 'Kim Example', email: 'kim@skyseal.co.uk', main: true };
+const LEE = { name: null, email: 'lee@skyseal.co.uk', main: false };
+const open = vi.fn();
+
 beforeEach(() => {
   store.boot.clients = [{ slug: 'skyseal', name: 'Skyseal' }];
+  api.projectBusiness.mockResolvedValue(business([]));
+  vi.stubGlobal('open', open);
   api.projectFiles.mockResolvedValue({ items: [], hidden: 0 });
   api.projectTodos.mockResolvedValue({ todos: [], count: 0 });
   Object.defineProperty(navigator, 'clipboard', { value: clip, configurable: true });
@@ -70,6 +87,7 @@ afterEach(() => {
   cleanup();
   projectsStore.reset();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('project code on the Overview', () => {
@@ -78,7 +96,7 @@ describe('project code on the Overview', () => {
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(
       screen.getByText(
-        /Write an email opens Gmail with this code already in it\. You can also paste the code into a meeting invite or any email\./,
+        /Write an email opens Gmail in a small window with this code already in it\. You can also paste the code into a meeting invite or any email\./,
       ),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Copy code SKY4K7' }));
@@ -89,22 +107,129 @@ describe('project code on the Overview', () => {
     );
   });
 
-  it('Write an email is a link to Gmail compose with the code, opening in a new tab', async () => {
+  it('Write an email is a link to Gmail compose with the code; a click opens it in a small window', async () => {
     store.boot.identity = { slug: 'me', email: 'me@tds.example' } as typeof store.boot.identity;
     await openProject();
-    const link = screen.getByRole('link', { name: /Write an email/ });
-    expect(link.getAttribute('href')).toBe(gmailComposeUrl('me@tds.example', 'SKY4K7'));
+    const link = await screen.findByRole('link', { name: /Write an email/ });
+    const href = gmailComposeUrl('me@tds.example', 'SKY4K7');
+    expect(link.getAttribute('href')).toBe(href);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(link.textContent).toContain('(opens in a new tab)');
+    expect(link.textContent).toContain('(opens Gmail in a small window)');
+    expect(screen.queryByLabelText('Email to')).toBeNull();
+    expect(fireEvent.click(link)).toBe(false);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith(href, '_blank', composeWindowFeatures(window));
+    expect(open.mock.calls[0]?.[2]).toMatch(/^popup=yes,width=\d+,height=\d+,.*noopener,noreferrer$/);
     store.boot.identity = { slug: 'me' } as typeof store.boot.identity;
+  });
+
+  it('a click that asks for a new tab or window is left to the browser', async () => {
+    await openProject();
+    const link = await screen.findByRole('link', { name: /Write an email/ });
+    for (const key of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
+      expect(fireEvent.click(link, key)).toBe(true);
+    }
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('Write an email uses no account when the identity has no email', async () => {
     await openProject();
-    expect(screen.getByRole('link', { name: /Write an email/ }).getAttribute('href')).toBe(
+    expect((await screen.findByRole('link', { name: /Write an email/ })).getAttribute('href')).toBe(
       gmailComposeUrl(null, 'SKY4K7'),
     );
+  });
+
+  it('with contacts, Email to lists them, starts on the first and fills the link', async () => {
+    api.projectBusiness.mockResolvedValue(business([KIM, LEE]));
+    await openProject();
+    const pick = (await screen.findByLabelText('Email to')) as HTMLSelectElement;
+    expect([...pick.options].map((o) => [o.value, o.textContent])).toEqual([
+      ['kim@skyseal.co.uk', 'Kim Example (kim@skyseal.co.uk)'],
+      ['lee@skyseal.co.uk', 'lee@skyseal.co.uk'],
+      ['', 'Someone else'],
+    ]);
+    expect(pick.value).toBe('kim@skyseal.co.uk');
+    const link = screen.getByRole('link', { name: /Write an email/ });
+    expect(link.getAttribute('href')).toBe(gmailComposeUrl(null, 'SKY4K7', 'kim@skyseal.co.uk'));
+    expect(screen.getByText(/The people listed come from the client's contacts in the brain\./)).toBeTruthy();
+
+    fireEvent.change(pick, { target: { value: 'lee@skyseal.co.uk' } });
+    const toLee = gmailComposeUrl(null, 'SKY4K7', 'lee@skyseal.co.uk');
+    expect(link.getAttribute('href')).toBe(toLee);
+    fireEvent.click(link);
+    expect(open).toHaveBeenCalledWith(toLee, '_blank', composeWindowFeatures(window));
+
+    fireEvent.change(pick, { target: { value: '' } });
+    expect(pick.value).toBe('');
+    expect(link.getAttribute('href')).toBe(gmailComposeUrl(null, 'SKY4K7'));
+  });
+
+  it('the pick belongs to one project, and falls back to the first contact when its person is no longer listed', async () => {
+    const { ProjectRef } = await import('./ProjectRef.tsx');
+    const first = mk();
+    const second = mk({ slug: 'other', title: 'Other site', ref: 'SKY9P2' });
+    expect(second.key).not.toBe(first.key);
+    const list = projectList([first, second], { canRef: true });
+    const show = (c: typeof first, contacts: BusinessContact[]) => (
+      <ProjectRef card={c} list={list} title={() => 'x'} contacts={contacts} />
+    );
+    const { rerender } = render(show(first, [KIM, LEE]));
+    const pick = () => screen.getByLabelText('Email to') as HTMLSelectElement;
+    const href = () => screen.getByRole('link', { name: /Write an email/ }).getAttribute('href');
+    fireEvent.change(pick(), { target: { value: 'lee@skyseal.co.uk' } });
+    expect(pick().value).toBe('lee@skyseal.co.uk');
+
+    // Another project starts at its own first contact, with its own code.
+    rerender(show(second, [KIM, LEE]));
+    expect(pick().value).toBe('kim@skyseal.co.uk');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY9P2', 'kim@skyseal.co.uk'));
+
+    // Back on the first project, Lee is gone from the client's file: the first contact, never a stale address.
+    rerender(show(first, [KIM]));
+    expect(pick().value).toBe('kim@skyseal.co.uk');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY4K7', 'kim@skyseal.co.uk'));
+
+    // "Someone else" stays chosen when the list changes.
+    fireEvent.change(pick(), { target: { value: '' } });
+    rerender(show(first, [KIM, LEE]));
+    expect(pick().value).toBe('');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY4K7'));
+  });
+
+  it('never offers this person or a colleague named in the client file', async () => {
+    store.boot.identity = { slug: 'me', email: 'me@tds.example' } as typeof store.boot.identity;
+    api.projectBusiness.mockResolvedValue(
+      business([{ name: 'Team Mate', email: 'mate@tds.example', main: true }, LEE]),
+    );
+    await openProject();
+    const pick = (await screen.findByLabelText('Email to')) as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.value)).toEqual(['lee@skyseal.co.uk', '']);
+    store.boot.identity = { slug: 'me' } as typeof store.boot.identity;
+  });
+
+  it('the button waits for the contacts, so it never moves once it shows', async () => {
+    let done: (v: ReturnType<typeof business>) => void = () => {};
+    api.projectBusiness.mockReturnValue(new Promise((r) => (done = r)));
+    await openProject();
+    expect(screen.getByText('SKY4K7')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Write an email/ })).toBeNull();
+    done(business([KIM]));
+    expect(await screen.findByRole('link', { name: /Write an email/ })).toBeTruthy();
+    expect(screen.getByLabelText('Email to')).toBeTruthy();
+  });
+
+  it('an older server (no contacts) or a failed read still gives the button, with nobody filled in', async () => {
+    api.projectBusiness.mockResolvedValue(business());
+    await openProject();
+    expect((await screen.findByRole('link', { name: /Write an email/ })).getAttribute('href')).toBe(
+      gmailComposeUrl(null, 'SKY4K7'),
+    );
+    expect(screen.queryByLabelText('Email to')).toBeNull();
+    cleanup();
+    api.projectBusiness.mockRejectedValue(new Error('offline'));
+    await openProject();
+    expect(await screen.findByRole('link', { name: /Write an email/ })).toBeTruthy();
   });
 
   it('Write an email only shows when the code shows (missing, no client code)', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FACT_MAX_CHARS, SECTION_MAX_CHARS } from '../../shared/project-business-contract.ts';
-import { parseBusiness, profileStatus } from './business-parse.ts';
+import { clean, HEADING, parseBusiness, plain, profileStatus } from './business-parse.ts';
 
 /** Synthetic: the SHAPE of a client's business.md, none of its content. */
 const TEMPLATE = `# Business Context
@@ -77,6 +77,12 @@ Nothing.
 `;
 
 const TEXT = (s: ReturnType<typeof parseBusiness>) => Object.fromEntries(s.facts.map((f) => [f.id, f.value]));
+
+/**
+ * Each hostile input must parse within this. Unfixed, these took from 12 seconds to hours; fixed, a few
+ * milliseconds. The limit is loose so a busy machine (other sessions' test runs) never fails it.
+ */
+const LIMIT_MS = 4000;
 
 describe('parseBusiness: key facts', () => {
   it('picks every fact from a template file (PPC)', () => {
@@ -320,5 +326,96 @@ describe('profileStatus', () => {
     expect(profileStatus('---\nstatus:\n---\n')).toBeNull();
     expect(profileStatus('# T\nstatus: active\n')).toBeNull();
     expect(profileStatus(null)).toBeNull();
+  });
+});
+
+describe('reading stays quick on hostile text (2026-11-25)', () => {
+  // Before: a heading followed by a long run of spaces took time that grew with the cube of its length
+  // (800 spaces: 2.8 s), and runs of `[`, `<` or `<!--` with the square (64,000: over 15 s). A client file can
+  // be 256 KB, and the read runs on the server's one thread.
+  it('parses each in well under a second', () => {
+    const cases = {
+      headingSpaces: `## a${' '.repeat(64000)}x\n`,
+      headingBrackets: `## ${'['.repeat(64000)} x\n`,
+      labelBrackets: `**Main contact:** ${'['.repeat(64000)}\n`,
+      labelTags: `**Main contact:** ${'<'.repeat(64000)}\n`,
+      labelLinks: `**Main contact:** ${'[a]('.repeat(16000)}\n`,
+      bodyBrackets: `### What We Sell\n${'['.repeat(64000)}\n`,
+      comments: `${'<!--'.repeat(64000)}\n## Account\n`,
+      headingParens: `## ${'('.repeat(64000)}\n`,
+      headingParenSpaces: `## a${' ('.repeat(32000)}\n`,
+    };
+    for (const [name, text] of Object.entries(cases)) {
+      const start = Date.now();
+      parseBusiness(text, text, ['ppc']);
+      expect(Date.now() - start, name).toBeLessThan(LIMIT_MS);
+    }
+  }, 60_000);
+
+  it('a heading reads as before: level, then the text without a closing run of #s', () => {
+    const read = (line: string) => {
+      const h = HEADING.exec(line);
+      return h ? [h[1]?.length, h[2]] : null;
+    };
+    expect(read('## Account')).toEqual([2, 'Account']);
+    expect(read('###   What We Sell   ')).toEqual([3, 'What We Sell']);
+    expect(read('## Budget ##')).toEqual([2, 'Budget']);
+    expect(read('## Budget ##   ')).toEqual([2, 'Budget']);
+    expect(read('## C#')).toEqual([2, 'C']);
+    expect(read('## a # b')).toEqual([2, 'a # b']);
+    expect(read('## a # #')).toEqual([2, 'a #']);
+    expect(read('## ###')).toEqual([2, '']);
+    expect(read('##   ')).toEqual([2, '']);
+    expect(read('###### Six')).toEqual([6, 'Six']);
+    expect(read('##')).toBeNull();
+    expect(read('####### Seven')).toBeNull();
+    expect(read('#NoSpace')).toBeNull();
+    expect(read(' ## Indented')).toBeNull();
+    expect(read('Text ## not a heading')).toBeNull();
+    for (const line of ['## Account', '#\tTab', '##', '#NoSpace', 'plain', '####### Seven']) {
+      expect(HEADING.test(line), line).toBe(HEADING.exec(line) !== null);
+    }
+  });
+
+  it('a heading still matches with a trailing note in brackets, exactly as before', () => {
+    const text = (heading: string) => `## Goals\n\n### ${heading}\n**Monthly budget:** About a thousand.\n`;
+    for (const h of [
+      'Budget (updated 2026-10)',
+      'Budget   (a note)  ',
+      'Budget (a (b note)',
+      '**Budget** (x)',
+    ]) {
+      expect(
+        parseBusiness(text(h), null, ['ppc']).sections.map((s) => s.title),
+        h,
+      ).toEqual(['Budget']);
+    }
+    // Only the last bracketed note is dropped, and only a closed one.
+    for (const h of [
+      'Budget (unclosed',
+      'Budget ) odd',
+      '(Budget)',
+      'Budget (a (b) note)',
+      'Budget (one) (two)',
+    ]) {
+      expect(parseBusiness(text(h), null, ['ppc']).sections, h).toEqual([]);
+    }
+  });
+
+  it('comments are removed as before: closed ones anywhere, an unclosed one to the end', () => {
+    expect(clean('a<!-- x -->b<!--y-->c')).toBe('abc');
+    expect(clean('a<!-- x\n\ny -->b')).toBe('ab');
+    expect(clean('a<!-->b-->c')).toBe('ac');
+    expect(clean('keep<!-- open\nrest')).toBe('keep');
+    expect(clean('a<!-- x -->b<!-- open')).toBe('ab');
+    expect(clean('no comments --> here')).toBe('no comments --> here');
+  });
+
+  it('plain text is as before for ordinary links and tags', () => {
+    expect(plain('See [the site](https://example.test/a?b=1) and ![logo](x.png).')).toBe(
+      'See the site and logo.',
+    );
+    expect(plain('A <b>bold</b> **move** in `code`')).toBe('A bold move in code');
+    expect(plain('[multi\nline](u) text')).toBe('multi line text');
   });
 });

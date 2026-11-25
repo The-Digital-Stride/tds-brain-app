@@ -141,6 +141,60 @@ export interface BusinessSection {
   from: 'business' | 'profile';
 }
 
+/**
+ * Who an email from the project can go to ("Write an email", 2026-11-25). Read from the same two files, read
+ * only, every time the project opens; nothing is stored or copied.
+ *
+ * Where the reader looks (business.md first, then profile.md):
+ * - a label line whose label ends with "contact" or "contacts" (`**Main contact:**`, `- **Other contacts:**`),
+ *   with its wrapped value; a label with no value of its own takes the list or table straight under it;
+ * - a `##`, `###` or `####` section whose heading ends with "contact" or "contacts", or is "People" or
+ *   "Key people", up to the next heading of its level or above: each list item, table row and paragraph.
+ * An email address anywhere else in the files is never picked up.
+ *
+ * One contact per address (compared without case; the first spelling is kept), main contacts first, then file
+ * order, cut at BUSINESS_CONTACTS_MAX. `main` is true for a "Main contact" or "Primary contact" label, or a
+ * line that says "main contact" or "primary contact".
+ *
+ * The name is a best reading of free text, and the rule is: better no name than the wrong one (the picker
+ * then shows the address alone). Each address is read against the name that starts its part of the line: the
+ * name that leads the line, item, row or label value (its bold start, or the capitalised words before the
+ * first comma, dash or bracket) for the first address when nothing separates them; after a `;`, `·`, table
+ * bar or the end of a sentence, and for every later address, the capitalised words that start that part (a lone word only when the address
+ * looks like it: "Prefers kim@…" and "Reception: hello@…" name nobody).
+ * - That name is used when it is the only person named before the address: nothing but a role, a phone
+ *   number or punctuation in between ("Sarah Jones (MD) — hello@…", "Bob Smith (robert@…)").
+ * - Otherwise there may be two people (that name, and a name touching the address: a bold name ending right
+ *   before it, or "Name (" before it), and the address decides: the one it looks like (a word of the name in
+ *   the part before the @, or their initials), the touching one when both do. "…, PA is Jan Lee (jan@…)" is
+ *   Jan Lee. When it looks like neither, nobody is named: "Sarah Jones, Senior Designer (hello@…)" could be
+ *   two people, and "Sarah Jones (on leave, cover: jan@…)" is not Sarah's address.
+ * - When a part names nobody, the first address may take the line's leading name (a table's first cell, a
+ *   list item's bold name), but only when it looks like that person's. "Invoices to accounts@…" in Sarah's
+ *   row is not Sarah.
+ * - Job, team and company words ("Director", "Accounts", "PA", "Ltd") are never a name or part of one.
+ *
+ * Left out: someone struck through (`~~Name~~`, however nested, or a struck address: they have left; a struck
+ * note about somebody else removes nobody); a label such as "Do not contact:" or "Never contact:"; template
+ * addresses (`example.com`, `example.org`, `example.net`, and any ending `.test`, `.example` or `.invalid`).
+ * A note in the text such as "don't email after 6" hides no one: the person choosing knows the client.
+ *
+ * Cost: names are read from at most a few hundred characters beside each address, and the markdown helpers
+ * this and the client background share work in one pass, so a hostile or pasted-in 256 KB file is read
+ * quickly (tests in business-parse.test.ts and business-contacts.test.ts hold each case under a second).
+ */
+export interface BusinessContact {
+  /** Plain text, at most CONTACT_NAME_MAX characters. Never HTML or markdown. */
+  name: string | null;
+  /** One address in a strict shape (letters, digits and `._%+-` before the @, a dotted host after). */
+  email: string;
+  main: boolean;
+}
+
+/** The picker is a short list (a native select). */
+export const BUSINESS_CONTACTS_MAX = 12;
+export const CONTACT_NAME_MAX = 60;
+
 /** `GET ROUTES.projectBusiness?key=<ProjectKey>` → this. */
 export interface ProjectBusinessResponse {
   /**
@@ -160,6 +214,13 @@ export interface ProjectBusinessResponse {
   path: string | null;
   facts: KeyFact[];
   sections: BusinessSection[];
+  /**
+   * The client's contacts that have an email address (see BusinessContact). Optional: an older server sends
+   * none, and the page then offers "Write an email" with nobody filled in, as before. Read from whichever of
+   * the two files passed the safe read, so 'missing' and 'unreadable' can still carry profile.md's contacts;
+   * always empty for 'none'.
+   */
+  contacts?: BusinessContact[];
 }
 
 // ROUTES addition (shared/contract.ts): projectBusiness: '/api/projects/business' (GET).

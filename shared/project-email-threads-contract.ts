@@ -29,13 +29,16 @@ export const EMAIL_KEY_SLOP_SECONDS = 5;
 export const emailCodeLine = (ref: string): string => `Ref: [${ref}]`;
 
 /**
- * "Write an email" (decision 8): Gmail's own compose window in a new tab, the message text ending with the
- * code line. `ownerEmail` is this Mac's identity email (the same `authuser` rule as `gmailThreadUrl`); null
- * leaves Gmail on its default account. `ref` must already be a valid project code. Probed 2026-11-25:
- * `view=cm&fs=1&body=` fills the text; an account with a Gmail signature was not available to test.
+ * "Write an email" (decision 8): Gmail's own compose window, the message text ending with the code line.
+ * The Projects app opens it in a small window beside the project (2026-11-25: Gmail can't be shown inside
+ * another page), and in a new tab when the click asks for one. `ownerEmail` is this Mac's identity email (the
+ * same `authuser` rule as `gmailThreadUrl`); null leaves Gmail on its default account. `ref` must already be
+ * a valid project code. `to` is one address in the strict shape of `BusinessContact.email` (the picker on the
+ * project's Overview); left out, Gmail's "To" is empty. Probed 2026-11-25: `view=cm&fs=1&body=` fills the
+ * text; an account with a Gmail signature was not available to test.
  */
-export const gmailComposeUrl = (ownerEmail: string | null, ref: string): string =>
-  `https://mail.google.com/mail/?${ownerEmail ? `authuser=${encodeURIComponent(ownerEmail)}&` : ''}view=cm&fs=1&body=${encodeURIComponent(`\n\n${emailCodeLine(ref)}`)}`;
+export const gmailComposeUrl = (ownerEmail: string | null, ref: string, to?: string): string =>
+  `https://mail.google.com/mail/?${ownerEmail ? `authuser=${encodeURIComponent(ownerEmail)}&` : ''}view=cm&fs=1${to ? `&to=${encodeURIComponent(to)}` : ''}&body=${encodeURIComponent(`\n\n${emailCodeLine(ref)}`)}`;
 
 // ─── Script input ────────────────────────────────────────────────────────────────────────────────
 /** One message of a thread as the connector lists it. `subject` only when it differs from the draft's. */

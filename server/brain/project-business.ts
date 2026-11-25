@@ -16,6 +16,7 @@ import {
   type ProjectBusinessResponse,
 } from '../../shared/project-business-contract.ts';
 import { INTERNAL_CLIENT, type ProjectKey, ProjectsError } from '../../shared/projects-contract.ts';
+import { parseContacts } from './business-contacts.ts';
 import { parseBusiness, profileStatus } from './business-parse.ts';
 import type { ProjectsIndex } from './projects.ts';
 
@@ -72,7 +73,14 @@ async function safeRead(root: string, slug: string, rel: readonly string[]): Pro
   }
 }
 
-const NONE: ProjectBusinessResponse = { state: 'none', client: null, path: null, facts: [], sections: [] };
+const NONE: ProjectBusinessResponse = {
+  state: 'none',
+  client: null,
+  path: null,
+  facts: [],
+  sections: [],
+  contacts: [],
+};
 
 export function createProjectBusiness(deps: ProjectBusinessDeps): ProjectBusinessService {
   return {
@@ -92,7 +100,10 @@ export function createProjectBusiness(deps: ProjectBusinessDeps): ProjectBusines
       // A bad profile.md is simply ignored.
       const profileText = prof.state === 'ok' ? prof.text : null;
       const client = { slug, name: known.name, status: profileStatus(profileText) };
-      if (biz.state === 'bad') return { state: 'unreadable', client, path: null, facts: [], sections: [] };
+      // Who an email can go to: read from whichever of the two files passed the safe read, never stored.
+      const contacts = parseContacts(biz.state === 'ok' ? biz.text : null, profileText);
+      if (biz.state === 'bad')
+        return { state: 'unreadable', client, path: null, facts: [], sections: [], contacts };
       const { facts, sections } = parseBusiness(
         biz.state === 'ok' ? biz.text : null,
         profileText,
@@ -100,11 +111,11 @@ export function createProjectBusiness(deps: ProjectBusinessDeps): ProjectBusines
       );
       if (biz.state === 'absent') {
         if (facts.length === 0 && sections.length === 0) {
-          return { state: 'missing', client, path: null, facts: [], sections: [] };
+          return { state: 'missing', client, path: null, facts: [], sections: [], contacts };
         }
-        return { state: 'ok', client, path: null, facts, sections };
+        return { state: 'ok', client, path: null, facts, sections, contacts };
       }
-      return { state: 'ok', client, path: `clients/${slug}/${BUSINESS_FILE}`, facts, sections };
+      return { state: 'ok', client, path: `clients/${slug}/${BUSINESS_FILE}`, facts, sections, contacts };
     },
   };
 }

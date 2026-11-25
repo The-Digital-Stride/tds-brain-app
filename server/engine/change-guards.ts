@@ -653,7 +653,7 @@ const MERGE_VALUE_OPTS = new Set([
 ]);
 
 function parseMerge(args: string[]): { ref: string | null } | null {
-  if (args.includes('--abort') || args.includes('--quit')) return null;
+  if (args.length === 1 && (args[0] === '--abort' || args[0] === '--quit')) return null;
   for (let k = 0; k < args.length; k++) {
     const a = args[k] as string;
     if (a === '--') return { ref: args[k + 1] ?? null };
@@ -731,6 +731,9 @@ function gitAt(vals: string[], i: number, dir: string | null): Found | null {
   if (sub === 'subtree' && args.includes('push')) {
     return { kind: 'push', source: 'git', repoDir, ref: null, remote: null, danger: null, plain: false };
   }
+  // `git $(echo push)` or `git ${X:-push}`: the subcommand can't be read, so it counts.
+  if (sub?.includes('$'))
+    return { kind: 'push', source: 'git', repoDir, ref: null, remote: null, danger: null, plain: false };
   const key = sub?.toLowerCase();
   if (key !== undefined && aliases.has(key)) {
     const value = aliases.get(key);
@@ -849,6 +852,37 @@ function findPublishes(text: string, st: ShellState, depth: number): Found[] {
  */
 const REDIRECTS_GIT = /GIT_[A-Za-z0-9_]|\b(?:pushd|popd)\b/;
 
+/** The git steps of the brain's daily sync (`/gm`, `/sync`), with no options before the subcommand. */
+const SYNC_GIT_STEPS = new Set(['push', 'pull', 'fetch', 'add', 'commit', 'status', 'diff', 'log', 'stash']);
+const SYNC_OTHER_STEPS = new Set(['echo', 'cat', 'printf', 'true']);
+const SYNC_MAX_DEPTH = 3;
+
+/**
+ * True when every segment of the command (substitutions included) is a bare daily-sync git step or
+ * `echo`/`cat`. Anything else before a push (`git remote set-url`, `git config`, `git checkout`, `cd`,
+ * `builtin cd`, `source`) could point it somewhere else, so it gets the card (overseer sign-off B2).
+ */
+function onlySyncSteps(text: string, depth: number): boolean {
+  if (depth > SYNC_MAX_DEPTH) return false;
+  const toks = lex(text);
+  if (!toks) return false;
+  for (const seg of segmentsOf(toks)) {
+    const words = seg.words;
+    const first = words[0]?.v;
+    if (first === undefined || words.some((w) => w.bad)) return false;
+    const ok = first === 'git' ? SYNC_GIT_STEPS.has(words[1]?.v ?? '') : SYNC_OTHER_STEPS.has(first);
+    if (!ok) return false;
+    for (const w of words) for (const sub of w.subs) if (!onlySyncSteps(sub, depth + 1)) return false;
+    for (const r of seg.redirs) {
+      if (r.op.startsWith('<<') && r.op !== '<<<') continue;
+      const t = r.target?.v;
+      if (!(t === '/dev/null' || ((r.op === '>&' || r.op === '<&') && (t === '1' || t === '2'))))
+        return false;
+    }
+  }
+  return true;
+}
+
 /** Pure: the publish in a Bash command, or null. Heredoc bodies stripped, quotes respected. */
 export function detectPublish(command: string): DetectedPublish | null {
   const list = findPublishes(command, freshState(null), 0);
@@ -864,7 +898,7 @@ export function detectPublish(command: string): DetectedPublish | null {
     kind,
     danger,
     dangerous: danger !== null,
-    plain: list.length === 1 && primary.plain && !REDIRECTS_GIT.test(command),
+    plain: list.length === 1 && primary.plain && !REDIRECTS_GIT.test(command) && onlySyncSteps(command, 0),
   };
 }
 
@@ -980,7 +1014,8 @@ const MARKERS = [
   // `TDS Brain/app`: the installed app's folder.
   new RegExp(`${SUPPORT_DIR_NAME}/${INSTALLED_APP_DIR}`, 'i'),
   /\$\{?APP\b/,
-  /the-digital-stride\/tds-brain-app/i,
+  // The repo's GitHub address only: the brain's project key `the-digital-stride/tds-brain-app` isn't app code.
+  /github\.com[:/]the-digital-stride\/tds-brain-app/i,
 ];
 const MAX_PATHS = 200;
 
@@ -1453,6 +1488,8 @@ export interface GuardDeps {
   refusal?: typeof teamAppRefusal;
   facts?: typeof publishFacts;
   brainSync?: typeof isBrainSync;
+  /** Injectable for tests: the time budgets in ms (defaults SYNC_BUDGET_MS and FACTS_BUDGET_MS). */
+  budgetMs?: { sync?: number; facts?: number };
 }
 
 export type GuardAnswer =
@@ -1467,6 +1504,23 @@ export type GuardAnswer =
  * One PreToolUse decision. Never throws. Team refusals run first; an error there denies. Detection is pure;
  * an error after a publish was found still asks (with just the command).
  */
+/**
+ * Time allowed for the brain-sync check and the card facts. Together well under the SDK's 60 s hook
+ * timeout: a hook that runs out of time may let the call through with no card, as a thrown one does.
+ * Running out means no exemption and bare facts, so the card still shows.
+ */
+const SYNC_BUDGET_MS = 3_000;
+const FACTS_BUDGET_MS = 5_000;
+
+/** The promise's answer, or `fallback` once `ms` has passed. */
+function withinBudget<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
 export async function guardToolCall(
   toolName: string,
   input: Record<string, unknown>,
@@ -1492,12 +1546,17 @@ export async function guardToolCall(
   const bare = bareFacts(d?.kind ?? (toolKind as PublishKind), command ?? toolName, d?.danger ?? null);
   if (!d || command === null) return { decision: 'ask', facts: bare };
   try {
-    if (await (deps.brainSync ?? isBrainSync)(d, cwd, deps.ctx)) return { decision: 'exempt' };
+    const sync = (deps.brainSync ?? isBrainSync)(d, cwd, deps.ctx);
+    if (await withinBudget(sync, deps.budgetMs?.sync ?? SYNC_BUDGET_MS, false)) return { decision: 'exempt' };
   } catch {
     return { decision: 'ask', facts: bare };
   }
   try {
-    return { decision: 'ask', facts: await (deps.facts ?? publishFacts)(d, command, cwd, deps.ctx) };
+    const facts = (deps.facts ?? publishFacts)(d, command, cwd, deps.ctx);
+    return {
+      decision: 'ask',
+      facts: await withinBudget(facts, deps.budgetMs?.facts ?? FACTS_BUDGET_MS, bare),
+    };
   } catch {
     return { decision: 'ask', facts: bare };
   }

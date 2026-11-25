@@ -503,6 +503,34 @@
   .approval-warning strong {
     color: var(--danger);
   }
+  .publish-facts,
+  .publish-commits {
+    margin: var(--sp-8) 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-control);
+    color: var(--iron);
+    overflow-wrap: anywhere;
+  }
+  .publish-facts > li + li {
+    margin-top: var(--sp-4);
+  }
+  .publish-facts strong {
+    color: var(--navy);
+  }
+  .publish-commits-box {
+    max-height: min(240px, 25cqb);
+    overflow: auto;
+    margin-top: var(--sp-4);
+    border-radius: var(--r-6);
+    background: var(--glass-70);
+  }
+  .publish-commits {
+    margin-top: 0;
+    padding: var(--sp-8) var(--sp-10);
+    font-family: var(--mono);
+    font-size: var(--fs-small);
+  }
   .form-field.approval-note {
     margin-top: var(--sp-10);
   }

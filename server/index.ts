@@ -198,6 +198,9 @@ function buildBrainSide(path: string | null) {
     kits: () => loadKits(path),
     brain,
     brainRoot: path,
+    // App change guards (plan 2026-11-25-app-change-guards): the running copy and the installed app's home.
+    appRoot: config.appRoot,
+    home,
     claudePath: config.claudePath,
     engine,
     env: process.env,

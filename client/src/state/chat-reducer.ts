@@ -6,6 +6,7 @@ import type {
   ChatFilesSnapshot,
   EffortLevel,
   ProposedChange,
+  PublishFacts,
   SequencedEvent,
   SessionState,
 } from '../../../shared/contract.ts';
@@ -51,6 +52,8 @@ export interface PermissionItem {
   sessionAllowLabel: string | null;
   /** The lines a Write or Edit will remove and add; null for other tools and older servers. */
   change: ProposedChange | null;
+  /** Set when the call merges or pushes: the chat shows the merge-and-push card. */
+  publish?: PublishFacts;
   outcome: Outcome | null;
 }
 
@@ -332,6 +335,7 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
           warning: event.warning,
           sessionAllowLabel: event.sessionAllowLabel,
           change: event.change ?? null,
+          ...(event.publish ? { publish: event.publish } : {}),
           outcome: null,
         },
       ];

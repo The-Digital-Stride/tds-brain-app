@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChangeLine, ProposedChange } from '../../../shared/contract.ts';
+import type { ChangeLine, ProposedChange, PublishFacts } from '../../../shared/contract.ts';
 import type { PermissionItem, QuestionItem } from '../state/chat-reducer.ts';
 
 const api = vi.hoisted(() => ({ answerPermission: vi.fn(), answerQuestion: vi.fn() }));
@@ -397,5 +397,128 @@ describe('QuestionCard', () => {
     expect(send.disabled).toBe(false);
     fireEvent.click(send);
     expect(api.answerQuestion).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PermissionCard: merge and push', () => {
+  const facts = (over: Partial<PublishFacts> = {}): PublishFacts => ({
+    kind: 'merge-and-push',
+    repo: 'The-Digital-Stride/tds-brain-app',
+    isApp: true,
+    branch: 'app-change-guards',
+    target: 'main',
+    version: '0.82.3',
+    commits: ['abc1234 feat: add guards', 'def5678 fix: tidy'],
+    commitCount: 2,
+    command: 'git push origin main',
+    ...over,
+  });
+  const publishPerm = (publish: PublishFacts = facts(), over: Partial<PermissionItem> = {}) =>
+    perm({
+      tool: 'Bash',
+      title: 'Claude wants to merge and push',
+      detail: publish.command,
+      sessionAllowLabel: null,
+      publish,
+      ...over,
+    });
+
+  it('shows where it goes, the branch and the commits', () => {
+    render(<PermissionCard item={publishPerm()} sessionId="s1" />);
+    expect(screen.getByText('Are you sure you want to merge and push?')).toBeTruthy();
+    expect(screen.getByText('TDS Cortex, version 0.82.3')).toBeTruthy();
+    expect(screen.getByText('Needs your approval')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'The commits going out' })).toBeTruthy();
+    expect(screen.getByText(/app-change-guards \u2192 main/)).toBeTruthy();
+    expect(screen.getByText('abc1234 feat: add guards')).toBeTruthy();
+    expect(screen.getByText('def5678 fix: tidy')).toBeTruthy();
+    expect(screen.getByText('git push origin main')).toBeTruthy();
+  });
+
+  it('names another repo by its short name, without the GitHub owner', () => {
+    render(
+      <PermissionCard
+        item={publishPerm(facts({ repo: 'The-Digital-Stride/tds-website', isApp: false, version: null }))}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText('tds-website')).toBeTruthy();
+    expect(screen.queryByText(/The-Digital-Stride/)).toBeNull();
+  });
+
+  it('shows a force-push warning before the facts', () => {
+    const { container } = render(
+      <PermissionCard
+        item={publishPerm(facts(), {
+          warning: 'This is a force push: it can overwrite work already on GitHub.',
+        })}
+        sessionId="s1"
+      />,
+    );
+    const warning = container.querySelector('.approval-warning');
+    const list = container.querySelector('.publish-facts');
+    expect(
+      warning && list && warning.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("says so when it couldn't read the commits", () => {
+    render(<PermissionCard item={publishPerm(facts({ commits: null, commitCount: null }))} sessionId="s1" />);
+    expect(screen.getByText("Couldn't read which commits will go out")).toBeTruthy();
+  });
+
+  it('says how many more commits go out than are listed', () => {
+    render(<PermissionCard item={publishPerm(facts({ commitCount: 25 }))} sessionId="s1" />);
+    expect(screen.getByText('and 23 more')).toBeTruthy();
+  });
+
+  it('offers no Allow for this chat and no plain Allow', () => {
+    render(<PermissionCard item={publishPerm()} sessionId="s1" />);
+    expect(screen.queryByRole('button', { name: 'Allow for this chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
+    expect(screen.queryByText(/Allow for this chat/)).toBeNull();
+  });
+
+  it('Yes sends allow', async () => {
+    render(<PermissionCard item={publishPerm()} sessionId="s1" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, merge and push' }));
+    await waitFor(() =>
+      expect(api.answerPermission).toHaveBeenCalledWith('s1', { requestId: 'r1', decision: 'allow' }),
+    );
+  });
+
+  it('No, not now sends deny with the typed note', async () => {
+    render(<PermissionCard item={publishPerm()} sessionId="s1" />);
+    fireEvent.change(screen.getByLabelText(/tell Claude why/), { target: { value: ' wait for Pete ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'No, not now' }));
+    await waitFor(() =>
+      expect(api.answerPermission).toHaveBeenCalledWith('s1', {
+        requestId: 'r1',
+        decision: 'deny',
+        note: 'wait for Pete',
+      }),
+    );
+  });
+
+  it('shows the warning when there is one', () => {
+    render(
+      <PermissionCard item={publishPerm(facts(), { warning: 'This is a force push.' })} sessionId="s1" />,
+    );
+    expect(screen.getByText('Take care:')).toBeTruthy();
+    expect(screen.getByText('This is a force push.')).toBeTruthy();
+  });
+
+  it('puts focus on the card, not on the Yes button', () => {
+    const { container } = render(<PermissionCard item={publishPerm()} sessionId="s1" />);
+    const card = container.querySelector('section.approval-publish');
+    expect(document.activeElement).toBe(card);
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Yes, merge and push' }));
+  });
+
+  it('leaves the ordinary card as it was when there are no publish facts', () => {
+    render(<PermissionCard item={perm()} sessionId="s1" />);
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Don't allow" })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'No, not now' })).toBeNull();
   });
 });

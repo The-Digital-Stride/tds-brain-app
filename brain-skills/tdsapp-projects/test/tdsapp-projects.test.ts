@@ -4177,6 +4177,68 @@ describe('email entries', () => {
       expect(draftFiles()).toContain(`${id}.json`);
       expect(existsSync(keyPath(id))).toBe(true);
     });
+
+    // Review fixes (2026-11-25, docs/plans/2026-11-25-project-email-threads.md "Review outcomes").
+    it('never takes a quick follow-up for the message before it (near key = another message of the thread)', () => {
+      // Alex wrote at 16:29:30, then again at 16:30:02: the second one's near key is the first one's key.
+      const first = { from: 'alex@client.example', sentAt: '2026-11-19T16:29:30Z' };
+      const second = { from: 'Alex@Client.Example', sentAt: '2026-11-19T16:30:02Z' };
+      const K_1 = xKey('alex@client.example', '2026-11-19T16:29');
+      const K_2 = xKey('alex@client.example', '2026-11-19T16:30');
+      holder(UPDATES, 'tess-team', K_1, '2026-11-19-0900-tess-team-fff001.md');
+      expect(check({ thread: [second, first] }).reply).toMatchObject({
+        covered: [1],
+        fresh: [{ index: 0, sentAt: second.sentAt }],
+      });
+      const id = newDraft({ sentAt: second.sentAt, thread: [second, first] });
+      const file = draftOf(id);
+      expect(file).toMatchObject({ email_key: K_2, thread_keys: [K_1], fresh_at_draft: 1 });
+      expect(file.near_keys).toBeUndefined();
+      const saved = approve(id);
+      expect(saved.reply, JSON.stringify(saved.reply)).toMatchObject({ ok: true });
+      expect(parseFrontmatter(read(String(saved.reply.file))).data.email_thread_link).toBe(K_1);
+      // The slack still joins two inboxes' copies of ONE message: alone in its thread, 16:30:02 matches 16:29.
+      rmSync(abs(String(saved.reply.file)));
+      expect(check({ thread: [second] }).reply).toMatchObject({ covered: [0], fresh: [] });
+    });
+
+    it('counts fresh_at_draft over distinct keys, as the app does', () => {
+      // Two messages from one sender in one minute share a key: 3 messages, 2 keys.
+      const twin = (seconds: string) => ({
+        from: 'bob@elsewhere.example',
+        sentAt: `2026-11-19T12:00:${seconds}Z`,
+      });
+      const file = draftOf(newDraft({ thread: [SELF, twin('40'), twin('10')] }));
+      expect(file.thread_keys).toEqual([K_BOB]);
+      expect(file.fresh_at_draft).toBe(2);
+    });
+
+    it('with a thread, keys the drafted email by sender, minute and subject even when a Message-ID is given', () => {
+      // So a teammate's copy (which has no Message-ID) is still known as the same email at Save and in the app.
+      const messageId = '<abc.123@mail.client.example>';
+      const file = draftOf(newDraft({ messageId, thread: [SELF, BOB] }));
+      expect(file.email_key).toBe(KEY);
+      expect(file.thread_message_ids).toEqual([messageId]);
+      // An entry saved under that Message-ID (0.7.0, no thread) still stops a repeat.
+      holder(UPDATES, 'tess-team', '<old.9@mail.client.example>', '2026-11-19-0900-tess-team-fff002.md');
+      const again = draft({
+        sentAt: '2026-11-18T09:00:10Z',
+        messageId: '<old.9@mail.client.example>',
+        thread: [{ from: SELF.from, sentAt: '2026-11-18T09:00:10Z' }],
+      });
+      expect(refusal(again)).toEqual({ exit: 2, error: 'exists' });
+      // Without a thread, 0.7.0's key stands.
+      expect(draftOf(newDraft({ messageId, subject: 'Another one' })).email_key).toBe(messageId);
+    });
+
+    it('refuses a thread message dated after now, so nobody can claim an email not yet sent', () => {
+      const later = { from: 'bob@elsewhere.example', sentAt: '2026-11-20T10:30:00Z' }; // T0 is 10:20:30
+      expect(refusal(draft({ thread: [later, SELF] }))).toEqual({ exit: 2, error: 'bad-request' });
+      expect(refusal(check({ thread: [later, SELF] }))).toEqual({ exit: 2, error: 'bad-request' });
+      // A clock a little ahead is fine.
+      const soon = { from: 'bob@elsewhere.example', sentAt: '2026-11-20T10:22:00Z' };
+      expect(check({ thread: [soon, SELF] }).reply).toMatchObject({ ok: true });
+    });
   });
 
   it('is documented in the skill file, with the rule that only the app saves an email', () => {

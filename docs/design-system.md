@@ -187,7 +187,18 @@ named here or it isn't one.
    (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its
    accessible name is "Copy code AST4K7", the label swaps to "Copied" for two seconds (`useCopy`, like every copy
    button) and one hidden status line announces it. Only a code that resolves (`ok`) gets Copy and the `.proj-note`
-   line saying where to put it; a duplicate shows as plain text with neither. After "Make a code" focus moves to
+   line saying where to put it; a duplicate shows as plain text with neither. Beside Copy, an `ok` code also has
+   "Write an email": a standard small `a.btn` that opens Gmail's compose window in a new tab with the code line
+   in the text (hidden "(opens in a new tab)", as every outside link) (2026-11-25).
+   On the Updates tab, the `email` entries of one conversation are one row (`.proj-thread`): the subject once and
+   one `.proj-email-meta` line ("3 updates · latest 24 Nov 2026 · Open in Gmail", or "In Sam's inbox") in
+   `.proj-thread-head`, the newest part open, and the rest in a shut `Fold` "Earlier in this thread (n)" (level 4,
+   each part a `.proj-thread-part`). Each part keeps its saver, date, chips and bin; a bin's name carries the
+   saver ("Delete update: Sam, 24 Nov"), and after a delete the keyboard goes to the next part's bin, else the
+   card heading. The email approval sheet's thread lines are `.proj-note`s ("Adds to a thread Sam saved on …"
+   under the reason; how much of the thread the summary covers just above Save, never for a thread of one), and
+   a teammate's later save is a `.notice` `data-level="warn"` above Save (2026-11-25).
+   After "Make a code" focus moves to
    Copy; cancelling the replace `Confirm` returns focus to "Make a new code". "Make a code" is a standard small button; replacing a duplicate's code uses `Confirm` (primary). The Projects search is
    the library's `.lib-search` field and also finds a code.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →

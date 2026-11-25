@@ -1,6 +1,6 @@
 # Project email threads: paste a code once, start emails from a project, one row per thread
 
-Date: 2026-11-25 · Size: L · Branch: `project-email-threads` · Explainer: to come (after pre-review)
+Date: 2026-11-25 · Size: L · Branch: `project-email-threads` · Explainer: https://claude.ai/artifact/4DobCZwLCoR2tKAS7tqqfN (copy in `docs/project-email-threads-explainer.html`)
 
 ## Objective
 
@@ -197,4 +197,39 @@ These override the decisions above where they differ; the contract has them.
 
 ## Review outcomes
 
-(Filled at the end.)
+Reviews on 2026-11-25: correctness (Opus), security and privacy (Opus), UX/UI and accessibility (Sonnet),
+plus the lead's browser check. Every finding was checked in code before it was fixed.
+
+Correctness (3 confirmed, all fixed, tests written first):
+1. The 5-second slack could take a quick follow-up for the message before it (same sender and subject,
+   either side of a minute), so the follow-up was called "already saved" and left out. Fixed in `threadOf`:
+   a near key equal to another listed message's own key is dropped.
+   Plain: a second email sent seconds after the first is no longer skipped.
+2. `fresh_at_draft` counted messages while the app counts distinct keys, giving a false "may repeat"
+   warning when two messages share a key. Fixed: counted over distinct keys.
+   Plain: no false warning on the Save sheet.
+3. A draft made with both a Message-ID and a `thread` kept the Message-ID as its key, so a teammate's later
+   save of the same email wasn't recognised. Fixed: with `thread`, `email_key` is always the derived key; the
+   Message-ID joins `thread_message_ids`, and an old entry saved under it still refuses a repeat at draft.
+   Plain: the same email is recognised whichever way it was first saved.
+
+Security (0 blocking, 1 "consider", fixed): Claude supplies the `thread` list, so a hidden instruction in an
+email could add a made-up future message and block that email from being filed later. Fixed: a thread message
+dated more than five minutes after this Mac's clock is refused. Plain: nobody can reserve an email that hasn't
+been sent.
+
+Accepted residual (security ruling on overseer S7): `email_thread_keys` in synced entries can be checked
+against a guessed sender and minute, so a teammate could work out who wrote in a saved thread and when, never
+what was said. Same kind of exposure as `email_key` (shipped in v0.74.0), a little more of it; no cheap
+mitigation exists (the brain is shared, so no secret). Accepted for a small internal team.
+
+Known limit kept: when an inbox has the follow-up but not the message before it (so the thread list can't
+show the clash), the 5-second slack can still take the follow-up for a saved copy. Needs the same sender, the
+same subject, two messages within 5 seconds of a minute boundary, and the earlier one missing from that inbox.
+
+UX/UI (5 confirmed, all fixed): each Delete button's name now carries the saver; after deleting one part the
+keyboard stays in the thread; the covers line shows only for a thread of more than one email and says how
+much of the thread it covers; two wording fixes on the sheet; `docs/design-system.md` records the new pieces.
+
+Not verified (as "Watch"): where Gmail puts a signature when the compose link fills the text; how far apart
+two inboxes stamp one message in practice.

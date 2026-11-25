@@ -166,6 +166,9 @@ const EMAIL_THREADS = {
 };
 // One `threadCodes` item: a code, perhaps in brackets, never a passage of text.
 const THREAD_CODE_ITEM_MAX = 40;
+// A thread message may be dated this far after this Mac's clock, no further: a message not yet sent
+// can't be claimed ahead of time (security review, 2026-11-25).
+const THREAD_CLOCK_AHEAD_MS = 5 * 60 * 1000;
 const EMAIL_DRAFTS_DIR_MODE = 0o700;
 const EMAIL_DRAFT_FILE_MODE = 0o600;
 const EMAIL_DRAFT_MAX_BYTES = 64 * 1024;
@@ -3097,8 +3100,11 @@ function nearKeyOf(from, sent, subject) {
 
 // A `thread` (EmailThreadMessage[], newest first): each message's exact key, its near key (or null)
 // and its sentAt as given. Addresses are read for the keys only and never kept. Refused (`bad-request`)
-// when it isn't a list of 1 to EMAIL_THREAD_MESSAGES_MAX messages with an address and an ISO time.
-function threadOf(value, subject) {
+// when it isn't a list of 1 to EMAIL_THREAD_MESSAGES_MAX messages with an address and an ISO time, or
+// when a message is dated after now. A near key equal to another listed message's own key is dropped:
+// one inbox never holds a message twice, so that match would be a different message (a quick
+// follow-up from the same sender), and taking it for a copy would lose it (correctness review).
+function threadOf(value, subject, ctx) {
   const max = EMAIL_THREADS.EMAIL_THREAD_MESSAGES_MAX;
   if (!Array.isArray(value) || value.length === 0) {
     throw refuse('bad-request', `thread must list the thread's messages, newest first (at most ${max})`);
@@ -3106,17 +3112,24 @@ function threadOf(value, subject) {
   if (value.length > max) {
     throw refuse('bad-request', `thread has more than ${max} messages: send fewer thread messages (the newest ${max})`);
   }
-  return value.map((m) => {
+  const latest = ctx.now.getTime() + THREAD_CLOCK_AHEAD_MS;
+  const messages = value.map((m) => {
     if (m === null || typeof m !== 'object' || Array.isArray(m)) {
       throw refuse('bad-request', 'each thread message must be {from, sentAt}');
     }
     const from = { address: emailAddress(m.from, "a thread message's from") };
     const sent = sentTime(m.sentAt, "a thread message's sentAt");
+    if (sent.getTime() > latest) {
+      throw refuse('bad-request', "a thread message's sentAt is in the future: send only messages already in the thread");
+    }
     const own = m.subject === undefined || m.subject === null
       ? subject
       : emailLine(m.subject, "a thread message's subject", EMAIL.EMAIL_SUBJECT_MAX, true);
     return { key: emailKeyOf(null, from, sent, own), near: nearKeyOf(from, sent, own), sentAt: m.sentAt };
   });
+  const own = new Set(messages.map(m => m.key));
+  for (const m of messages) if (m.near !== null && own.has(m.near)) m.near = null;
+  return messages;
 }
 
 // `threadCodes`: codes Claude saw in earlier messages, at most EMAIL_THREAD_CODES_MAX. Only valid
@@ -3522,17 +3535,26 @@ function emailDraft(input, ctx) {
     if (!parseKey(input.requested)) throw refuse('bad-request', 'requested must be <client>/<slug> or personal/<slug>');
     requested = input.requested;
   }
-  const emailKey = emailKeyOf(messageId, from, sent, subject);
   // Threads (0.8.0), only when sent: a call without them makes the draft exactly as 0.7.0 did.
   const hasThread = input.thread !== undefined && input.thread !== null;
   const hasThreadCodes = input.threadCodes !== undefined && input.threadCodes !== null;
-  const thread = hasThread ? threadOf(input.thread, subject) : null;
+  const thread = hasThread ? threadOf(input.thread, subject, ctx) : null;
   const threadCodes = hasThreadCodes ? threadCodesOf(input.threadCodes) : [];
-  // The drafted email's own derived key (its email_key unless a Message-ID was given) and near key.
+  // The drafted email's derived key. With a thread it is the email_key even when a Message-ID is given
+  // (correctness review): every inbox can derive it, so a teammate's copy is known as the same email at
+  // Save and in the app. The Message-ID then only joins `thread_message_ids`. Without a thread, 0.7.0's
+  // key stands (the Message-ID when given).
   const ownKey = emailKeyOf(null, from, sent, subject);
-  const ownNear = thread ? nearKeyOf(from, sent, subject) : null;
-  if (thread && !thread.some(m => m.key === ownKey)) {
+  const messageKey = emailKeyOf(messageId, from, sent, subject);
+  const emailKey = thread ? ownKey : messageKey;
+  const self = thread ? thread.find(m => m.key === ownKey) : null;
+  if (thread && !self) {
     throw refuse('bad-request', "thread doesn't hold the email being drafted (the same sender, minute and subject): send this email's own thread");
+  }
+  // Its near key, as the thread list has it (dropped when it is another listed message's key).
+  const ownNear = self ? self.near : null;
+  if (thread && messageId !== null && messageKey !== ownKey) {
+    threadMessageIds = [...new Set([messageKey, ...threadMessageIds])].slice(0, EMAIL.EMAIL_THREAD_IDS_MAX);
   }
 
   const who = inboxOwner(ctx);
@@ -3549,7 +3571,7 @@ function emailDraft(input, ctx) {
   }
   const heldMap = heldKeys(ctx);
   // With a thread, the drafted email is also asked for by its derived key and near key (threads decision 3).
-  const held = heldBy(heldMap, thread ? [emailKey, ownKey, ownNear] : [emailKey]);
+  const held = heldBy(heldMap, thread ? [messageKey, ownKey, ownNear] : [emailKey]);
   if (held) throw alreadyIn(held);
 
   for (const name of draftNames(folder)) {
@@ -3579,13 +3601,14 @@ function emailDraft(input, ctx) {
   };
   if (thread) {
     // Hashes only, newest first; the drafted email itself left out (it is `email_key`).
-    draft.thread_keys = distinctExcept([thread.map(m => m.key)], [emailKey, ownKey]);
+    draft.thread_keys = distinctExcept([thread.map(m => m.key)], [emailKey]);
     const near = {};
-    if (ownNear !== null && emailKey === ownKey) near[emailKey] = ownNear;
+    if (ownNear !== null) near[emailKey] = ownNear;
     for (const m of thread) if (m.near !== null && draft.thread_keys.includes(m.key)) near[m.key] = m.near;
     if (Object.keys(near).length > 0) draft.near_keys = near;
-    // At least 1: the drafted email, just found not held, is in the thread.
-    draft.fresh_at_draft = thread.filter(m => m.key === ownKey || !heldBy(heldMap, [m.key, m.near])).length;
+    // Counted over distinct keys, as the app counts (two messages can share one): the drafted email,
+    // just found not held, plus each other key no entry holds. At least 1.
+    draft.fresh_at_draft = 1 + draft.thread_keys.filter(k => !heldBy(heldMap, [k, near[k]])).length;
   }
   if (hasThread || hasThreadCodes) {
     draft.codes_thread = distinctExcept(
@@ -3657,7 +3680,7 @@ function emailCheck(input, ctx) {
   }
   const inboxAddress = emailAddress(input.inboxAddress, 'inboxAddress');
   const subject = emailLine(input.subject, 'subject', EMAIL.EMAIL_SUBJECT_MAX, true);
-  const thread = threadOf(input.thread, subject);
+  const thread = threadOf(input.thread, subject, ctx);
   const who = inboxOwner(ctx);
   requireOwnInbox(who, inboxAddress, 'check its emails against projects');
   const heldMap = heldKeys(ctx);

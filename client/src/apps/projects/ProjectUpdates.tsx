@@ -386,9 +386,23 @@ export function ProjectUpdates({
       return;
     }
     setRemoving(null);
+    // Other parts of the same email thread: one of them takes the keyboard next, so a thread keeps its place.
+    const siblings = item.emailThread
+      ? (page?.updates ?? [])
+          .filter((u) => u.emailThread === item.emailThread && u.path !== item.path)
+          .map((u) => u.path)
+      : [];
     await load();
-    // The row is gone: put the keyboard on the card heading, or the Add button when the card goes too.
+    // The row is gone: put the keyboard on the next part of its thread that can be deleted, else on the card
+    // heading, or the Add button when the card goes too.
     requestAnimationFrame(() => {
+      for (const path of siblings) {
+        const next = listRef.current?.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(path)}"]`);
+        if (next) {
+          next.focus();
+          return;
+        }
+      }
       if (headingRef.current) headingRef.current.focus();
       else document.querySelector<HTMLButtonElement>(ADD_BUTTON)?.focus();
     });
@@ -430,7 +444,7 @@ export function ProjectUpdates({
             className="icon-btn"
             data-delete={u.path}
             data-tip="Delete update"
-            aria-label={`Delete update: ${whenWords(u.at)}`}
+            aria-label={`Delete update: ${u.byName}, ${whenWords(u.at)}`}
             onClick={() => {
               setRemoveMessage('');
               setRemoving(u.path);

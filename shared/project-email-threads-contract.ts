@@ -52,7 +52,11 @@ export interface EmailThreadMessage {
  * `thread`: every message of the thread as this inbox has it, newest first, the drafted email included, at
  * most EMAIL_THREAD_MESSAGES_MAX. Refused (`bad-request`) when over the limit, when an address or time is
  * bad, or when none of its messages has the drafted email's own key (overseer S4: the list and the email
- * must be the same conversation). The over-size refusal says "send fewer thread messages".
+ * must be the same conversation). The over-size refusal says "send fewer thread messages". Also refused: a
+ * message dated more than five minutes after this Mac's clock (security review: an email not yet sent can't
+ * be claimed ahead of time).
+ * With `thread`, the draft's `email_key` is always the derived `x:` key, even when `messageId` is given
+ * (correctness review: every inbox can derive it); the Message-ID then joins `thread_message_ids`.
  * `threadCodes`: project codes Claude saw in earlier messages' own text (never a signature), at most
  * EMAIL_THREAD_CODES_MAX; the script keeps only valid code shapes.
  */
@@ -101,12 +105,14 @@ export interface EmailDraftThreadFields {
   /**
    * Exact key → its neighbour-minute key, for the drafted email (`email_key`) and each thread message sent
    * within EMAIL_KEY_SLOP_SECONDS of a minute boundary (a message has at most one). Matching only: message
-   * `k` is held when `k` or `near_keys[k]` is held.
+   * `k` is held when `k` or `near_keys[k]` is held. A near key equal to another listed message's own key is
+   * never written (correctness review): that would be a different message, a quick follow-up from the same
+   * sender, and taking it for a copy would lose it.
    */
   near_keys?: Record<string, string>;
   /** Valid codes from quoted lines of the newest text and from `threadCodes`, minus those in subject or body. */
   codes_thread?: string[];
-  /** How many of the thread's messages no project held when the draft was made (at least 1). */
+  /** How many of the thread's distinct keys (the drafted email included) no project held when the draft was made (at least 1). */
   fresh_at_draft?: number;
 }
 
@@ -146,7 +152,10 @@ export interface EmailDraftThreadFields {
 export interface EmailDraftThread {
   /** Messages in the thread as this inbox has it. */
   total: number;
-  /** How many no project holds now (at least 1). The sheet shows it above Save: "This summary covers n messages". */
+  /**
+   * How many no project holds now (at least 1). The sheet says above Save how much of the thread the summary
+   * covers ("all 3 messages" or "2 of the 4 messages"); nothing for a thread of one email.
+   */
   fresh: number;
   /** A project already holds earlier messages of this thread: where, who saved the latest part, and when. */
   partOf?: { key: ProjectKey; byName: string | null; at: string };

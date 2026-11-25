@@ -368,8 +368,10 @@ echo '{"inboxAddress":"ian@thedigitalstride.com","threadId":"18c2f0a1b2c3d4e5","
 - Then send the same `thread` with `email-draft`, plus `threadCodes`: project codes you saw in the
   earlier messages' own text (at most 10; never from a signature). The script keeps the messages'
   keys (never their addresses) so the app can show one conversation, and it refuses a `thread` that
-  doesn't hold the email being drafted, or that has more than 30 messages ("send fewer thread
-  messages").
+  doesn't hold the email being drafted, that has more than 30 messages ("send fewer thread
+  messages"), or that lists a message dated in the future. With a `thread`, the email is known by its
+  sender, minute and subject even if you also give `messageId`, so every inbox knows it as the same
+  email.
 - A message counts as saved when any project's email entry holds it, whoever's inbox it came from.
   Two inboxes can stamp one email a few seconds apart, so a message sent within 5 seconds of a minute
   boundary also matches the next or previous minute.

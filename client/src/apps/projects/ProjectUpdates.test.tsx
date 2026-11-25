@@ -164,6 +164,23 @@ describe('the Updates tab', () => {
         ...over,
       } as Partial<ProjectUpdateItem>);
 
+    it('names the saver on each Delete, and keeps the keyboard in the thread after one part goes', async () => {
+      const p3 = part('p3', { emailSentAt: '2026-11-24T09:00:00Z', byName: 'Sam', canRemove: true });
+      const p1 = part('p1', { emailSentAt: '2026-11-20T16:30:00Z', canRemove: true, version: 'v-p1' });
+      api.projectUpdates.mockResolvedValue(reply([p3, p1]));
+      await openUpdates();
+      await screen.findByText('Summary p3.');
+      fireEvent.click(screen.getByRole('button', { name: /Earlier in this thread/ }));
+      // Same saved time, different savers: the labels still differ.
+      expect(screen.getByRole('button', { name: /^Delete update: Sam, / })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /^Delete update: Ian, / })).toBeTruthy();
+      api.changeProject.mockResolvedValue(projectList([SKY]));
+      api.projectUpdates.mockResolvedValue(reply([{ ...p3, emailThread: undefined }]));
+      fireEvent.click(document.querySelector('[data-delete="p1"]') as HTMLElement);
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete update' }));
+      await waitFor(() => expect(document.activeElement).toBe(document.querySelector('[data-delete="p3"]')));
+    });
+
     it('shows the subject once, the newest part open and the others folded', async () => {
       api.projectUpdates.mockResolvedValue(
         reply([

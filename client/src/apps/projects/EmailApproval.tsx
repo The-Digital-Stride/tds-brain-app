@@ -33,7 +33,7 @@ export function routeWords(route: EmailDraftItem['route']): string {
     case 'body-code':
       return 'The project code is in the email.';
     case 'thread-code':
-      return 'A project code earlier in this thread.';
+      return 'A project code earlier in this thread picked this project.';
     case 'domain':
       return "The sender's company has only this project.";
     case 'codes-disagree':
@@ -49,9 +49,15 @@ export function routeWords(route: EmailDraftItem['route']): string {
 export const partOfWords = (partOf: { byName: string | null; at: string }): string =>
   `Adds to a thread ${partOf.byName ?? 'a teammate'} saved on ${dateWords(partOf.at)}.`;
 
-/** "This summary covers 1 message." / "…3 messages." */
-export const coversWords = (fresh: number): string =>
-  `This summary covers ${fresh} ${fresh === 1 ? 'message' : 'messages'}.`;
+/**
+ * How much of the thread this summary is about, shown above Save so the owner sees what they approve. Nothing
+ * for a thread of one email (there is nothing to count).
+ */
+export const coversWords = (thread: { total: number; fresh: number }): string | null => {
+  if (thread.total <= 1) return null;
+  if (thread.fresh >= thread.total) return `This summary covers all ${thread.total} messages in this thread.`;
+  return `This summary covers ${thread.fresh} of the ${thread.total} messages in this thread. The rest are already in a project.`;
+};
 
 export type ApprovalResult =
   | { done: 'saved'; key: string }
@@ -73,6 +79,7 @@ export function EmailApproval({
   onDone: (result: ApprovalResult) => void;
 }) {
   const id = useId();
+  const covers = draft.thread ? coversWords(draft.thread) : null;
   const [project, setProject] = useState(draft.route.key ?? '');
   const [subject, setSubject] = useState(draft.subject);
   const [from, setFrom] = useState(draft.from);
@@ -230,7 +237,7 @@ export function EmailApproval({
           {/* The reason only describes the project the app suggested (UX review). */}
           {project === (draft.route.key ?? '') ? routeWords(draft.route) : 'You chose this project.'}
           {project === (draft.route.key ?? '') && draft.route.overruled
-            ? ` The newest email has the code ${draft.route.overruled}, but this thread is already in this project.`
+            ? ` The newest email has the code ${draft.route.overruled}, but an earlier part of this thread is already saved here.`
             : ''}
         </p>
         {draft.thread?.partOf ? <p className="proj-note">{partOfWords(draft.thread.partOf)}</p> : null}
@@ -305,7 +312,7 @@ export function EmailApproval({
           Check the summary for repeats.
         </p>
       ) : null}
-      {draft.thread ? <p className="proj-note">{coversWords(draft.thread.fresh)}</p> : null}
+      {covers ? <p className="proj-note">{covers}</p> : null}
       <div className="proj-buttons">
         <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
           Save to project

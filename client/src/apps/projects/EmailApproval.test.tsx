@@ -44,7 +44,9 @@ describe('routeWords', () => {
       'The email has codes for different projects: SKY1A1, SKY2B2. Choose one.',
     );
     expect(routeWords({ key: null, why: 'none' })).toBe('No project matched this email. Choose one.');
-    expect(routeWords({ key: 'a/b', why: 'thread-code' })).toBe('A project code earlier in this thread.');
+    expect(routeWords({ key: 'a/b', why: 'thread-code' })).toBe(
+      'A project code earlier in this thread picked this project.',
+    );
   });
 });
 
@@ -143,13 +145,15 @@ describe('EmailApproval thread lines', () => {
 
   it('says a code earlier in the thread picked the project', () => {
     show(draft({ route: { key: 'skyseal/site', why: 'thread-code' } }));
-    expect(screen.getByText('A project code earlier in this thread.')).toBeTruthy();
+    expect(screen.getByText('A project code earlier in this thread picked this project.')).toBeTruthy();
   });
 
   it('says when the thread already in the project outranks a different code', () => {
     show(draft({ route: { key: 'skyseal/site', why: 'thread', overruled: 'SKY9Z9' }, thread: thread() }));
     expect(
-      screen.getByText(/The newest email has the code SKY9Z9, but this thread is already in this project\./),
+      screen.getByText(
+        /The newest email has the code SKY9Z9, but an earlier part of this thread is already saved here\./,
+      ),
     ).toBeTruthy();
   });
 
@@ -171,15 +175,20 @@ describe('EmailApproval thread lines', () => {
     expect(screen.getByText('Adds to a thread a teammate saved on 20 Nov 2026.')).toBeTruthy();
   });
 
-  it('says how many messages the summary covers, in the singular and the plural, above Save', () => {
-    show(draft({ thread: thread({ fresh: 1 }) }));
-    const one = screen.getByText('This summary covers 1 message.');
-    expect(one.compareDocumentPosition(screen.getByRole('button', { name: 'Save to project' }))).toBe(
+  it('says how much of the thread the summary covers, above Save, and nothing for a thread of one', () => {
+    show(draft({ thread: thread({ total: 4, fresh: 2 }) }));
+    const some = screen.getByText(
+      'This summary covers 2 of the 4 messages in this thread. The rest are already in a project.',
+    );
+    expect(some.compareDocumentPosition(screen.getByRole('button', { name: 'Save to project' }))).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     cleanup();
-    show(draft({ thread: thread({ fresh: 3 }) }));
-    expect(screen.getByText('This summary covers 3 messages.')).toBeTruthy();
+    show(draft({ thread: thread({ total: 3, fresh: 3 }) }));
+    expect(screen.getByText('This summary covers all 3 messages in this thread.')).toBeTruthy();
+    cleanup();
+    show(draft({ thread: thread({ total: 1, fresh: 1 }) }));
+    expect(screen.queryByText(/This summary covers/)).toBeNull();
   });
 
   it('warns when a teammate saved part of the thread after the draft', () => {

@@ -300,3 +300,28 @@ describe('keyAction: section shortcuts', () => {
     });
   });
 });
+
+describe('keyAction: Esc and Customise Home', () => {
+  const esc = key('Escape');
+  it('shuts it when it floats, leaving panelOpen alone', () => {
+    const s = state({ homeCustomiseOpen: true, panelOpen: true });
+    expect(keyAction(esc, { typing: false, state: s, panelFloating: true })).toEqual({
+      type: 'set-customise-home',
+      open: false,
+    });
+  });
+
+  it('leaves it open when it pushes', () => {
+    expect(
+      keyAction(esc, { typing: false, state: state({ homeCustomiseOpen: true }), panelFloating: false }),
+    ).toBeNull();
+  });
+
+  it('the palette and the task panel still come first', () => {
+    const s = state({ homeCustomiseOpen: true, paletteOpen: true });
+    expect(keyAction(esc, { typing: false, state: s, panelFloating: true })).toEqual({
+      type: 'set-palette',
+      open: false,
+    });
+  });
+});

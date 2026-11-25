@@ -19,6 +19,7 @@ import { keyAction } from '../state/keys.ts';
 import {
   dockModes,
   fitToWidth,
+  followHome,
   giveWay,
   type Layout,
   layoutOf,
@@ -29,7 +30,7 @@ import {
   shellReducer,
   toggleRail,
 } from '../state/shell.ts';
-import { type Store, useStore, useToolSnapshot } from '../store.tsx';
+import { type Store, useStore, useToolSnapshot, type View } from '../store.tsx';
 import { APPS } from './apps.ts';
 import {
   type DrawerName,
@@ -40,6 +41,7 @@ import {
   type ShellState,
 } from './contract.ts';
 import { sectionKeys, visibleToolFor } from './sections.ts';
+import type { ToolSnapshot } from './sections-contract.ts';
 import { settingsTabOrDefault } from './settings-tabs.ts';
 import { ShellContext } from './shell-context.ts';
 import { todoOpener } from './todo-opener.ts';
@@ -121,12 +123,34 @@ const TODO_BOOKKEEPING: ReadonlySet<string> = new Set([
  */
 const LEAVE_CLOSE_TODO: ShellAction = { type: 'close-todo' };
 
-/** A shell action with the width it happened at, or a resize to fit the docks to. */
-type Step = { action: ShellAction; width: number; rail: boolean } | { fit: number; rail: boolean };
+/** A shell action with the width it happened at, a resize to fit the docks to, or a page change (Home or not). */
+type Step =
+  | { action: ShellAction; width: number; rail: boolean }
+  | { fit: number; rail: boolean }
+  | { onHome: boolean };
 
 /** `rail`: whether the rail shows names, since a drawer's push-or-float depends on it. */
 function step(state: ShellState, s: Step): ShellState {
+  if ('onHome' in s) return followHome(state, s.onHome);
   return 'fit' in s ? fitToWidth(state, s.fit, s.rail) : giveWay(state, s.action, s.width, s.rail);
+}
+
+/**
+ * Home is what the sheet shows: the same choice as `SheetContent` in App.tsx (a new chat; or a page that falls back to
+ * Home: an unknown app, a tool this person can't see yet, or the guide when Help is off).
+ */
+export function homeOnSheet(
+  view: View,
+  activeChat: Store['activeChat'],
+  snap: ToolSnapshot,
+  helpOn: boolean,
+): boolean {
+  if (view === 'settings' || view === 'profile') return false;
+  if (view === 'guide') return !helpOn;
+  // `?.`: a store test double may have no view.
+  if (view?.startsWith('app:')) return !APPS.some((a) => view === `app:${a.id}`);
+  if (view?.startsWith('tool:')) return !visibleToolFor(view, snap);
+  return activeChat?.kind !== 'live';
 }
 
 /** Where the person is, in the words Help uses: Home is the chat view with no active chat. */
@@ -209,10 +233,13 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     (view === 'chat' && activeChat?.kind === 'live') ||
     APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||
     visibleToolFor(view, snap)?.tool.Panel !== undefined;
+  const onHome = homeOnSheet(view, activeChat, snap, helpOn);
+  const onHomeRef = useRef(onHome);
+  onHomeRef.current = onHome;
   const [railOverride, setRailOverride] = useState(false);
   const layout = useMemo(
-    () => layoutOf(state, width, { liveOnSheet, railOverride }),
-    [state, width, liveOnSheet, railOverride],
+    () => layoutOf(state, width, { liveOnSheet, railOverride, onHome }),
+    [state, width, liveOnSheet, railOverride, onHome],
   );
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -407,6 +434,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       const opensPanel =
         (action.type === 'toggle-panel' && !s.panelOpen) ||
         (action.type === 'set-panel' && action.open) ||
+        (action.type === 'set-customise-home' && action.open && !s.homeCustomiseOpen) ||
         (action.type === 'show-chat-file' && !now.panelShowing);
       if (opensDrawer) focusIntent.current = 'left';
       else if (opensPanel) focusIntent.current = 'right';
@@ -430,6 +458,21 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       document.getElementById('main')?.focus({ preventScroll: true });
     dispatch({ type: 'close-drawer' });
   }, [view, dispatch]);
+
+  // Customise Home belongs to Home: any other page on the sheet shuts it (decision 15). The layout already hides it
+  // there, so nothing shows in between.
+  useEffect(() => {
+    if (!onHome) rawDispatch({ onHome });
+  }, [onHome]);
+
+  // Customise Home opens only on Home; it never touches `panelOpen` (This chat's).
+  const openCustomiseHome = useCallback(() => {
+    if (onHomeRef.current) dispatch({ type: 'set-customise-home', open: true });
+  }, [dispatch]);
+  const closeCustomiseHome = useCallback(
+    () => dispatch({ type: 'set-customise-home', open: false }),
+    [dispatch],
+  );
 
   // The Skills drawer is only for owners and scouts: one saved from before (or opened any other way) shuts.
   const skillsDrawer = state.drawer === 'skills';
@@ -555,8 +598,31 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   const { modes } = layout;
   const api = useMemo<ShellApi>(
-    () => ({ state, dispatch, modes, panelHold, guardPanel, sheetHold, guardLeave }),
-    [state, dispatch, modes, panelHold, guardPanel, sheetHold, guardLeave],
+    () => ({
+      state,
+      dispatch,
+      modes,
+      panelHold,
+      guardPanel,
+      sheetHold,
+      guardLeave,
+      onHome,
+      homeCustomiseOpen: state.homeCustomiseOpen,
+      openCustomiseHome,
+      closeCustomiseHome,
+    }),
+    [
+      state,
+      dispatch,
+      modes,
+      panelHold,
+      guardPanel,
+      sheetHold,
+      guardLeave,
+      onHome,
+      openCustomiseHome,
+      closeCustomiseHome,
+    ],
   );
   const desk = useMemo<Desk>(
     () => ({

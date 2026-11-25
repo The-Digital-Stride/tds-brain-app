@@ -32,6 +32,7 @@ export const DEFAULT_SHELL: ShellState = {
   singleKeys: true,
   viewerWidth: null,
   chatDrawerWidth: null,
+  homeCustomiseOpen: false,
 };
 
 /** Below this width the rail is always icons only. */
@@ -158,7 +159,12 @@ const coreReducer: ShellReducer = (state, action) => {
     case 'toggle-panel':
       return { ...state, panelOpen: !state.panelOpen };
     case 'set-panel':
+      // Closing the right panel closes it whatever it shows, Customise Home included.
+      if (!action.open && state.homeCustomiseOpen)
+        return { ...state, panelOpen: false, homeCustomiseOpen: false };
       return state.panelOpen === action.open ? state : { ...state, panelOpen: action.open };
+    case 'set-customise-home':
+      return state.homeCustomiseOpen === action.open ? state : { ...state, homeCustomiseOpen: action.open };
     case 'set-panel-tab':
       return state.panelTab === action.tab && state.panelFile === null
         ? state
@@ -225,6 +231,8 @@ export const loadShell: LoadShell = (raw) => {
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
     viewerWidth: savedWidth(parsed.viewerWidth),
     chatDrawerWidth: savedWidth(parsed.chatDrawerWidth),
+    // Never saved: Customise Home is always shut after a reload.
+    homeCustomiseOpen: false,
   };
 };
 
@@ -251,10 +259,21 @@ export const dockModes: DockModesOf = (width, state) => ({
   panelOverlays: width < (state.drawer ? 1400 : 1100),
 });
 
+/** The right panel is wanted: This chat's (`panelOpen`) or Customise Home. Which one shows depends on the sheet. */
+function panelWanted(state: ShellState): boolean {
+  return state.panelOpen || state.homeCustomiseOpen;
+}
+
+/** Shuts the right panel, whatever it shows. */
+function withoutPanel(state: ShellState): ShellState {
+  return { ...state, panelOpen: false, homeCustomiseOpen: false };
+}
+
 /**
  * The reducer plus the rule that the two docks give way to each other when both cannot push:
  * the most recent wins. Opening a drawer closes a panel that would then float. Opening the panel
  * closes the drawer when the panel could push without it; under 1100px the panel floats instead.
+ * Customise Home is the right panel too, so the same rules apply to it.
  */
 export function giveWay(
   state: ShellState,
@@ -265,9 +284,10 @@ export function giveWay(
   const next = shellReducer(state, action);
   const shown = (s: ShellState) => ({ ...s, railWide: railShowsNames });
   const openedDrawer = next.drawer !== null && next.drawer !== state.drawer;
-  const openedPanel = next.panelOpen && !state.panelOpen;
-  if (openedDrawer && next.panelOpen && dockModes(width, shown(next)).panelOverlays) {
-    return { ...next, panelOpen: false };
+  const openedPanel =
+    (next.panelOpen && !state.panelOpen) || (next.homeCustomiseOpen && !state.homeCustomiseOpen);
+  if (openedDrawer && panelWanted(next) && dockModes(width, shown(next)).panelOverlays) {
+    return withoutPanel(next);
   }
   if (
     openedPanel &&
@@ -282,9 +302,14 @@ export function giveWay(
 
 /** After a resize: when both docks are open and one of them must float, the panel closes. */
 export function fitToWidth(state: ShellState, width: number, railShowsNames = state.railWide): ShellState {
-  if (state.drawer === null || !state.panelOpen) return state;
+  if (state.drawer === null || !panelWanted(state)) return state;
   const modes = dockModes(width, { ...state, railWide: railShowsNames });
-  return modes.drawerOverlays || modes.panelOverlays ? { ...state, panelOpen: false } : state;
+  return modes.drawerOverlays || modes.panelOverlays ? withoutPanel(state) : state;
+}
+
+/** Customise Home belongs to Home: once another page is on the sheet, it is shut (decision 15). */
+export function followHome(state: ShellState, onHome: boolean): ShellState {
+  return !onHome && state.homeCustomiseOpen ? { ...state, homeCustomiseOpen: false } : state;
 }
 
 /** How the desk is laid out right now: the rail as it shows, the dock modes, and what is modal. */
@@ -297,7 +322,7 @@ export interface Layout {
   modes: DockModes;
   /** A drawer is open and floating. */
   drawerModal: boolean;
-  /** The panel is open, a live chat is on the sheet, and no floating drawer is over it. */
+  /** The panel is open, a live chat (or, for Customise Home, Home) is on the sheet, and no floating drawer is over it. */
   panelShowing: boolean;
   /** The panel is showing and floating. */
   panelModal: boolean;
@@ -306,10 +331,19 @@ export interface Layout {
 export function layoutOf(
   state: ShellState,
   width: number,
-  { liveOnSheet, railOverride }: { liveOnSheet: boolean; railOverride: boolean },
+  {
+    liveOnSheet,
+    railOverride,
+    onHome = false,
+  }: {
+    liveOnSheet: boolean;
+    railOverride: boolean;
+    /** Home is on the sheet, where the right panel is Customise Home (`homeCustomiseOpen`), not This chat. */
+    onHome?: boolean;
+  },
 ): Layout {
   const chosen = state.railWide && width >= RAIL_NAMES_FROM;
-  const panelWanted = state.panelOpen && liveOnSheet;
+  const panelWanted = (state.panelOpen && liveOnSheet) || (state.homeCustomiseOpen && onHome);
   const pass = (held: boolean) => {
     const railShowsNames = chosen && !held;
     const modes = dockModes(width, { ...state, railWide: railShowsNames });

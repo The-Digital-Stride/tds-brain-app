@@ -96,3 +96,19 @@ describe('ShellProvider: opening Help', () => {
     expect(api.state).toMatchObject({ drawer: 'help', helpPage: 'home' });
   });
 });
+
+describe('ShellProvider: Customise Home', () => {
+  it('closes when the sheet leaves Home, and cannot open off Home', () => {
+    const { rerender } = mount();
+    act(() => api.dispatch({ type: 'set-customise-home', open: true }));
+    expect(api.state.homeCustomiseOpen).toBe(true);
+    setStore({ view: 'settings' });
+    rerender(
+      <ShellProvider>
+        <Probe />
+      </ShellProvider>,
+    );
+    expect(api.onHome).toBe(false);
+    expect(api.state.homeCustomiseOpen).toBe(false);
+  });
+});

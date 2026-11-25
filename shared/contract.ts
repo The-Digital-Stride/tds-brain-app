@@ -1155,6 +1155,37 @@ export interface Thumbnailer {
 // The app's own notes (kept in the app's data folder, never in the brain)
 // ---------------------------------------------------------------------------
 
+/** Every Home item a person can hide, in the default order. The client ignores ids it doesn't know. */
+export const HOME_ITEM_IDS = [
+  'start-my-day',
+  'whats-new',
+  'meetings',
+  'ads',
+  'todos',
+  'projects',
+  'chats',
+  'files',
+  'skills',
+] as const;
+export type HomeItemId = (typeof HOME_ITEM_IDS)[number];
+
+/** The server checks hidden ids by pattern only, so an id from a newer app survives an older server's clean. */
+export const HOME_ITEM_ID_PATTERN = /^[a-z0-9-]{1,40}$/; // same as SECTION_ID_PATTERN
+export const HOME_HIDDEN_MAX = 40;
+export const HOME_SHORTCUTS_MAX = 6;
+/** A skill's name, as the server checks it for pins and Home shortcuts. */
+export const SKILL_NAME_PATTERN = /^[A-Za-z0-9][\w.:-]{0,127}$/;
+
+/** Skills and tools only in v1. A newer app may add kinds; an older server drops unknown kinds on clean. */
+export type HomeShortcut =
+  | { kind: 'skill'; name: string } // name matches SKILL_NAME_PATTERN
+  | { kind: 'tool'; section: string; tool: string }; // both match SECTION_ID_PATTERN
+
+/** Same shortcut twice = same key. Used for de-duplication on both sides, e.g. 'skill:gm', 'tool:workbench/ads'. */
+export function homeShortcutKey(s: HomeShortcut): string {
+  return s.kind === 'skill' ? `skill:${s.name}` : `tool:${s.section}/${s.tool}`;
+}
+
 export interface AppPrefs {
   /** Favourite skills' names, in the order the person starred them (still called `pins`, so older versions agree). */
   pins: string[];
@@ -1209,6 +1240,18 @@ export interface AppPrefs {
    * sends it; optional because an older server sends none, which reads as [].
    */
   favouriteFiles?: string[];
+  /**
+   * Hidden Home items (plan 2026-11-25-home-card-library): ids matching HOME_ITEM_ID_PATTERN, at most HOME_HIDDEN_MAX,
+   * no repeats. An id the app doesn't know is kept, so one from a newer app survives. Kept only here, never in the
+   * brain. This server always sends it; optional because an older server sends none, which reads as [].
+   */
+  homeHidden?: string[];
+  /**
+   * Home shortcut buttons (plan 2026-11-25-home-card-library): in the order added, at most HOME_SHORTCUTS_MAX, no
+   * repeats by homeShortcutKey. Skills and tools only; an unknown kind is dropped on clean. Start my day is not stored
+   * here. This server always sends it; optional because an older server sends none, which reads as [].
+   */
+  homeShortcuts?: HomeShortcut[];
   /**
    * The first-run tour (plan 2026-11-15-cortex-help-phase-3): the TOUR_VERSION last finished or skipped, or null
    * (never). A whole number from 1. Optional because an older server sends none, which reads as null.
@@ -1278,6 +1321,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   favouriteChats: [],
   favouriteTodos: [],
   favouriteFiles: [],
+  homeHidden: [],
+  homeShortcuts: [],
   tourSeen: null,
   whatsNewSeen: null,
 };

@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.85.0 — 2026-11-25
+
+- **feat**: save hidden Home items and shortcuts in settings
+- **feat**: choose what shows on Home and add shortcut buttons
+- **fix**: Customise Home notes belong to 0.85.0
+- **fix**: a stale reload never becomes the list a failed save falls back to
+- **fix**: review fixes for Customise Home
+- **refactor**: own class prefix for the Customise Home panel; note the accepted reload gap
+
 ## v0.84.0 — 2026-11-25
 
 - **feat**: publish facts on permission requests

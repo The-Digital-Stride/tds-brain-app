@@ -8,11 +8,16 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 | Part | File |
 |---|---|
 | The page and its cards | `client/src/shell/Home.tsx` |
+| The list of Home items a person can hide (titles, hints) | `client/src/shell/home-items.ts` |
+| Hide/show and shortcut logic (pure) | `client/src/state/home-layout.ts` |
+| The Customise Home panel body and its CSS | `client/src/shell/CustomiseHome.tsx`, `client/src/styles/customise-home.css` |
+| What a shortcut can point at | `client/src/shell/useHomeShortcuts.ts` |
+| Hidden items and shortcuts (saved in prefs: `homeHidden`, `homeShortcuts`) | `shared/contract.ts`, `server/store/app-store.ts`, `server/http/routes.ts`, `client/src/store.tsx` |
 | What each card lists (pure logic, easy to test) | `client/src/state/home-pins.ts`, `client/src/state/home.ts` |
 | Card and tray layout (grid, rows) | `client/src/styles/home.css` |
 | Words on screen (UK English) | `client/src/shell/words.ts`, or inline in `Home.tsx` |
 | A star on something | `client/src/shell/StarButton.tsx` (+ `FileStar.tsx` for files) |
-| Saving a list of stars | `client/src/state/favourite-list.ts` (`useFavouriteList`), wired in `client/src/store.tsx` |
+| Saving a list of stars, hidden items or shortcuts | `client/src/state/pref-list.ts` (`usePrefList`, optimistic, with the stale-reload guard `keepBoot`); `favourite-list.ts` wraps it for stars; wired in `client/src/store.tsx` |
 | Saved settings (prefs) | `shared/contract.ts` (`AppPrefs`, caps), `server/store/app-store.ts` (clean on read/write), `server/http/routes.ts` (validate on PUT `/api/prefs`) |
 | The look rules | `docs/design-system.md` (update it when a card or control changes) |
 
@@ -44,7 +49,7 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
   "and N more <things>" button that opens the full list. Never a fake list row.
 - **Order matches the drawer's Favourites section** for chats and to-dos; files newest pin first (a new pin is never hidden by the row cap).
 - **Words:** UK English. The star's name stays "Favourite"; Home's headings say "Pinned …".
-- **Four cards fit a 2×2 grid** (`home.css`). A fifth means rethinking the tray, not squeezing.
+- **Any number of cards fits the grid** (`home.css`). A lone last card fills the row (`.home-tray[data-odd="true"]`, set from the count of shown cards, never `:last-child` alone: the drag placeholder is a child too). A new card also needs a row in `home-items.ts`, so people can hide it.
 - **Loading, empty and failed are three different states.** Empty text: "Star a … to keep it here."
 - **Leave no dead code** when a card goes (`needsYou` was removed with its tests).
 - **Prefs stay on this machine.** Never write a pin into the brain.
@@ -68,3 +73,8 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 
 - "and N more files" opens Documents, which has no starred view, so pins past the fifth are found by browsing.
 - A failed pinned-files lookup shows a message but doesn't retry until a star or the library changes.
+- With two tabs open, the last change to hidden items or shortcuts wins (the same gap as favourites).
+- Going back to an older version forgets the Home set-up: an older app drops `homeHidden` and `homeShortcuts` on its next settings save, so everything shows again.
+- An older server sends neither field, so Customise Home is hidden until the server updates.
+- A save sent a moment before a page reload begins, which the server reads before it writes, can show the old list
+  until the next change (`pref-list.ts` `keepBoot`; about a millisecond on a local server, accepted).

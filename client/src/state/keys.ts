@@ -34,7 +34,12 @@ export const keyAction: KeyAction = (
     if (state.paletteOpen) return { type: 'set-palette', open: false };
     // The to-do panel is the topmost layer: it closes first (the shell asks first when it holds unsaved changes).
     if (state.todoPanel) return { type: 'close-todo' };
-    if (panelFloating) return { type: 'set-panel', open: false };
+    // Customise Home shuts on its own, so This chat's panel is still open on the way back to a chat.
+    if (panelFloating) {
+      return state.homeCustomiseOpen
+        ? { type: 'set-customise-home', open: false }
+        : { type: 'set-panel', open: false };
+    }
     // The chat drawer over a tool; a message being typed in it is never thrown away by Esc.
     if (chatDrawer) return chatDraft ? null : { type: 'close-chat-drawer' };
     // Closing Help puts back the drawer it replaced; closing any other drawer just closes it.

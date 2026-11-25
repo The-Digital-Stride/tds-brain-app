@@ -106,7 +106,9 @@ describe('CustomiseHome', () => {
 
   it('says what to do when there are no shortcuts', () => {
     render(<CustomiseHome />);
-    expect(screen.getByText('Add a shortcut to start a skill or open a tool in one click.')).toBeTruthy();
+    expect(
+      screen.getByText('Add a shortcut to start a skill, or open a tool, place or drawer, in one click.'),
+    ).toBeTruthy();
   });
 
   it('adds a shortcut from the grouped list, closes it and focuses the new row', () => {
@@ -217,7 +219,7 @@ describe('CustomiseHome', () => {
     const groups = within(menu)
       .getAllByRole('group')
       .map((g) => g.getAttribute('aria-label'));
-    expect(groups).toEqual(['Skills', 'Tools', 'Places', 'Drawers']);
+    expect(groups).toEqual(['Places', 'Drawers', 'Tools', 'Skills']);
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Tasks' }));
     expect(h.addHomeShortcut).toHaveBeenCalledWith({ kind: 'drawer', drawer: 'todos' });
     h.shortcuts = [

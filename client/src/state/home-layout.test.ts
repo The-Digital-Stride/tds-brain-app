@@ -120,16 +120,16 @@ describe('resolveShortcut with a static tool title', () => {
 });
 
 describe('shortcutChoices', () => {
-  it('lists Skills then Tools, without gm', () => {
+  it('lists Places, Drawers, Tools then Skills, without gm', () => {
     const c = shortcutChoices([], src());
     expect(c.map((x) => [x.group, x.label])).toEqual([
-      ['Skills', 'Standup'],
-      ['Skills', 'Meeting notes'],
-      ['Tools', 'Ads Manager'],
       ['Places', 'Projects'],
       ['Places', 'Documents'],
       ['Drawers', 'Tasks'],
       ['Drawers', 'Chats'],
+      ['Tools', 'Ads Manager'],
+      ['Skills', 'Standup'],
+      ['Skills', 'Meeting notes'],
     ]);
   });
   it('leaves out what is already added', () => {
@@ -142,7 +142,7 @@ describe('shortcutChoices', () => {
       ],
       src(),
     );
-    expect(c.map((x) => x.label)).toEqual(['Meeting notes', 'Documents', 'Tasks']);
+    expect(c.map((x) => x.label)).toEqual(['Documents', 'Tasks', 'Meeting notes']);
   });
   it('has no tools while the tool list loads', () => {
     expect(shortcutChoices([], src({ tools: null })).some((x) => x.group === 'Tools')).toBe(false);

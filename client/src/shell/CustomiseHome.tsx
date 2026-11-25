@@ -126,7 +126,7 @@ export function CustomiseHome() {
     : nothingToAdd
       ? 'Everything is already on your Home.'
       : shortcuts.length === 0
-        ? 'Add a shortcut to start a skill or open a tool in one click.'
+        ? 'Add a shortcut to start a skill, or open a tool, place or drawer, in one click.'
         : '';
 
   return (

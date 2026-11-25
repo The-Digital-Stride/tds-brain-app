@@ -63,8 +63,8 @@ export function resolveShortcut(s: HomeShortcut, src: ShortcutSources): Resolved
 }
 
 export type ShortcutGroup = 'Skills' | 'Tools' | 'Places' | 'Drawers';
-/** The add list's groups, in the order they show. */
-export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Skills', 'Tools', 'Places', 'Drawers'];
+/** The add list's groups, in the order they show: the short fixed lists first, so a Brain's many skills never bury them. */
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Places', 'Drawers', 'Tools', 'Skills'];
 export interface ShortcutChoice {
   group: ShortcutGroup;
   shortcut: HomeShortcut;
@@ -113,7 +113,7 @@ export function shortcutChoices(
       label: d.title,
     }))
     .filter((c) => !have.has(homeShortcutKey(c.shortcut)));
-  return [...skills, ...tools, ...places, ...drawers];
+  return [...places, ...drawers, ...tools, ...skills];
 }
 
 /** The switch rows a person can ever see: no Start my day without the gm skill, no Ads approvals without Ads access. */

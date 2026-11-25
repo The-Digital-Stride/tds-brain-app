@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type AppPrefs, type Bootstrap, DEFAULT_PREFS, type HomeShortcut } from '../../shared/contract.ts';
+import {
+  type AppPrefs,
+  type Bootstrap,
+  DEFAULT_PREFS,
+  type HomeShortcut,
+  homeShortcutKey,
+} from '../../shared/contract.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -219,7 +225,7 @@ describe('Home shortcuts', () => {
     await act(async () => store?.addHomeShortcut(skill('a')));
     await act(async () => store?.addHomeShortcut(skill('g')));
     expect(api.updatePrefs).toHaveBeenCalledTimes(6);
-    expect(store?.homeShortcuts?.map((s) => (s.kind === 'skill' ? s.name : s.tool))).toEqual([
+    expect(store?.homeShortcuts?.map((s) => (s.kind === 'skill' ? s.name : homeShortcutKey(s)))).toEqual([
       'a',
       'b',
       'c',

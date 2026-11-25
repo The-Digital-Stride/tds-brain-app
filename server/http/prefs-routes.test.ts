@@ -104,6 +104,8 @@ describe('PUT /api/prefs: Home hidden items and shortcuts, through the request g
     const homeShortcuts = [
       { kind: 'skill', name: 'meeting-notes' },
       { kind: 'tool', section: 'workbench', tool: 'ads' },
+      { kind: 'place', place: 'projects' },
+      { kind: 'drawer', drawer: 'todos' },
     ];
     const put = await send('PUT', { homeHidden, homeShortcuts });
     expect(put.status).toBe(200);
@@ -117,6 +119,6 @@ describe('PUT /api/prefs: Home hidden items and shortcuts, through the request g
     const put = await send('PUT', { homeShortcuts: seven });
     expect(put.status).toBe(400);
     expect(put.json.error?.message).toBe('The Home shortcuts were not understood.');
-    expect((await prefs()).homeShortcuts).toHaveLength(2);
+    expect((await prefs()).homeShortcuts).toHaveLength(4);
   });
 });

@@ -1,4 +1,10 @@
-import { type HomeItemId, type HomeShortcut, homeShortcutKey } from '../../../shared/contract.ts';
+import {
+  type HomeItemId,
+  type HomeShortcut,
+  type HomeShortcutDrawer,
+  type HomeShortcutPlace,
+  homeShortcutKey,
+} from '../../../shared/contract.ts';
 import { HOME_ITEMS, type HomeItemDef } from '../shell/home-items.ts';
 
 /** Whether a Home item shows: not hidden by the person, and its own condition (if it has one) holds. */
@@ -17,23 +23,53 @@ export interface ShortcutSources {
   tools: readonly { section: string; tool: string; title: string }[] | null;
   /** A tool's fixed title, for a shortcut that is still loading or gone. Falls back to the raw id when absent. */
   toolTitle?: (section: string, tool: string) => string | undefined;
+  /** The places (rail apps) a shortcut can open, in rail order. */
+  places: readonly { id: HomeShortcutPlace; title: string }[];
+  /** The drawers a shortcut can open, by their rail names ("Tasks", "Chats"). */
+  drawers: readonly { id: HomeShortcutDrawer; title: string }[];
   actions: {
     startSkill: (name: string) => void;
     openTool: (section: string, tool: string) => void;
+    openPlace: (id: HomeShortcutPlace) => void;
+    openDrawer: (id: HomeShortcutDrawer) => void;
   };
 }
 
 export function resolveShortcut(s: HomeShortcut, src: ShortcutSources): ResolvedShortcut {
   const key = homeShortcutKey(s);
-  if (s.kind === 'skill') {
-    const hit = src.skills.find((k) => k.name === s.name);
-    if (!hit) return { state: 'gone', key, label: s.name };
-    return { state: 'ready', key, label: hit.title, run: () => src.actions.startSkill(s.name) };
+  switch (s.kind) {
+    case 'skill': {
+      const hit = src.skills.find((k) => k.name === s.name);
+      if (!hit) return { state: 'gone', key, label: s.name };
+      return { state: 'ready', key, label: hit.title, run: () => src.actions.startSkill(s.name) };
+    }
+    case 'tool': {
+      if (src.tools === null) return { state: 'waiting', key };
+      const hit = src.tools.find((t) => t.section === s.section && t.tool === s.tool);
+      if (!hit) return { state: 'gone', key, label: src.toolTitle?.(s.section, s.tool) ?? s.tool };
+      return { state: 'ready', key, label: hit.title, run: () => src.actions.openTool(s.section, s.tool) };
+    }
+    case 'place': {
+      const hit = src.places.find((p) => p.id === s.place);
+      if (!hit) return { state: 'gone', key, label: s.place };
+      return { state: 'ready', key, label: hit.title, run: () => src.actions.openPlace(s.place) };
+    }
+    case 'drawer': {
+      const hit = src.drawers.find((d) => d.id === s.drawer);
+      if (!hit) return { state: 'gone', key, label: s.drawer };
+      return { state: 'ready', key, label: hit.title, run: () => src.actions.openDrawer(s.drawer) };
+    }
   }
-  if (src.tools === null) return { state: 'waiting', key };
-  const hit = src.tools.find((t) => t.section === s.section && t.tool === s.tool);
-  if (!hit) return { state: 'gone', key, label: src.toolTitle?.(s.section, s.tool) ?? s.tool };
-  return { state: 'ready', key, label: hit.title, run: () => src.actions.openTool(s.section, s.tool) };
+}
+
+export type ShortcutGroup = 'Skills' | 'Tools' | 'Places' | 'Drawers';
+/** The add list's groups, in the order they show: the short fixed lists first, so a Brain's many skills never bury them. */
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Places', 'Drawers', 'Tools', 'Skills'];
+export interface ShortcutChoice {
+  group: ShortcutGroup;
+  shortcut: HomeShortcut;
+  label: string;
+  meta?: string;
 }
 
 /**
@@ -44,7 +80,7 @@ export function shortcutChoices(
   current: readonly HomeShortcut[],
   src: ShortcutSources,
   pins: readonly string[] = [],
-): { group: 'Skills' | 'Tools'; shortcut: HomeShortcut; label: string; meta?: string }[] {
+): ShortcutChoice[] {
   const have = new Set(current.map(homeShortcutKey));
   const skills = src.skills
     .filter((k) => k.name !== 'gm')
@@ -63,7 +99,21 @@ export function shortcutChoices(
     }))
     .filter((c) => !have.has(homeShortcutKey(c.shortcut)))
     .map((c) => ({ group: 'Tools' as const, ...c }));
-  return [...skills, ...tools];
+  const places = src.places
+    .map((p) => ({
+      group: 'Places' as const,
+      shortcut: { kind: 'place', place: p.id } as HomeShortcut,
+      label: p.title,
+    }))
+    .filter((c) => !have.has(homeShortcutKey(c.shortcut)));
+  const drawers = src.drawers
+    .map((d) => ({
+      group: 'Drawers' as const,
+      shortcut: { kind: 'drawer', drawer: d.id } as HomeShortcut,
+      label: d.title,
+    }))
+    .filter((c) => !have.has(homeShortcutKey(c.shortcut)));
+  return [...places, ...drawers, ...tools, ...skills];
 }
 
 /** The switch rows a person can ever see: no Start my day without the gm skill, no Ads approvals without Ads access. */

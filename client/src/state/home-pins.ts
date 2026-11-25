@@ -47,3 +47,71 @@ export function recentProjects(cards: readonly ProjectCard[] | undefined): Proje
     .filter((c) => isOpenProject(c) && Boolean(c.lastChanged))
     .sort((a, b) => Date.parse(b.lastChanged?.at ?? '') - Date.parse(a.lastChanged?.at ?? ''));
 }
+
+/** Most rows a Recent card ever holds (the server's cap for files; tasks and chats are cut to match). */
+export const RECENT_MAX = 20;
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * When a task reached the person and how to say so: "Passed to you" when someone else passed it to `me` after it was made,
+ * else "Added" from `created` (first 10 characters, when a YYYY-MM-DD date), else the file name's date when it
+ * is today or earlier (a later one is a reminder date, not an arrival). `date` is an ISO timestamp or a day.
+ */
+export function todoArrival(
+  t: TodoItem,
+  today: string,
+  me: string | null,
+): { date: string; word: 'Added' | 'Passed to you' } | null {
+  const created = t.created && ISO_DAY.test(t.created) ? t.created.slice(0, 10) : null;
+  // Only a task passed on to this person by someone else counts; one open to anyone, or taken by them, is "Added".
+  const toMe = Boolean(me) && t.assignee === me && t.handover?.by !== me;
+  const passed = toMe && t.handover?.at && !Number.isNaN(Date.parse(t.handover.at)) ? t.handover.at : null;
+  if (passed && (!created || passed.slice(0, 10) > created)) return { date: passed, word: 'Passed to you' };
+  if (created) return { date: created, word: 'Added' };
+  if (t.surfaceDate && ISO_DAY.test(t.surfaceDate) && t.surfaceDate <= today)
+    return { date: t.surfaceDate, word: 'Added' };
+  return null;
+}
+
+/**
+ * The tasks Home lists under "Recent tasks": yours, then ones open to anyone, TDS scope only (private titles
+ * stay off Home unless pinned), once each, newest arrival first, undated last, ties by title.
+ */
+export function recentTodos(
+  mine: TodoItem[],
+  open: TodoItem[],
+  today: string,
+  me: string | null,
+): TodoItem[] {
+  const seen = new Set<string>();
+  const rows: { t: TodoItem; at: number }[] = [];
+  for (const t of [...mine, ...open]) {
+    if (t.scope !== 'tds' || seen.has(t.key)) continue;
+    seen.add(t.key);
+    const a = todoArrival(t, today, me);
+    rows.push({ t, at: a ? Date.parse(a.date) : Number.NEGATIVE_INFINITY });
+  }
+  rows.sort((a, b) => (a.at === b.at ? a.t.title.localeCompare(b.t.title) : b.at - a.at));
+  return rows.map((r) => r.t);
+}
+
+const stamp = (iso: string) => {
+  const n = Date.parse(iso);
+  return Number.isNaN(n) ? Number.NEGATIVE_INFINITY : n;
+};
+
+/**
+ * The chats Home lists under "Recent chats": open and earlier together, newest activity first. A chat open
+ * and earlier at once shows once, as open.
+ */
+export function recentChats(live: LiveSession[], past: PastSession[]): PinnedChat[] {
+  const openIds = new Set(live.map((s) => s.sdkSessionId).filter((id): id is string => Boolean(id)));
+  const rows: { row: PinnedChat; at: number }[] = [
+    ...live.map((chat) => ({ row: { kind: 'live', chat } as PinnedChat, at: stamp(chat.lastActivityAt) })),
+    ...past
+      .filter((s) => !openIds.has(s.sdkSessionId))
+      .map((chat) => ({ row: { kind: 'past', chat } as PinnedChat, at: stamp(chat.lastModified) })),
+  ];
+  return rows.sort((a, b) => b.at - a.at).map((r) => r.row);
+}

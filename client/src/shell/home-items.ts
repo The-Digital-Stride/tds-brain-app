@@ -22,6 +22,7 @@ export const HOME_ITEMS: readonly HomeItemDef[] = [
     hint: "Shows only while an Ads change waits for you. You'll still find it in Ads Manager.",
   },
   { id: 'todos', title: 'Pinned tasks', kind: 'card' },
+  { id: 'recent-todos', title: 'Recent tasks', kind: 'card' },
   {
     id: 'projects',
     title: 'Recent projects',
@@ -29,6 +30,9 @@ export const HOME_ITEMS: readonly HomeItemDef[] = [
     hint: 'Shows once a project has been worked on.',
   },
   { id: 'chats', title: 'Pinned chats', kind: 'card' },
+  { id: 'recent-chats', title: 'Recent chats', kind: 'card' },
   { id: 'files', title: 'Pinned files', kind: 'card' },
+  { id: 'recent-documents', title: 'Recent documents', kind: 'card' },
+  { id: 'recent-images', title: 'Recent images', kind: 'card' },
   { id: 'skills', title: 'Pinned skills', kind: 'card' },
 ];

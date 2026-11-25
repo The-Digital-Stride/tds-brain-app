@@ -941,6 +941,11 @@ export interface BrainReaders {
    */
   librarySearch?(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
   /**
+   * The newest files of one kind for Home's Recent cards (see LibraryRecentResponse). Optional so older test
+   * fakes still satisfy the type; the route answers an empty reply when it is missing.
+   */
+  libraryRecent?(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse>;
+  /**
    * The listed scope a path from the brain's root falls in, with the key the file has (or would
    * have) there and the item when it is listed now (chat files, plan 2026-11-13-chat-files).
    * Null when the path is in no listed scope, or the library rules never list it. Optional so older
@@ -1162,9 +1167,13 @@ export const HOME_ITEM_IDS = [
   'meetings',
   'ads',
   'todos',
+  'recent-todos',
   'projects',
   'chats',
+  'recent-chats',
   'files',
+  'recent-documents',
+  'recent-images',
   'skills',
 ] as const;
 export type HomeItemId = (typeof HOME_ITEM_IDS)[number];
@@ -2322,6 +2331,8 @@ export const ROUTES = {
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
   librarySearch: '/api/library/search',
+  /** `GET ?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse (Home's Recent cards). Read-only. */
+  libraryRecent: '/api/library/recent',
   /**
    * `POST {ids: string[]}` (at most FAVOURITE_FILES_MAX ids) → LibraryItemsResponse. The listed files for these ids,
    * in the order sent; an id that is unknown or no longer a listed file is left out. Read-only.
@@ -2417,4 +2428,22 @@ export interface LibrarySearchResponse {
 }
 
 export const LIBRARY_SEARCH_MAX = 20;
+
+/** At most this many files a Home Recent card can hold (plan 2026-11-25-home-recent-cards). */
+export const LIBRARY_RECENT_MAX = 20;
+
+/**
+ * `GET /api/library/recent?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse. Read-only. The newest
+ * files of one kind across every client and shared scope the person can see; personal-scope files are never
+ * listed (private titles stay off screen unasked). Newest `modified` first, ties by path, at most
+ * LIBRARY_RECENT_MAX. With `project`, only files whose `item.projects` holds that key, filtered before the cap;
+ * with no project index, no files. Same listing gathering as search: cached listings even past freshness
+ * (refreshing behind), cold scopes built three at a time within the search budget, then `partial: true`.
+ * Items carry `projects` like search hits. Bad `kind`, or a `project` failing PROJECT_KEY_PATTERN → 400
+ * `bad-request`.
+ */
+export interface LibraryRecentResponse {
+  files: LibrarySearchHit[];
+  partial: boolean;
+}
 export const LIBRARY_SEARCH_QUERY = { min: 2, max: 80 } as const;

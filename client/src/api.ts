@@ -42,6 +42,7 @@ import type {
   LibraryItemsResponse,
   LibraryKind,
   LibraryListing,
+  LibraryRecentResponse,
   LibraryScope,
   LibrarySearchResponse,
   LibraryText,
@@ -375,6 +376,17 @@ export const api = {
     request<LibrarySearchResponse>(
       'GET',
       `${ROUTES.librarySearch}?q=${encodeURIComponent(q)}&kind=${kind === 'document' ? 'doc' : 'image'}`,
+      undefined,
+      undefined,
+      opts,
+    ),
+  /** Home's Recent documents / images: the newest files of one kind, optionally one project's. */
+  libraryRecent: (kind: LibraryKind, project?: string, opts?: SendOptions) =>
+    request<LibraryRecentResponse>(
+      'GET',
+      `${ROUTES.libraryRecent}?kind=${kind === 'document' ? 'doc' : 'image'}${
+        project ? `&project=${encodeURIComponent(project)}` : ''
+      }`,
       undefined,
       undefined,
       opts,

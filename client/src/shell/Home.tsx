@@ -1,9 +1,11 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   attentionFor,
   type ClientGuessResponse,
   type ClientPickReported,
   type LibraryItemsResponse,
+  type LibraryKind,
+  type LibraryRecentResponse,
   type SkillInfo,
   type TodoItem,
 } from '../../../shared/contract.ts';
@@ -22,7 +24,19 @@ import {
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
 import { isShown, resolveShortcut } from '../state/home-layout.ts';
-import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos, recentProjects } from '../state/home-pins.ts';
+import {
+  PINNED_ROWS,
+  type PinnedChat,
+  pinnedChats,
+  pinnedFileIds,
+  pinnedTodos,
+  RECENT_MAX,
+  recentChats,
+  recentProjects,
+  recentTodos,
+  todoArrival,
+} from '../state/home-pins.ts';
+import { ASYNC_RETRIES, ASYNC_RETRY_MS } from '../state/palette.ts';
 import { filterOptions, projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
 import { todoProjectKey } from '../state/todo-filter.ts';
 import { isNewToYou } from '../state/todo-new.ts';
@@ -61,7 +75,8 @@ const ALL = 'all';
 
 /** "24 Nov" (with the year when it isn't this one): the day a project was last worked on. */
 function whenDate(iso: string): string {
-  const d = new Date(iso);
+  // A bare day ("2026-11-24") is read at midday so no time zone moves it to the day before.
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
   if (Number.isNaN(d.getTime())) return '';
   const sameYear = d.getFullYear() === new Date().getFullYear();
   return d.toLocaleDateString('en-GB', {
@@ -108,7 +123,88 @@ function ProjectPicker({
 }
 
 /** Every Home card that can show, in the default order (Ads approvals only while something waits). */
-const HOME_CARDS = ['meetings', 'ads', 'todos', 'projects', 'chats', 'files', 'skills'];
+const HOME_CARDS = [
+  'meetings',
+  'ads',
+  'todos',
+  'recent-todos',
+  'projects',
+  'chats',
+  'recent-chats',
+  'files',
+  'recent-documents',
+  'recent-images',
+  'skills',
+];
+
+type RecentFiles = {
+  /** The reply's files, for the project it was asked for. */
+  files: LibraryRecentResponse['files'] | null;
+  project: string;
+  failed: boolean;
+  /** A partial answer is being asked again. */
+  waiting: boolean;
+  /** A non-partial answer for this project has arrived, so an empty list really is empty. */
+  complete: boolean;
+};
+
+/**
+ * One Recent files card's list (plan 2026-11-25-home-recent-cards, decision 7). Skipped while the card is hidden;
+ * redone when the library changes or Working on does. A reply for an older kind or project is dropped, old rows
+ * stay while a new request for the same project runs, and a `partial` answer is asked again every second, up to
+ * five more times.
+ */
+function useRecentFiles(kind: LibraryKind, project: string, hidden: boolean, libraryVersion: number) {
+  const [state, setState] = useState<RecentFiles>({
+    files: null,
+    project,
+    failed: false,
+    waiting: false,
+    complete: false,
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `libraryVersion` refreshes after a change on disk
+  useEffect(() => {
+    if (hidden) return;
+    let current = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (retried: number) => {
+      Promise.resolve()
+        .then(() => api.libraryRecent(kind, project || undefined))
+        .then((r) => {
+          if (!current) return;
+          const again = r.partial === true && retried < ASYNC_RETRIES;
+          setState({ files: r.files ?? [], project, failed: false, waiting: again, complete: !r.partial });
+          if (again) timer = setTimeout(() => attempt(retried + 1), ASYNC_RETRY_MS);
+        })
+        .catch(() => {
+          if (!current) return;
+          // Another project's rows are not kept under this one.
+          setState((s) =>
+            s.project === project
+              ? { ...s, failed: true, waiting: false }
+              : { files: null, project, failed: true, waiting: false, complete: false },
+          );
+        });
+    };
+    attempt(0);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [kind, project, hidden, libraryVersion]);
+  // Rows kept from another project are not shown under this one.
+  const mine = state.project === project ? state.files : null;
+  const here = state.project === project;
+  return {
+    files: mine,
+    failed: here && state.failed,
+    waiting: here && state.waiting,
+    complete: here && state.complete,
+  };
+}
+
+/** How long a star in a Recent card holds its row in place while Pinned files catches up. */
+const HOLD_MS = 3000;
 
 const AUTO = '@auto';
 const NONE = '@none';
@@ -157,6 +253,10 @@ export function Home() {
     projects: false,
     chats: false,
     files: false,
+    recentTodos: false,
+    recentChats: false,
+    recentDocuments: false,
+    recentImages: false,
   });
   const toggleCard = (c: PinnedCard) => setExpanded((e) => ({ ...e, [c]: !e[c] }));
   const rowsShown = (c: PinnedCard) => (expanded[c] ? undefined : PINNED_ROWS);
@@ -244,6 +344,11 @@ export function Home() {
     };
   }, [fileKey, libraryVersion, filesHidden]);
 
+  const recentDocsHidden = !isShown('recent-documents', homeHidden);
+  const recentImagesHidden = !isShown('recent-images', homeHidden);
+  const recentDocs = useRecentFiles('document', project, recentDocsHidden, libraryVersion);
+  const recentImages = useRecentFiles('image', project, recentImagesHidden, libraryVersion);
+
   // Each card's star keeps focus when its row moves or goes (a favourite taken off leaves the card).
   const todoCard = useRef<HTMLElement>(null);
   const chatCard = useRef<HTMLElement>(null);
@@ -251,6 +356,40 @@ export function Home() {
   const skillCard = useRef<HTMLElement>(null);
   const todoStar = useStarFocus(todoCard, boot?.prefs.favouriteTodos ?? NO_FAVOURITES);
   const chatStar = useStarFocus(chatCard, boot?.prefs.favouriteChats ?? NO_FAVOURITES);
+  // A star in a Recent card must not move on screen: its Pinned twin can grow above it and push it down. The
+  // pressed button and its top are kept, and the next render scrolls Home by however far it moved. A file star
+  // waits for the Pinned files lookup (its new row only arrives with the reply), so the hold lasts until
+  // `pinnedFiles` changes, the lookup fails, or HOLD_MS passes.
+  const heldStar = useRef<{
+    button: HTMLElement;
+    top: number;
+    files?: typeof pinnedFiles;
+    until: number;
+  } | null>(null);
+  const holdPlace = (button: HTMLElement, waitForFiles = false) => {
+    heldStar.current = {
+      button,
+      top: button.getBoundingClientRect().top,
+      ...(waitForFiles && !filesHidden ? { files: pinnedFiles } : {}),
+      until: Date.now() + HOLD_MS,
+    };
+  };
+  useLayoutEffect(() => {
+    const held = heldStar.current;
+    if (!held) return;
+    const waiting = 'files' in held && held.files === pinnedFiles && !filesFailed && Date.now() < held.until;
+    if (!waiting) heldStar.current = null;
+    if (!held.button.isConnected) {
+      heldStar.current = null;
+      return;
+    }
+    const shift = held.button.getBoundingClientRect().top - held.top;
+    const scroller = held.button.closest('.home-scroll');
+    if (shift === 0 || !scroller) return;
+    scroller.scrollTop += shift;
+    // Where it rests now (short of the mark when Home can't scroll that far), so a later render never scrolls twice.
+    held.top = held.button.getBoundingClientRect().top;
+  });
   const fileStar = useStarFocus(fileCard, boot?.prefs.favouriteFiles ?? NO_FAVOURITES);
   const skillStar = useStarFocus(skillCard, boot?.prefs.pins ?? NO_FAVOURITES);
 
@@ -264,9 +403,13 @@ export function Home() {
     { id: 'meetings', title: 'Meetings', shown: isShown('meetings', homeHidden) },
     { id: 'ads', title: 'Ads approvals', shown: isShown('ads', homeHidden, adsShown) },
     { id: 'todos', title: 'Pinned tasks', shown: isShown('todos', homeHidden) },
+    { id: 'recent-todos', title: 'Recent tasks', shown: isShown('recent-todos', homeHidden) },
     { id: 'projects', title: 'Recent projects', shown: isShown('projects', homeHidden, projectsShown) },
     { id: 'chats', title: 'Pinned chats', shown: isShown('chats', homeHidden) },
+    { id: 'recent-chats', title: 'Recent chats', shown: isShown('recent-chats', homeHidden) },
     { id: 'files', title: 'Pinned files', shown: !filesHidden },
+    { id: 'recent-documents', title: 'Recent documents', shown: !recentDocsHidden },
+    { id: 'recent-images', title: 'Recent images', shown: !recentImagesHidden },
     // Owners and scouts only: the team doesn't start skills from Cortex's own buttons (Ian, 2026-11-25).
     { id: 'skills', title: 'Pinned skills', shown: isShown('skills', homeHidden, hasSkills) },
   ];
@@ -287,6 +430,12 @@ export function Home() {
   const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []).filter(
     inProject,
   );
+  const recentTodoRows = recentTodos(mine, todos?.open ?? [], today, boot.identity.slug)
+    .filter(inProject)
+    .slice(0, RECENT_MAX);
+  const recentChatRows = recentChats(live, sessions?.past ?? []).slice(0, RECENT_MAX);
+  const favTodos = new Set(boot.prefs.favouriteTodos ?? []);
+  const favChats = new Set(boot.prefs.favouriteChats ?? []);
   const pinnedChatRows = pinnedChats(live, sessions?.past ?? [], boot.prefs.favouriteChats ?? []);
   const starredFiles = new Set(boot.prefs.favouriteFiles ?? []);
   const pinnedFileRows = (pinnedFiles ?? []).filter(
@@ -301,19 +450,42 @@ export function Home() {
         openIn: { app: f.item.kind === 'image' ? 'images' : 'documents', scope: f.scope.id },
       },
     });
-  const chatStarFor = (chat: { sdkSessionId: string | null; title?: string | null }) => (
+  const chatStarFor = (
+    chat: { sdkSessionId: string | null; title?: string | null },
+    on = true,
+    track = true,
+  ) => (
     <StarButton
       id={chat.sdkSessionId ?? ''}
       title={chat.title || 'New chat'}
-      on={true}
+      on={on}
       onPress={(id, button) => {
         // A favourite chat always has its id; the guard is for the type's sake.
         if (!id) return;
-        chatStar(id, button);
+        // Only the Pinned card moves rows when a star changes; a Recent row stays where it is.
+        if (track) chatStar(id, button);
+        else holdPlace(button);
         void toggleFavouriteChat(id);
       }}
     />
   );
+  const chatRowNode = (row: PinnedChat, star: ReactNode) =>
+    row.kind === 'live' ? (
+      <HomeRow key={row.chat.sdkSessionId ?? row.chat.id} onOpen={() => openChat(row.chat.id)} star={star}>
+        <span className="dot" data-attention={attentionFor(row.chat.state) ?? undefined} aria-hidden="true" />
+        <span className="line-text">
+          <span className="line-title">{row.chat.title}</span>
+          <span className="line-meta">{STATE_WORDS[row.chat.state]}</span>
+        </span>
+      </HomeRow>
+    ) : (
+      <HomeRow key={row.chat.sdkSessionId} onOpen={() => void openPast(row.chat.sdkSessionId)} star={star}>
+        <span className="line-text">
+          <span className="line-title">{row.chat.title || 'New chat'}</span>
+          <span className="line-meta">{whenWords(row.chat.lastModified)}</span>
+        </span>
+      </HomeRow>
+    );
   const openDrawer = (drawer: DrawerName) => dispatch({ type: 'open-drawer', drawer });
   const clientName = (slug: string | null) => (slug ? placeName(slug, clients) : null);
 
@@ -324,6 +496,86 @@ export function Home() {
     // button inside the panel does that.
     openDrawer('todos');
     revealTodo(todo);
+  };
+
+  // Recent documents and Recent images: the same card, a different kind and wording.
+  const recentFilesCard = (c: {
+    id: 'recent-documents' | 'recent-images';
+    title: string;
+    list: ReturnType<typeof useRecentFiles>;
+    expandedKey: PinnedCard;
+    app: 'app:documents' | 'app:images';
+    all: string;
+    nouns: [string, string];
+    empty: [string, string];
+  }) => {
+    const rows = (c.list.files ?? []).slice(0, RECENT_MAX);
+    return (
+      <section
+        key={c.id}
+        className="card"
+        aria-labelledby={`home-${c.id}`}
+        tabIndex={-1}
+        {...order.cardProps(c.id)}
+      >
+        <div className="card-head">
+          {order.grip(c.id)}
+          <h2 id={`home-${c.id}`}>{c.title}</h2>
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            onClick={() => openView(c.app)}
+          >
+            {c.all}
+          </button>
+        </div>
+        {rows.length === 0 &&
+        (c.list.failed || (c.list.files !== null && !c.list.waiting && !c.list.complete)) ? (
+          <StateNote kind="error">Couldn't load {c.title.toLowerCase()}.</StateNote>
+        ) : c.list.files === null || (rows.length === 0 && c.list.waiting) ? (
+          <StateNote kind="loading" />
+        ) : rows.length === 0 ? (
+          <StateNote kind="empty">{project ? c.empty[1] : c.empty[0]}</StateNote>
+        ) : (
+          <>
+            <ul className="drawer-list">
+              {rows.slice(0, rowsShown(c.expandedKey)).map((f) => (
+                <HomeRow
+                  key={f.item.id}
+                  onOpen={() => openFile(f)}
+                  star={
+                    <StarButton
+                      id={f.item.id}
+                      title={f.item.title}
+                      on={starredFiles.has(f.item.id)}
+                      onPress={(id, button) => {
+                        holdPlace(button, true);
+                        void toggleFavouriteFile(id);
+                      }}
+                    />
+                  }
+                >
+                  <span className="line-text">
+                    <span className="line-title">{f.item.title}</span>
+                    <span className="line-meta">
+                      Changed {whenDate(f.item.modified)}, {f.scope.name}
+                    </span>
+                  </span>
+                </HomeRow>
+              ))}
+            </ul>
+            <MoreLink
+              total={rows.length}
+              noun={c.nouns}
+              expanded={expanded[c.expandedKey]}
+              onToggle={() => toggleCard(c.expandedKey)}
+            />
+          </>
+        )}
+      </section>
+    );
   };
 
   const favouriteSkills = new Set(boot.prefs.pins ?? []);
@@ -694,6 +946,86 @@ export function Home() {
                 ),
               },
               {
+                id: 'recent-todos',
+                node: (
+                  <section
+                    key="recent-todos"
+                    className="card"
+                    aria-labelledby="home-recent-todos"
+                    tabIndex={-1}
+                    {...order.cardProps('recent-todos')}
+                  >
+                    <div className="card-head">
+                      {order.grip('recent-todos')}
+                      <h2 id="home-recent-todos">Recent tasks</h2>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        onClick={() => openDrawer('todos')}
+                      >
+                        All tasks
+                      </button>
+                    </div>
+                    {!todos ? (
+                      <StateNote kind="loading" />
+                    ) : recentTodoRows.length === 0 ? (
+                      <StateNote kind="empty">
+                        {project ? 'No tasks in this project.' : 'No tasks yet.'}
+                      </StateNote>
+                    ) : (
+                      <>
+                        <ul className="drawer-list">
+                          {recentTodoRows.slice(0, rowsShown('recentTodos')).map((t) => {
+                            const arrived = todoArrival(t, today, boot.identity.slug);
+                            const place = todoProjectKey(t)
+                              ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
+                              : null;
+                            return (
+                              <HomeRow
+                                key={t.key}
+                                onOpen={() => openTodo(t)}
+                                star={
+                                  <StarButton
+                                    id={t.key}
+                                    title={t.title}
+                                    on={favTodos.has(t.key)}
+                                    onPress={(id, button) => {
+                                      holdPlace(button);
+                                      void toggleFavouriteTodo(id);
+                                    }}
+                                  />
+                                }
+                              >
+                                <span className="line-text">
+                                  <span className="line-title">{t.title}</span>
+                                  <span className="line-meta">
+                                    {arrived ? `${arrived.word} ${whenDate(arrived.date)}` : null}
+                                    {metaParts(t, today, clientName, place).map((part, i) => (
+                                      <span key={part.text}>
+                                        {i > 0 || arrived ? ', ' : ''}
+                                        <span className={part.late ? 'late' : undefined}>{part.text}</span>
+                                      </span>
+                                    ))}
+                                  </span>
+                                </span>
+                              </HomeRow>
+                            );
+                          })}
+                        </ul>
+                        <MoreLink
+                          total={recentTodoRows.length}
+                          noun={['task', 'tasks']}
+                          expanded={expanded.recentTodos}
+                          onToggle={() => toggleCard('recentTodos')}
+                        />
+                      </>
+                    )}
+                  </section>
+                ),
+              },
+              {
                 id: 'projects',
                 node: (
                   <section
@@ -776,42 +1108,65 @@ export function Home() {
                     ) : (
                       <>
                         <ul className="drawer-list">
-                          {pinnedChatRows.slice(0, rowsShown('chats')).map((row) =>
-                            row.kind === 'live' ? (
-                              <HomeRow
-                                key={row.chat.sdkSessionId}
-                                onOpen={() => openChat(row.chat.id)}
-                                star={chatStarFor(row.chat)}
-                              >
-                                <span
-                                  className="dot"
-                                  data-attention={attentionFor(row.chat.state) ?? undefined}
-                                  aria-hidden="true"
-                                />
-                                <span className="line-text">
-                                  <span className="line-title">{row.chat.title}</span>
-                                  <span className="line-meta">{STATE_WORDS[row.chat.state]}</span>
-                                </span>
-                              </HomeRow>
-                            ) : (
-                              <HomeRow
-                                key={row.chat.sdkSessionId}
-                                onOpen={() => void openPast(row.chat.sdkSessionId)}
-                                star={chatStarFor(row.chat)}
-                              >
-                                <span className="line-text">
-                                  <span className="line-title">{row.chat.title || 'New chat'}</span>
-                                  <span className="line-meta">{whenWords(row.chat.lastModified)}</span>
-                                </span>
-                              </HomeRow>
-                            ),
-                          )}
+                          {pinnedChatRows
+                            .slice(0, rowsShown('chats'))
+                            .map((row) => chatRowNode(row, chatStarFor(row.chat)))}
                         </ul>
                         <MoreLink
                           total={pinnedChatRows.length}
                           noun={['chat', 'chats']}
                           expanded={expanded.chats}
                           onToggle={() => toggleCard('chats')}
+                        />
+                      </>
+                    )}
+                  </section>
+                ),
+              },
+              {
+                id: 'recent-chats',
+                node: (
+                  <section
+                    key="recent-chats"
+                    className="card"
+                    aria-labelledby="home-recent-chats"
+                    tabIndex={-1}
+                    {...order.cardProps('recent-chats')}
+                  >
+                    <div className="card-head">
+                      {order.grip('recent-chats')}
+                      <h2 id="home-recent-chats">Recent chats</h2>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        onClick={() => openDrawer('chats')}
+                      >
+                        All chats
+                      </button>
+                    </div>
+                    {!sessions ? (
+                      <StateNote kind="loading" />
+                    ) : recentChatRows.length === 0 ? (
+                      <StateNote kind="empty">No chats yet.</StateNote>
+                    ) : (
+                      <>
+                        <ul className="drawer-list">
+                          {recentChatRows.slice(0, rowsShown('recentChats')).map((row) => {
+                            const id = row.chat.sdkSessionId;
+                            // A chat with no lasting id can't be pinned yet.
+                            return chatRowNode(
+                              row,
+                              id ? chatStarFor(row.chat, favChats.has(id), false) : null,
+                            );
+                          })}
+                        </ul>
+                        <MoreLink
+                          total={recentChatRows.length}
+                          noun={['chat', 'chats']}
+                          expanded={expanded.recentChats}
+                          onToggle={() => toggleCard('recentChats')}
                         />
                       </>
                     )}
@@ -886,6 +1241,32 @@ export function Home() {
                     )}
                   </section>
                 ),
+              },
+              {
+                id: 'recent-documents',
+                node: recentFilesCard({
+                  id: 'recent-documents',
+                  title: 'Recent documents',
+                  list: recentDocs,
+                  expandedKey: 'recentDocuments',
+                  app: 'app:documents',
+                  all: 'All documents',
+                  nouns: ['document', 'documents'],
+                  empty: ['No documents yet.', 'No documents in this project.'],
+                }),
+              },
+              {
+                id: 'recent-images',
+                node: recentFilesCard({
+                  id: 'recent-images',
+                  title: 'Recent images',
+                  list: recentImages,
+                  expandedKey: 'recentImages',
+                  app: 'app:images',
+                  all: 'All images',
+                  nouns: ['image', 'images'],
+                  empty: ['No images yet.', 'No images in this project.'],
+                }),
               },
               {
                 id: 'skills',
@@ -985,7 +1366,15 @@ export function Home() {
   );
 }
 
-type PinnedCard = 'todos' | 'projects' | 'chats' | 'files';
+type PinnedCard =
+  | 'todos'
+  | 'projects'
+  | 'chats'
+  | 'files'
+  | 'recentTodos'
+  | 'recentChats'
+  | 'recentDocuments'
+  | 'recentImages';
 
 /**
  * A Home card row: the open button and the star sit side by side (a button can't hold a button), so the

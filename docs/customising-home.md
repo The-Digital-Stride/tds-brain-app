@@ -38,8 +38,11 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
    5. If Home needs the thing's details, the browser sends **ids only**; add a read-only route that returns what
       the library rules already show (see `POST /api/library/items`).
    6. Add the card to `Home.tsx`.
-4. **A card of something new that isn't starred** (e.g. recent files): same as 2, but decide the order and cap in
-   the plan, and add the empty-state sentence.
+4. **A card of something new that isn't starred** (the Recent cards, v0.88.0, plan `2026-11-25-home-recent-cards`):
+   same as 2, but decide the order and cap in the plan, and add the empty-state sentence. Files across every
+   folder come from `GET /api/library/recent` (`Library.recent`, sharing search's listing gathering); a `partial`
+   answer is asked again every second, up to five times. Leave personal-scope things out of anything listed
+   unasked.
 5. **A new kind of Home shortcut** (the places and drawers recipe, v0.87.0):
    1. Add the kind to `HomeShortcut`, `homeShortcutKey` and `parseHomeShortcut` in `shared/contract.ts`. Prefer a
       fixed list (like `HOME_SHORTCUT_PLACES`) over a pattern when the targets are known. The app store and the
@@ -55,7 +58,8 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 
 - **Pin by id, never by path.** Ids are stable for a path and survive restarts; sending paths from the browser
   breaks "the browser only sends ids" and opens a probing hole outside the brain.
-- **Home lists what the person chose.** Nothing is picked for them. Five rows a card, then a quiet small
+- **Home lists what the person chose.** Nothing is picked for them, except the Recent cards (newest first, a fixed
+  rule, never personal-scope things; the person can hide each one). Five rows a card, then a quiet small
   "and N more <things>" button that opens the full list. Never a fake list row.
 - **Order matches the drawer's Favourites section** for chats and to-dos; files newest pin first (a new pin is never hidden by the row cap).
 - **Words:** UK English. The star's name stays "Favourite"; Home's headings say "Pinned …".
@@ -80,6 +84,9 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 6. Update `docs/design-system.md` when a card or control changes.
 
 ## Known gaps (as of v0.35.0)
+
+- Recent documents and images sort by this Mac's file time, so a fresh install or a big sync can show many files as
+  changed today.
 
 - "and N more files" opens Documents, which has no starred view, so pins past the fifth are found by browsing.
 - A failed pinned-files lookup shows a message but doesn't retry until a star or the library changes.

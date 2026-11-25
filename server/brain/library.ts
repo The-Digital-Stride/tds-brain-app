@@ -16,13 +16,14 @@ import type {
   LibraryItem,
   LibraryKind,
   LibraryListing,
+  LibraryRecentResponse,
   LibraryScope,
   LibrarySearchHit,
   LibrarySearchResponse,
   LibraryView,
   Role,
 } from '../../shared/contract.ts';
-import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
+import { LIBRARY_RECENT_MAX, LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
 import { PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
 import {
   ARTIFACT_HEAD_BYTES,
@@ -178,6 +179,8 @@ export interface Library {
    * best first, across every scope. Listing metadata only: file contents are never read.
    */
   search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
+  /** The newest files of one kind for Home's Recent cards (see LibraryRecentResponse). Never throws. */
+  recent(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse>;
   scopes(): Promise<LibraryScope[]>;
   list(scope: string): Promise<LibraryListing | null>;
   file(id: string): Promise<LibraryFile | null>;
@@ -1091,13 +1094,18 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     pump();
   }
 
-  async function search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse> {
-    const query = fold(q).trim().replace(/\s+/g, ' ');
-    const qWords = words(query);
-    if (qWords.length === 0) return { hits: [], total: 0, partial: false };
+  /**
+   * Every scope's listing, for search and recent: cached listings even when stale (refreshed behind), cold scopes
+   * built a few at a time within the budget. `partial` when some weren't ready in time.
+   */
+  /** `include` leaves scopes out before any listing is built, so a left-out scope never makes the answer partial. */
+  async function gatherListings(include: (scope: ScopeDef) => boolean = () => true): Promise<{
+    listings: { scope: ScopeDef; items: LibraryItem[] }[];
+    partial: boolean;
+  }> {
     const budgetMs = opts.search?.budgetMs ?? SEARCH_BUDGET_MS;
     const concurrency = Math.max(1, opts.search?.concurrency ?? SEARCH_CONCURRENCY);
-    const defs = await scopeDefs();
+    const defs = (await scopeDefs()).filter(include);
     const listings: { scope: ScopeDef; items: LibraryItem[] }[] = [];
     const cold: ScopeDef[] = [];
     for (const scope of defs) {
@@ -1134,7 +1142,14 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       clearTimeout(timer);
     }
     closed = true;
-    const partial = finished < cold.length;
+    return { listings, partial: finished < cold.length };
+  }
+
+  async function search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse> {
+    const query = fold(q).trim().replace(/\s+/g, ' ');
+    const qWords = words(query);
+    if (qWords.length === 0) return { hits: [], total: 0, partial: false };
+    const { listings, partial } = await gatherListings();
 
     const found: { hit: LibrarySearchHit; tier: number; at: number }[] = [];
     for (const { scope, items } of listings) {
@@ -1161,6 +1176,30 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     };
   }
 
+  async function recent(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse> {
+    const keys = await projectKeysFor();
+    if (project && !keys) return { files: [], partial: false };
+    // Personal files are never listed unasked, so their folder is never built for this either.
+    const { listings, partial } = await gatherListings((scope) => scope.kind !== 'personal');
+    const found: { hit: LibrarySearchHit; at: number }[] = [];
+    for (const { scope, items } of listings) {
+      const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
+      for (const item of items) {
+        if (item.kind !== kind) continue;
+        const projects = keys ? keys(item.path) : undefined;
+        if (project && !projects?.includes(project)) continue;
+        found.push({
+          hit: { item: projects ? { ...item, projects } : item, scope: info },
+          at: Date.parse(item.modified) || 0,
+        });
+      }
+    }
+    found.sort(
+      (a, b) => b.at - a.at || a.hit.item.path.localeCompare(b.hit.item.path, 'en', { sensitivity: 'base' }),
+    );
+    return { files: found.slice(0, LIBRARY_RECENT_MAX).map((f) => f.hit), partial };
+  }
+
   /** `itemForPath` with the delete flag and projects an item is served with. */
   async function servedItemForPath(
     rel: string,
@@ -1181,6 +1220,14 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         return await search(q, kind);
       } catch {
         return { hits: [], total: 0, partial: false };
+      }
+    },
+
+    async recent(kind, project) {
+      try {
+        return await recent(kind, project);
+      } catch {
+        return { files: [], partial: false };
       }
     },
 

@@ -27,7 +27,7 @@ export const HOME_ITEMS: readonly HomeItemDef[] = [
     id: 'projects',
     title: 'Recent projects',
     kind: 'card',
-    hint: 'Shows once a project has been worked on.',
+    hint: "Shows once you've worked on a project.",
   },
   { id: 'chats', title: 'Pinned chats', kind: 'card' },
   { id: 'recent-chats', title: 'Recent chats', kind: 'card' },

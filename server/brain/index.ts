@@ -16,6 +16,7 @@ import {
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
+import { createMyChanges } from './my-changes.ts';
 import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
 import { createProjectArtifact, type ProjectArtifactService } from './project-artifact.ts';
 import { createProjectBusiness, type ProjectBusinessService } from './project-business.ts';
@@ -133,6 +134,8 @@ export function createBrainReaders(
   const editAnswers = new WeakMap<object, { updatesFailed?: true }>();
   // One `todo/` git log per HEAD, shared by the Asked and Done lists.
   const askedLog = createAskedLog(deps.todoLog);
+  // The files this person changed (git authorship + uncommitted), for Home's Recent cards and project cards.
+  const myChanges = createMyChanges(deps.todoLog);
   // The Done list's own log: Asked's only lists commits touching `assignee:`, so it misses to-dos open to anyone.
   const doneLog = createAskedLog(deps.todoLog, doneLogArgs);
   const projects = createProjects(root, {
@@ -310,7 +313,9 @@ export function createBrainReaders(
     },
     libraryScopes: () => library.scopes(),
     librarySearch: (q, kind) => library.search(q, kind),
-    libraryRecent: (kind, project) => library.recent(kind, project),
+    libraryRecent: async (kind, project, identity) =>
+      library.recent(kind, project, await myChanges.read(root, identity)),
+    myChanges: (identity) => myChanges.read(root, identity),
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
     libraryItemForPath: (rel) => library.itemForPath(rel),

@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { LIBRARY_RECENT_MAX } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { createLibrary, type LibraryOptions } from './library.ts';
+import type { MyChanges } from './my-changes.ts';
 import type { ProjectsIndex } from './projects.ts';
 
 const temps: string[] = [];
@@ -125,6 +126,61 @@ describe('library recent', () => {
     expect(r.partial).toBe(false);
     expect(names(r)).toEqual(['a.md']);
     expect(walked.some((s) => s.startsWith('personal'))).toBe(false);
+  });
+
+  describe('mine', () => {
+    const mine = (paths: Record<string, string>, readable = true): MyChanges => ({
+      paths: new Map(Object.entries(paths)),
+      readable,
+    });
+    const files = {
+      'clients/acme/Old.md': 9000,
+      'clients/acme/new.md': 1000,
+      'clients/acme/theirs.md': 8000,
+      'clients/acme/tie-b.md': 5,
+      'clients/acme/tie-a.md': 5,
+      'personal/me/diary.md': 7000,
+      'clients/acme/web/x.md': 5,
+    };
+
+    it('keeps only my files, newest change of mine first, ties by path', async () => {
+      const l = lib(brain(files));
+      const r = await l.recent(
+        'document',
+        undefined,
+        mine({
+          'clients/acme/old.md': '2026-01-01T00:00:00Z',
+          'clients/acme/new.md': '2026-02-01T00:00:00Z',
+          'clients/acme/tie-b.md': '2026-01-15T00:00:00Z',
+          'clients/acme/tie-a.md': '2026-01-15T00:00:00Z',
+          'personal/me/diary.md': '2026-03-01T00:00:00Z',
+        }),
+      );
+      expect(names(r)).toEqual(['new.md', 'tie-a.md', 'tie-b.md', 'Old.md']);
+    });
+
+    it('applies the project filter before the cap', async () => {
+      const l = lib(brain(files), { projects: index('clients/acme/web', 'acme/web') });
+      const r = await l.recent(
+        'document',
+        'acme/web',
+        mine({
+          'clients/acme/web/x.md': '2026-01-01T00:00:00Z',
+          'clients/acme/new.md': '2026-02-01T00:00:00Z',
+        }),
+      );
+      expect(names(r)).toEqual(['x.md']);
+    });
+
+    it('answers partial, never the team’s files, when the history is unreadable', async () => {
+      const l = lib(brain(files));
+      expect(await l.recent('document', undefined, mine({}, false))).toEqual({ files: [], partial: true });
+    });
+
+    it('is unchanged without it', async () => {
+      const l = lib(brain(files));
+      expect(names(await l.recent('document'))[0]).toBe('Old.md');
+    });
   });
 
   it('never throws', async () => {

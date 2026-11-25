@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   type Identity,
+  type MyChanges,
   ROUTES,
   sessionCookieName,
   type TodoAction,
@@ -46,6 +47,8 @@ const sam: Identity = {
   knownMember: true,
 };
 let who: Identity = sam;
+let served: ProjectList | null = null;
+let mine: MyChanges | undefined;
 const LIST = { projects: [], looseLabels: [], skippedFolders: 0 } as unknown as ProjectList;
 const TIDY = { rows: [], skipped: [] } satisfies TidyList;
 const TODOS = {
@@ -172,16 +175,19 @@ beforeAll(async () => {
         ? async () => {
             seen.projects++;
             maybeFail();
-            return LIST;
+            return served ?? LIST;
           }
         : undefined;
+    },
+    get myChanges() {
+      return mine ? async () => mine as MyChanges : undefined;
     },
     get changeProject() {
       return state.has
         ? async (action: ProjectAction) => {
             maybeFail();
             seen.changes.push(action);
-            return LIST;
+            return served ?? LIST;
           }
         : undefined;
     },
@@ -419,6 +425,71 @@ const CHANGES: ProjectAction[] = [
     expect: VERSION,
   },
 ];
+
+describe('GET /api/projects lastMine', () => {
+  const card = (folder: string, space: string) => ({ folder, space, title: folder });
+  const list = () =>
+    ({
+      ...LIST,
+      projects: [
+        card('clients/acme/projects/web', 'client'),
+        card('clients/acme/projects/quiet', 'client'),
+        card('projects/Legacy One', 'legacy'),
+        card('personal/projects/mine', 'personal'),
+      ],
+    }) as unknown as ProjectList;
+  const lastMines = async () =>
+    ((await get(ROUTES.projects)).json as unknown as ProjectList).projects.map((p) => p.lastMine);
+
+  beforeEach(() => {
+    served = list();
+  });
+  afterAll(() => {
+    served = null;
+    mine = undefined;
+  });
+
+  it('is my newest change under the folder, null when none, none for a personal project', async () => {
+    mine = {
+      readable: true,
+      paths: new Map([
+        ['clients/acme/projects/web/a.md', '2026-11-01T10:00:00.000Z'],
+        ['clients/acme/projects/web/deep/er/b.md', '2026-11-05T10:00:00.000Z'],
+        ['clients/acme/projects/web-other/c.md', '2026-11-09T10:00:00.000Z'],
+        ['projects/legacy one/x.md', '2026-10-01T10:00:00.000Z'],
+        ['personal/projects/mine/n.md', '2026-11-20T10:00:00.000Z'],
+      ]),
+    };
+    expect(await lastMines()).toEqual([
+      '2026-11-05T10:00:00.000Z',
+      null,
+      '2026-10-01T10:00:00.000Z',
+      undefined,
+    ]);
+  });
+
+  it('is on the list a project change answers with, too (Home reads that list)', async () => {
+    mine = {
+      readable: true,
+      paths: new Map([['clients/acme/projects/web/a.md', '2026-11-01T10:00:00.000Z']]),
+    };
+    const r = await post(ROUTES.projectsChange, CHANGES[0]);
+    expect(r.status).toBe(200);
+    expect((r.json as unknown as ProjectList).projects.map((p) => p.lastMine)).toEqual([
+      '2026-11-01T10:00:00.000Z',
+      null,
+      null,
+      undefined,
+    ]);
+  });
+
+  it('is left out when the history could not be read, or the brain has no reader', async () => {
+    mine = { readable: false, paths: new Map() };
+    expect(await lastMines()).toEqual([undefined, undefined, undefined, undefined]);
+    mine = undefined;
+    expect(await lastMines()).toEqual([undefined, undefined, undefined, undefined]);
+  });
+});
 
 describe('the security gate', () => {
   it('every read needs the session, and refuses another site', async () => {

@@ -64,11 +64,11 @@ function get(path: string, headers: Record<string, string>) {
 }
 
 describe('GET /api/library/recent through the request gate', () => {
-  it('answers 200 with files for a signed-in request', async () => {
+  it('answers 200 for a signed-in request (history unread in a brain that is not a git repo)', async () => {
     const r = await get(`${ROUTES.libraryRecent}?kind=image`, { cookie: COOKIE });
     expect(r.status).toBe(200);
-    expect(Array.isArray(r.json.files)).toBe(true);
-    expect(r.json.partial).toBe(false);
+    expect(r.json.files).toEqual([]);
+    expect(r.json.partial).toBe(true);
   });
 
   it('is refused without the session cookie', async () => {

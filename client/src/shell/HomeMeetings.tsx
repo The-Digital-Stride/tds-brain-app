@@ -9,7 +9,7 @@ import { api } from '../api.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
 import { useStore } from '../store.tsx';
 import { InviteIcon, JoinLink, joinOpen } from './MeetingActions.tsx';
-import { clockTime, dayWords, localDay, parseDay, withWords } from './meeting-words.ts';
+import { clockTime, dayParts, dayWords, localDay, parseDay, weekLabel, withWords } from './meeting-words.ts';
 import { ShowMore } from './ShowMore.tsx';
 import { StateNote } from './StateNote.tsx';
 import type { CardDragProps } from './useCardOrder.tsx';
@@ -38,11 +38,20 @@ function inProgress(m: HomeMeeting, now: number): boolean {
   return new Date(m.start).getTime() <= now && now < new Date(m.end).getTime();
 }
 
-function dayHeading(day: string, now: number): string {
-  const today = localDay(now);
-  if (day === today) return 'Today';
-  if (day === nextDay(today)) return 'Tomorrow';
-  return dayWords(day);
+/** A day's heading: the name in navy to scan for ("Today", "Friday"), its date quieter beside it. */
+function DayHeading({ day, now }: { day: string; now: number }) {
+  const { name, date } = dayParts(day, now);
+  return (
+    <h4 className="meet-day">
+      <span className="meet-day-name">{name}</span>
+      {date ? (
+        <>
+          <span className="visually-hidden">, </span>
+          <span className="meet-day-date">{date}</span>
+        </>
+      ) : null}
+    </h4>
+  );
 }
 
 /** "Calendar checked today at 08:12", "yesterday at 17:40" or "22 Nov"; stale adds the nudge. */
@@ -195,11 +204,18 @@ export function HomeMeetings({
     // All of today, topped up to MEETING_ROWS with what comes next (design review: compact by default).
     const limit = Math.max(MEETING_ROWS, todayCount);
     const shown = expanded ? rows : rows.slice(0, limit);
-    const days: { day: string; rows: HomeMeeting[] }[] = [];
+    // Calendar weeks (Monday on), each holding its days: weeks after this one get a visible label on a hairline.
+    const weeks: { label: string; days: { day: string; rows: HomeMeeting[] }[] }[] = [];
     for (const m of shown) {
-      const last = days[days.length - 1];
+      const label = weekLabel(m.day, now);
+      let week = weeks[weeks.length - 1];
+      if (!week || week.label !== label) {
+        week = { label, days: [] };
+        weeks.push(week);
+      }
+      const last = week.days[week.days.length - 1];
       if (last && last.day === m.day) last.rows.push(m);
-      else days.push({ day: m.day, rows: [m] });
+      else week.days.push({ day: m.day, rows: [m] });
     }
     body = (
       <>
@@ -208,14 +224,20 @@ export function HomeMeetings({
           <StateNote kind="empty">No meetings coming up in your calendar.</StateNote>
         ) : (
           <>
-            {days.map((g) => (
-              <div key={g.day} className="meet-group">
-                <h3 className="meet-day">{dayHeading(g.day, now)}</h3>
-                <ul className="drawer-list">
-                  {g.rows.map((m) => (
-                    <MeetingRow key={`${m.id}\u0000${m.start}`} m={m} now={now} onProject={openProject} />
-                  ))}
-                </ul>
+            {weeks.map((w) => (
+              <div key={w.label} className="meet-week-group">
+                {/* "This week" is for screen readers only: Today and Tomorrow already say it. */}
+                <h3 className={w.label === 'This week' ? 'visually-hidden' : 'meet-week'}>{w.label}</h3>
+                {w.days.map((g) => (
+                  <div key={g.day} className="meet-group">
+                    <DayHeading day={g.day} now={now} />
+                    <ul className="drawer-list">
+                      {g.rows.map((m) => (
+                        <MeetingRow key={`${m.id}\u0000${m.start}`} m={m} now={now} onProject={openProject} />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             ))}
             {rows.length > limit ? (

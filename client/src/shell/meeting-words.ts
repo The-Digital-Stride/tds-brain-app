@@ -59,3 +59,44 @@ export function withWords(m: { people: string[]; others: number }, lower = false
   if (!names) return m.others > 0 ? `${word} ${m.others} ${m.others === 1 ? 'other' : 'others'}` : '';
   return `${word} ${names}${extra > 0 ? ` +${extra}` : ''}`;
 }
+
+/** The start (local midnight, ms) of the calendar week holding `d`; weeks start on Monday (UK). */
+export function weekStart(d: Date): number {
+  const day = (d.getDay() + 6) % 7;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime();
+}
+
+function dayDate(day: string): Date | null {
+  const p = parseDay(day);
+  return p ? new Date(p.y, p.m - 1, p.d) : null;
+}
+
+/**
+ * A day heading in two parts: the name to scan for, then its date. "Today" / "Wed 25 Nov",
+ * "Tomorrow" / "Thu 26 Nov", else "Friday" / "27 Nov".
+ */
+export function dayParts(day: string, now: number): { name: string; date: string } {
+  const d = dayDate(day);
+  if (!d) return { name: day, date: '' };
+  const today = new Date(now);
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const diff = Math.round((d.getTime() - t0) / (24 * 60 * 60 * 1000));
+  if (diff === 0) return { name: 'Today', date: dayWords(day) };
+  if (diff === 1) return { name: 'Tomorrow', date: dayWords(day) };
+  const w = parts(d, { weekday: 'long', day: 'numeric', month: 'short' });
+  return { name: w.weekday ?? '', date: `${w.day} ${w.month}` };
+}
+
+/** Which calendar week a day falls in, from now: "This week", "Next week", else "Week of 7 Dec" (its Monday). */
+export function weekLabel(day: string, now: number): string {
+  const d = dayDate(day);
+  if (!d) return '';
+  const start = weekStart(d);
+  const thisWeek = weekStart(new Date(now));
+  if (start <= thisWeek) return 'This week';
+  const nextWeek = new Date(thisWeek);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  if (start === nextWeek.getTime()) return 'Next week';
+  const m = parts(new Date(start), { day: 'numeric', month: 'short' });
+  return `Week of ${m.day} ${m.month}`;
+}

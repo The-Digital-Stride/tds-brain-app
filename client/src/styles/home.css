@@ -228,15 +228,49 @@
     font-weight: 600;
     color: var(--navy);
   }
-  h3.meet-day {
+  /* A day heading: the name set like a fold header (13/600 navy) so it never reads as row meta, the date as meta
+     beside it. Days sit further apart than rows; weeks further still, on the card's only hairline. */
+  h4.meet-day {
     margin: 0;
+    /* The browser's h4 is bold (700): the date is meta weight, and only the name below takes 600. */
+    font-weight: 400;
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-6);
     padding: var(--sp-2) var(--sp-8);
+  }
+  .meet-day-name {
+    font-size: var(--fs-control);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .meet-day-date {
+    font-size: var(--fs-small);
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
+  .meet-group + .meet-group {
+    margin-top: var(--sp-12);
+  }
+  h3.meet-week {
+    margin: 0 0 var(--sp-4);
+    padding: 0 var(--sp-8);
     font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
   }
-  .meet-group + .meet-group > h3.meet-day {
-    margin-top: var(--sp-6);
+  .meet-week-group + .meet-week-group {
+    margin-top: var(--sp-16);
+    padding-top: var(--sp-8);
+    border-top: 1px solid var(--line);
+  }
+  @container (max-width: 360px) {
+    .meet-group + .meet-group {
+      margin-top: var(--sp-10);
+    }
+    .meet-week-group + .meet-week-group {
+      margin-top: var(--sp-12);
+    }
   }
   .meet-actions {
     flex: none;

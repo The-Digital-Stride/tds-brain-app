@@ -35,6 +35,18 @@ An approval card says **Needs your approval**. It names the thing Claude wants t
 
 When Claude asks a question, a card shows the answers to pick from. Pick one, or use **Or type your own answer**. Then press **Send answer**. Some questions let you pick more than one.
 
+## Merge and push
+
+When Claude is about to merge or push work, for example a new version of TDS Cortex, it shows a card titled **Are you sure you want to merge and push?** The card shows where the work is going, the branch, and the commits going out.
+
+1. Read the card.
+2. Press **Yes, merge and push** to go ahead.
+3. Press **No, not now** to stop. You can tell Claude why.
+
+There is never an **Allow for this chat** for these. You are asked every time. If it is a force push, the card also shows a **Take care** warning. The brain's own daily sync doesn't ask.
+
+Only owners and scouts can change TDS Cortex itself. If someone on the team asks Claude for a change to the app, Claude offers to add it as a feature request in the TDS Cortex Feedback project.
+
 ## Good to know
 
 - Some approval cards also offer **Allow for this chat**. That says yes to this kind of change for the rest of that chat. The card says exactly what it covers.

@@ -59,7 +59,9 @@ import {
   type ModelChoice,
   type PastSession,
   type PermissionReply,
+  type PublishFacts,
   type QuestionReply,
+  type Role,
   SESSION_UUID_PATTERN,
   type SequencedEvent,
   type SessionList,
@@ -104,6 +106,15 @@ import { type ChatSummaryStore, createChatSummaryStore } from '../store/chat-sum
 import type { ContextReadingStore } from '../store/context-readings.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
+import {
+  APP_CODE_LINE,
+  type AppCodeContext,
+  type CardFacts,
+  CHANGE_CHECK_FAILED,
+  guardToolCall,
+  PUBLISH_LINE,
+  quickPublishFacts,
+} from './change-guards.ts';
 import {
   type ChatFilesTracker,
   createChatFiles,
@@ -299,6 +310,13 @@ export interface SessionManagerOptions {
   chatSummaryStore?: ChatSummaryStore;
   /** Test only: how long a summary draft may take (default CHAT_DRAFT_TIMEOUT_MS). */
   chatDraftTimeoutMs?: number;
+  /**
+   * The running copy's folder (plan 2026-11-25-app-change-guards, decision 2a). Default: this server's own
+   * folder.
+   */
+  appRoot?: string;
+  /** The person's home folder, for the installed app's path and `~`. Default: this Mac account's. */
+  home?: string;
 }
 
 /** A page wrapped in the TDS bar, ready to save or file. */
@@ -415,6 +433,10 @@ const FALLBACK_MODELS: ModelChoice[] = [
 ];
 
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+/** How long a role read stands in for a passing 'unknown' (plan 2026-11-25-app-change-guards, decision 15). */
+const ROLE_MEMORY_MS = 10 * 60 * 1000;
+/** Why the change guard asks (Claude Code may show it to Claude). */
+const PUBLISH_ASK_REASON = 'Merging or pushing needs the person to confirm it on a card in TDS Cortex.';
 /** Closed chats whose pages can still be shown. */
 const CLOSED_PAGES_MAX = 20;
 const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
@@ -1086,6 +1108,8 @@ interface Pending {
   input: Record<string, unknown>;
   kept: PermissionUpdate[];
   questions: AskQuestion[];
+  /** A merge or push (plan 2026-11-25-app-change-guards, decision 9): never "Allow for this chat". */
+  publish: boolean;
   settle(result: PermissionResult, outcome: Outcome): void;
 }
 
@@ -1122,6 +1146,11 @@ interface Session {
   pending: Map<string, Pending>;
   /** Tool calls refused on a card (or by the app), so the engine's later denial is not shown twice. */
   deniedTools: Set<string>;
+  /**
+   * The merge-and-push card's facts by tool use id, stored by the change guard hook and taken by
+   * `canUseTool` (decision 7); 'exempt' for the brain's own sync. Cleared at turn end.
+   */
+  publishFacts: Map<string, CardFacts | 'exempt'>;
   turnRunning: boolean;
   interruptRequested: boolean;
   warnedKeySource: boolean;
@@ -1358,6 +1387,14 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   } catch {
     // not there: the configured root is all there is
   }
+  // App change guards (plan 2026-11-25-app-change-guards).
+  const guardCtx: AppCodeContext = {
+    appRoot: opts.appRoot ?? resolve(import.meta.dirname, '..', '..'),
+    home: opts.home ?? homedir(),
+    brainRoot: opts.brainRoot,
+  };
+  /** The last role `identity()` gave, for a passing 'unknown' (decision 15). */
+  let lastRole: { role: Role; at: number } | null = null;
 
   function notifyChanged(): void {
     for (const l of changeListeners) {
@@ -1537,6 +1574,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         client && !project ? whichProjectLine(fields.openProjects) : null,
         FILES_LINE,
         TASKS_WORD_LINE,
+        // Plan 2026-11-25-app-change-guards, decision 11.
+        PUBLISH_LINE,
+        APP_CODE_LINE,
         levels ? HELPERS_LINE : null,
         // Decision 9: steers every summary, manual or automatic (spike S4 route c).
         BRAIN_COMPACT_INSTRUCTIONS,
@@ -1559,6 +1599,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       pump: null,
       pending: new Map(),
       deniedTools: new Set(),
+      publishFacts: new Map(),
       turnRunning: false,
       interruptRequested: false,
       warnedKeySource: false,
@@ -1769,6 +1810,49 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       p.settle({ behavior: 'deny', message, interrupt: true }, 'cancelled');
   }
 
+  /**
+   * The card facts the change guard stored for this call (deleted on read), or, when it stored none, a quick
+   * detection from the input. Null for anything that isn't a merge or push, or the brain's own sync.
+   */
+  function takePublish(
+    s: Session,
+    toolName: string,
+    input: Record<string, unknown>,
+    toolUseID: string | undefined,
+  ): CardFacts | null {
+    const stored = toolUseID ? s.publishFacts.get(toolUseID) : undefined;
+    if (toolUseID) s.publishFacts.delete(toolUseID);
+    if (stored === 'exempt') return null;
+    if (stored) return stored;
+    try {
+      return quickPublishFacts(toolName, input);
+    } catch {
+      return null;
+    }
+  }
+
+  /** What the page gets: the facts, with the command exactly as the ordinary card's detail shows it. */
+  function cardPublish(f: CardFacts, detail: string): PublishFacts {
+    const { warning: _warning, ...facts } = f;
+    return { ...facts, command: detail };
+  }
+
+  /** The person's role now; a passing 'unknown' reuses one read in the last 10 minutes (decision 15). */
+  async function currentRole(): Promise<Role> {
+    let role: Role = 'unknown';
+    try {
+      role = (await opts.brain.identity()).role;
+    } catch {
+      role = 'unknown';
+    }
+    const now = Date.now();
+    if (role !== 'unknown') {
+      lastRole = { role, at: now };
+      return role;
+    }
+    return lastRole && now - lastRole.at <= ROLE_MEMORY_MS ? lastRole.role : 'unknown';
+  }
+
   function canUseToolFor(s: Session): NonNullable<Options['canUseTool']> {
     return (toolName, input, ctx) => {
       if (s.closing)
@@ -1797,6 +1881,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             uploadsRoot: opts.uploads?.root ?? null,
             actor,
           });
+      // Decisions 7 and 9: a merge or push shows the merge-and-push card, one confirmation at a time.
+      const pub = isQuestion ? null : takePublish(s, toolName, input, ctx.toolUseID);
       if (card?.refuse) {
         if (ctx.toolUseID) s.deniedTools.add(ctx.toolUseID);
         // A12: the person cannot review what they cannot see, so never ask about it.
@@ -1818,8 +1904,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           kind: isQuestion ? 'question' : 'permission',
           requestId,
           input: askInput,
-          kept: isQuestion ? [] : narrowSuggestions(ctx.suggestions, ctx.suppressAlwaysAllowRule),
+          kept: isQuestion || pub ? [] : narrowSuggestions(ctx.suggestions, ctx.suppressAlwaysAllowRule),
           questions,
+          publish: pub !== null,
           settle(result, outcome) {
             if (s.pending.get(requestId) !== pending) return;
             s.pending.delete(requestId);
@@ -1845,9 +1932,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             tool: toolName,
             title: card.title,
             detail: card.detail,
-            warning: card.warning,
-            sessionAllowLabel: describeSessionAllow(pending.kept),
+            warning: pub ? [card.warning, pub.warning].filter(Boolean).join(' ') || null : card.warning,
+            sessionAllowLabel: pub ? null : describeSessionAllow(pending.kept),
             ...(card.change ? { change: card.change } : {}),
+            ...(pub ? { publish: cardPublish(pub, card.detail) } : {}),
           });
         }
         setState(s, 'waiting');
@@ -1947,6 +2035,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.helperList.stopAll();
       if (levels) levelAfterTurn(s);
       settleAll(s, 'The turn ended.');
+      // Card facts for calls that never asked (another hook refused them) go with the turn.
+      s.publishFacts.clear();
       setState(s, 'idle');
       armIdle(s);
       s.files?.endTurn();
@@ -2498,13 +2588,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       SessionStart: [{ hooks: [sessionStartHook(s)] }],
       PreModelSwitch: [{ hooks: [modelSwitchHook(s)] }],
       // Every tool, main chat and helpers, on every engine: runs even for calls that need no permission.
-      PreToolUse: [{ hooks: [draftsGuardHook(s)] }],
+      // The change guard (plan 2026-11-25-app-change-guards, decision 7) shares the first entry: Claude Code
+      // runs a matcher's hooks together and a deny beats an ask, so it is never skipped.
+      PreToolUse: [{ hooks: [draftsGuardHook(s), changeGuardHook(s)] }],
     };
     if (levels) {
       options.agents = helperAgents();
       options.hooks = {
         ...options.hooks,
-        PreToolUse: [{ hooks: [draftsGuardHook(s)] }, { matcher: AGENT_TOOLS, hooks: [agentHook(s)] }],
+        PreToolUse: [
+          { hooks: [draftsGuardHook(s), changeGuardHook(s)] },
+          { matcher: AGENT_TOOLS, hooks: [agentHook(s)] },
+        ],
         PostToolUse: [
           { matcher: 'Skill', hooks: [skillHook(s)] },
           { matcher: AGENT_TOOLS, hooks: [agentEndHook(s)] },
@@ -2961,6 +3056,56 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         notifyHelpers('now');
       }
       return { continue: true };
+    };
+  }
+
+  /**
+   * Plan 2026-11-25-app-change-guards, decision 7: refuses a team member's change to the app's code, and makes
+   * every merge or push ask (Claude Code then calls canUseTool in every mode, over any allow rule). Main chat
+   * and helpers alike. Fails closed: a thrown hook would let the call run with no card.
+   */
+  function changeGuardHook(s: Session): HookCallback {
+    return async (raw, toolUseID) => {
+      const input: unknown = raw;
+      if (!isRec(input)) return { continue: true };
+      const id = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : '');
+      const deny = (reason: string, notice: string) => {
+        if (id) s.deniedTools.add(id);
+        emit(s, { type: 'notice', level: 'warning', text: notice });
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse' as const,
+            permissionDecision: 'deny' as const,
+            permissionDecisionReason: reason,
+          },
+        };
+      };
+      try {
+        const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
+        const toolInput = isRec(input.tool_input) ? input.tool_input : {};
+        const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : opts.brainRoot;
+        const answer = await guardToolCall(tool, toolInput, cwd, { getRole: currentRole, ctx: guardCtx });
+        switch (answer.decision) {
+          case 'continue':
+            return { continue: true };
+          case 'exempt':
+            if (id) s.publishFacts.set(id, 'exempt');
+            return { continue: true };
+          case 'deny':
+            return deny(answer.reason, answer.notice);
+          case 'ask':
+            if (id && answer.facts) s.publishFacts.set(id, answer.facts);
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'ask',
+                permissionDecisionReason: PUBLISH_ASK_REASON,
+              },
+            };
+        }
+      } catch {
+        return deny(CHANGE_CHECK_FAILED, CHANGE_CHECK_FAILED);
+      }
     };
   }
 
@@ -3819,6 +3964,13 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           p.settle({ behavior: 'allow', updatedInput: p.input }, 'allowed');
           return;
         case 'allow-session':
+          if (p.publish) {
+            // Decision 9: each merge or push is confirmed on its own.
+            throw new SessionError(
+              'bad-request',
+              'Each merge or push needs its own yes, so "Allow for this chat" isn\'t offered.',
+            );
+          }
           p.settle(
             p.kept.length > 0
               ? { behavior: 'allow', updatedInput: p.input, updatedPermissions: p.kept }

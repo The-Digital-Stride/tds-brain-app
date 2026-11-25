@@ -17,12 +17,13 @@ const ADDRESS =
 const ADDRESS_MAX = 254;
 /** `Name <address>`: an optional name with no angle brackets, then the address in them, and nothing after. */
 const ANGLED = /^[^<>]*<([^<>\s]*)>$/;
-// `From:` is read so that it does not end the headers, and then ignored: Gmail sends from its own account.
+// `From:` with an address is read so that it does not end the headers, and then ignored: Gmail sends from
+// its own account. Without an address it is a sentence, and stays in the message.
 const HEADER = /^(to|cc|bcc|subject|from)[ \t]*:(.*)$/i;
 // Characters nobody can see: control characters, zero-width characters and the marks that change text
 // direction. A subject and a message must read on the card exactly as they will in Gmail. Built from
 // strings so the source holds no invisible character itself.
-const ZERO_WIDTH_AND_DIRECTION = '\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2069\\uFEFF';
+const ZERO_WIDTH_AND_DIRECTION = '\\u00AD\\u061C\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2069\\uFEFF';
 const UNSEEN = new RegExp(`[\\u0000-\\u001F\\u007F-\\u009F${ZERO_WIDTH_AND_DIRECTION}]`, 'g');
 /** The same, sparing the line break and the tab a message is made of. */
 const UNSEEN_IN_TEXT = new RegExp(
@@ -42,14 +43,15 @@ function addressOf(entry: string): string | null {
   return address.length <= ADDRESS_MAX && !address.includes('%') && ADDRESS.test(address) ? address : null;
 }
 
-/** A header's entries: split on commas and semicolons, but not inside a quoted name (`"Example, Jo" <…>`). */
+/** A header's entries: split on commas and semicolons, but not inside a quoted name (`"Example, Jo" <…>`,
+ *  straight or curly quotes). */
 function entriesOf(value: string): string[] {
   const out: string[] = [];
   let from = 0;
   let quoted = false;
   for (let i = 0; i < value.length; i++) {
     const c = value[i];
-    if (c === '"') quoted = !quoted;
+    if (c === '"' || c === '\u201C' || c === '\u201D') quoted = !quoted;
     else if ((c === ',' || c === ';') && !quoted) {
       out.push(value.slice(from, i));
       from = i + 1;
@@ -76,7 +78,10 @@ export function parseChatEmail(block: string): ChatEmail {
     if (!header) break;
     const name = (header[1] ?? '').toLowerCase();
     const value = header[2] ?? '';
-    if (name === 'from') continue;
+    if (name === 'from') {
+      if (!value.includes('@')) break;
+      continue;
+    }
     if (name === 'subject') {
       if (!hasSubject) out.subject = cleanSubject(value);
       hasSubject = true;

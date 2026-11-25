@@ -68,6 +68,11 @@ describe('parseChatEmail', () => {
     );
     expect(got.to).toEqual(['jo@acme.co.uk', 'kim@acme.co.uk']);
     expect(got.dropped).toBe(1);
+    // Curly quotes round a name work the same way.
+    expect(parseChatEmail('To: \u201CExample, Jo\u201D <jo@acme.co.uk>\n\nx')).toMatchObject({
+      to: ['jo@acme.co.uk'],
+      dropped: 0,
+    });
   });
 
   it('a From line among the headers is ignored: Gmail sends from the account it opens in', () => {
@@ -77,6 +82,11 @@ describe('parseChatEmail', () => {
     expect(parseChatEmail('To: jo@acme.co.uk\nfrom: sam@tds.example\nSubject: Hi\n\nText').subject).toBe(
       'Hi',
     );
+    // A sentence that only starts like one is part of the message, never lost.
+    expect(parseChatEmail('Subject: Hi\nFrom: here on, we will meet weekly.\nBye').body).toBe(
+      'From: here on, we will meet weekly.\nBye',
+    );
+    expect(parseChatEmail('From: the whole team\n\nThanks').body).toBe('From: the whole team\n\nThanks');
   });
 
   it('never repairs or invents an address', () => {
@@ -109,7 +119,7 @@ describe('parseChatEmail', () => {
   });
 
   it('removes characters nobody can see from the text, keeping line breaks and tabs', () => {
-    const hidden = '\u200B\u200C\u200D\u2060\uFEFF\u202E\u200F\u0007\u0000';
+    const hidden = '\u200B\u200C\u200D\u2060\uFEFF\u202E\u200F\u0007\u0000\u00AD\u061C\u180E';
     const got = parseChatEmail(`To: a@x.co\n\nHi${hidden} Jo,\n\tindented\u200B\n\nBye${hidden}`);
     expect(got.body).toBe('Hi Jo,\n\tindented\n\nBye');
   });
@@ -135,6 +145,26 @@ describe('parseChatEmail', () => {
     expect(fits).toBe(false);
     expect(url.length).toBeLessThanOrEqual(GMAIL_COMPOSE_URL_MAX);
     expect(query(url).get('to')?.split(',')).toEqual(got.to);
+    // The subject on the card is always the subject Gmail gets: only the text is ever left out.
+    expect(query(url).get('su')).toBe(got.subject);
+    expect(got.subject).toHaveLength(250);
+  });
+
+  it('the subject on the card always reaches Gmail, however long the list of addresses', () => {
+    // 20 addresses that cost exactly 250 characters of link each, the longest subject, a long account address.
+    const list = Array.from(
+      { length: 20 },
+      (_, i) =>
+        `${'a'.repeat(56)}${String(i).padStart(2, '0')}@${'b'.repeat(60)}.${'c'.repeat(60)}.${'d'.repeat(60)}.com`,
+    );
+    const got = parseChatEmail(
+      `To: ${list.join(', ')}\nSubject: ${'\u201C'.repeat(250)}\n\n${'x'.repeat(9000)}`,
+    );
+    const { url } = chatEmailLink(`${'o'.repeat(64)}@${'t'.repeat(180)}.example`, got);
+    expect(url.length).toBeLessThanOrEqual(GMAIL_COMPOSE_URL_MAX);
+    expect(query(url).get('su')).toBe(got.subject);
+    expect(got.subject).toHaveLength(250);
+    expect(got.to.length + got.over).toBe(20);
   });
 
   it('folds Windows line ends', () => {

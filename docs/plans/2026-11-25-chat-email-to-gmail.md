@@ -98,7 +98,7 @@ When Claude drafts an email in a project chat, the person can open it in the sma
 
 ## Contract
 
-`shared/chat-email-draft-contract.ts`: `EmailDraft`, `parseEmailDraft`, `gmailDraftLink`, `ReplyPiece`,
+`shared/chat-email-draft-contract.ts`: `ChatEmail`, `parseChatEmail`, `chatEmailLink`, `ReplyPiece`,
 `splitReply`, and the limits.
 
 ## Team and file ownership
@@ -125,13 +125,58 @@ When Claude drafts an email in a project chat, the person can open it in the sma
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build (port 3608)
-- [ ] No unintended large deletions: `git diff main...HEAD --numstat | awk '$2 > 40'`
-- [ ] Domain gates: security (reviewer above), UX/UI expert
-- [ ] Browser check: a reply with an email block at 1280 and 390 wide: card, Open in Gmail (stubbed Gmail:
+- [x] Type-check · [x] Tests · [x] Lint · [x] Build (port 3608)
+- [x] No unintended large deletions: `git diff main...HEAD --numstat | awk '$2 > 40'`
+- [x] Domain gates: security (reviewer above), UX/UI expert
+- [x] Browser check: a reply with an email block at 1280 and 390 wide: card, Open in Gmail (stubbed Gmail:
       window size, `to`, `su`, `body`), Copy text, keyboard order, no sideways scroll
-- [ ] (Overseer S3) Link of about 7,400 characters with £ and curly quotes answered by Google (not a 400)
+- [x] (Overseer S3) Link of about 7,400 characters with £ and curly quotes answered by Google (not a 400)
 
 ## Review outcomes
 
-(Filled at the end.)
+**Overseer pre-review (fable).** Sound, one blocking gap: a reply followed by a step is folded into "What
+Claude did", which would hide the draft (B1). Fixed in decision 10. S1 to S6 and N1 to N2 taken (decisions
+11 to 13).
+Plain: the plan was right once drafts could no longer be hidden in the steps list.
+
+**UX/UI expert (sonnet).** Two must, both taken: the Copy button's name now always holds the words on it
+(hidden text, not an `aria-label`); help and the release note no longer say nothing is saved (Gmail may keep
+a copy in Drafts). Should, taken: the card is a `role="group"`, not a region; a quiet "Still writing…" and
+`aria-busy` while the reply arrives; the over-limit notice says what to do. Not taken: "Cmd (Mac) or Ctrl"
+(the app is Mac-only) and the signature wording (TDS's signature is added on send).
+Plain: the card reads properly to a screen reader, and the help is honest about Gmail's drafts.
+
+**Security reviewer (opus).** Safe to merge, nothing blocking. No block content can change the link's host
+or add a parameter; the card never renders HTML or markdown; helper reports and files never get a card.
+Taken: characters nobody can see are removed from the text as well as the subject; an address with a `%` is
+refused; the addresses kept must fit `CHAT_EMAIL_RECIPIENTS_URL_BUDGET`, so a link can never pass 7,500;
+the wording now says an address must come from the user in this chat, never a Reply-To or one a message
+asks for, and Cc and Bcc only when the user asks in this chat.
+Plain: what the card shows is exactly what Gmail gets, and text Claude merely read cannot pick who it goes to.
+
+**Correctness reviewer (opus).** One should, taken: a reply stopped half-way through an email was never
+marked finished, so its card had no buttons for good. Now only the newest unfinished reply, while Claude is
+working, counts as still arriving. Minor, taken: replies with Windows line ends; a quoted name holding a
+comma; a `From:` line among the headers. Not taken: a reference link defined on the other side of an email
+block (rare), and a half-typed header showing for a moment while a reply streams (no buttons then).
+Plain: stopping Claude mid-email no longer leaves a card you cannot use.
+
+**Overseer sign-off (fable) and the correctness re-check (opus).** Signed off, no blockers; the fix round
+re-checked as safe to merge. Four small points taken from them: the addresses' share of a link is 4,500
+characters, so the subject on the card always reaches Gmail; a `From:` line counts as a header only when it
+holds an address (a sentence starting "From:" stays in the message); curly quotes round a name work like
+straight ones; the soft hyphen and two more unseen marks are removed. Left as they are: the joiner
+characters are still removed, so a combined emoji (a family) shows as separate faces, on the card and in
+Gmail alike; an email with no header lines whose text starts "To:" has that line read as a header.
+Plain: the last loose ends where the card and Gmail could differ are closed.
+
+**Checks.** Type-check, lint (6 old warnings), build. 6,701 of 6,702 tests in the full run; the one failure
+each time was a different timing test in an untouched file (`LeaveGuard.app.test.tsx`, then
+`Shell.test.tsx`), passing alone (machine load from other sessions). 21 mutation checks (8 on the build, 13
+on the fix rounds): each broken rule failed a test.
+Browser (demo mode, 1280 and 390 wide): card, small window 680×760 with no link back to the app, `to`, `su`
+and `body` equal to the card, Copy text, Cmd-click opens a tab, no sideways scroll, no console errors.
+A 7,486-character link with £ and curly quotes was answered by Google (302, not 400).
+
+**Not tested.** A signed-in Gmail window end to end, and Claude itself writing the block in a live project
+chat (the demo reply and the wording test stand in for it).

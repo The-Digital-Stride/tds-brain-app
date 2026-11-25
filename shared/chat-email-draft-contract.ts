@@ -29,10 +29,11 @@ export const CHAT_EMAIL_LANG = 'email';
 export const CHAT_EMAIL_RECIPIENTS_MAX = 20;
 /**
  * The addresses kept must also fit in this many characters of a link once encoded (each `+` and `@` costs
- * three); a good address past it is left out and counted in `over`. It keeps the recipients inside
- * GMAIL_COMPOSE_URL_MAX whatever the account address and the list look like.
+ * three); a good address past it is left out and counted in `over`. It leaves room inside
+ * GMAIL_COMPOSE_URL_MAX for the longest subject (250 characters of nine each, 2,250) and the longest account
+ * address, so the subject on the card is always the subject Gmail is given.
  */
-export const CHAT_EMAIL_RECIPIENTS_URL_BUDGET = 5000;
+export const CHAT_EMAIL_RECIPIENTS_URL_BUDGET = 4500;
 /** A subject longer than this is cut. */
 export const CHAT_EMAIL_SUBJECT_MAX = 250;
 /**
@@ -53,7 +54,7 @@ export interface ChatEmail {
   subject: string;
   /** The message text as written after the header lines: plain text, line ends as `\n`, trimmed of blank
    *  lines at both ends, with characters nobody can see removed (control characters other than a line break
-   *  or a tab, zero-width characters and text-direction marks; security review: the card must show all
+   *  or a tab, zero-width characters, the soft hyphen and text-direction marks; security review: the card must show all
    *  that Gmail is given). Never rendered as markdown. */
   body: string;
   /** How many header entries were left out because they are not an address. A repeat is dropped silently. */
@@ -69,7 +70,8 @@ export interface ChatEmail {
  *   a repeat of To/Cc/Bcc adds to the list, a second Subject is ignored). They end at the first blank line
  *   or the first line that is not one of those headers; everything after is the body. A block with no
  *   header lines is all body.
- * - A `From:` line among the headers is read and ignored (Gmail sends from the account it opens in).
+ * - A `From:` line with an address among the headers is read and ignored (Gmail sends from the account it
+ *   opens in); one without an address is the start of the message.
  * - Addresses are split on commas and semicolons (not inside a quoted name). `Name <a@b.co>` gives `a@b.co`
  *   (the name is never kept or shown); a bare address is taken as written. Anything else is dropped and
  *   counted, and so is an address with a `%` in it (it could read as a different address). An address is

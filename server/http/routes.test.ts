@@ -12,6 +12,7 @@ import {
   type AskedTodoList,
   type DoneTodoList,
   type LibraryListing,
+  type LibraryRecentResponse,
   type LibrarySearchResponse,
   MAX_ATTACHMENTS,
   ROUTES,
@@ -1183,6 +1184,43 @@ describe('library routes', () => {
     );
     const docs = json(await call(ctx, `${ROUTES.librarySearch}?q=logo&kind=doc`)) as LibrarySearchResponse;
     expect(docs.hits.every((h) => h.item.kind === 'document')).toBe(true);
+  });
+
+  it('lists the recent files of one kind', async () => {
+    const { ctx } = setup();
+    const ok = await call(ctx, `${ROUTES.libraryRecent}?kind=image`);
+    expect(ok.status).toBe(200);
+    const body = json(ok) as LibraryRecentResponse;
+    expect(body.partial).toBe(false);
+    expect(body.files.length).toBeGreaterThan(0);
+    expect(body.files.every((f) => f.item.kind === 'image' && f.scope.kind !== 'personal')).toBe(true);
+    const docs = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc`)) as LibraryRecentResponse;
+    expect(docs.files.every((f) => f.item.kind === 'document')).toBe(true);
+    const none = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=acme/nothing`));
+    expect(none.files).toEqual([]);
+  });
+
+  it('refuses a bad recent kind or project, and any method but GET', async () => {
+    const { ctx } = setup();
+    for (const qs of ['', 'kind=video', 'kind=document', 'kind=doc&project=..%2Fx', 'kind=doc&project=']) {
+      const sent = await call(ctx, `${ROUTES.libraryRecent}?${qs}`);
+      expect(sent.status, qs).toBe(400);
+      expect(json(sent).error.code).toBe('bad-request');
+    }
+    expect(json(await call(ctx, `${ROUTES.libraryRecent}?kind=x`)).error.message).toBe(
+      'Choose whether to show images or documents.',
+    );
+    expect(json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=%20`)).error.message).toBe(
+      'That project was not understood.',
+    );
+    expect((await call(ctx, `${ROUTES.libraryRecent}?kind=image`, 'POST')).status).toBe(405);
+  });
+
+  it('answers an empty list when the brain has no recent method', async () => {
+    const ctx = { brain: {}, log: () => {} } as unknown as RouteContext;
+    const sent = await call(ctx, `${ROUTES.libraryRecent}?kind=doc`);
+    expect(sent.status).toBe(200);
+    expect(json(sent)).toEqual({ files: [], partial: false });
   });
 
   it('refuses a bad search query or kind, and any method but GET', async () => {

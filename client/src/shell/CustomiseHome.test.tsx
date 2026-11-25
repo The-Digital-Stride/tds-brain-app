@@ -79,6 +79,16 @@ describe('CustomiseHome', () => {
     expect(hint?.textContent).toContain('Shows only while an Ads change waits for you');
   });
 
+  it('has a switch for each Recent card, on by default, and hides one by its id', () => {
+    render(<CustomiseHome />);
+    for (const name of ['Recent tasks', 'Recent chats', 'Recent documents', 'Recent images']) {
+      expect((screen.getByRole('switch', { name }) as HTMLInputElement).checked).toBe(true);
+    }
+    fireEvent.click(screen.getByRole('switch', { name: 'Recent images' }));
+    expect(h.setHomeItemShown).toHaveBeenCalledWith('recent-images', false);
+    expect(screen.getByRole('status').textContent).toBe('Recent images hidden from Home');
+  });
+
   it('leaves out Start my day, Ads approvals and Pinned skills when they are not available', () => {
     h.hasGm = false;
     h.hasAds = false;

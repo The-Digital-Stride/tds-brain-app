@@ -310,6 +310,7 @@ export function createBrainReaders(
     },
     libraryScopes: () => library.scopes(),
     librarySearch: (q, kind) => library.search(q, kind),
+    libraryRecent: (kind, project) => library.recent(kind, project),
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
     libraryItemForPath: (rel) => library.itemForPath(rel),

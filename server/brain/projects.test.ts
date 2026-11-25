@@ -1413,7 +1413,7 @@ describe('project codes', () => {
     expect((await denied.list(ME)).canSaveChat).toBe(false);
   });
 
-  it('runs a ref change through the script, and refuses all for a non-Owner or without the capability', async () => {
+  it('runs a ref change through the script, and refuses all for a team member or without the capability', async () => {
     put('clients/acme/projects/a/project.md', card('A'));
     const s = service();
     await expect(s.change({ kind: 'ref', key: 'acme/a', expect: V }, ME)).rejects.toMatchObject({

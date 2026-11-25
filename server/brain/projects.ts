@@ -889,7 +889,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
         todoFeatures.includes(TODO_PROJECT_CAPABILITY),
       // Archive plan decision 11: the script's own capability, and the same roles check as any change.
       canArchive: canChange && features.includes(PROJECTS_ARCHIVE_CAPABILITY),
-      // Project codes (R2 phase 4b): the script's own capability; "all" is the brain's Owner only.
+      // Project codes (R2 phase 4b): the script's own capability; "all" is for an owner or a scout.
       canRef,
       canRefAll: canRef && (identity.role === 'owner' || identity.role === 'scout'),
       // Chat summaries: the script's own capability, and the same roles check as any change.

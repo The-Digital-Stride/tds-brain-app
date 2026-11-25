@@ -2811,7 +2811,7 @@ function refAction(input, ctx) {
 // Overseer blocker 3: two backfills before a sync would write different codes into the same cards.
 function refAll(ctx) {
   const who = identity(ctx);
-  if (!isBrainOwner(who)) throw refuse('not-allowed', "Only the brain's Owner can give every project a code.");
+  if (!isOwnerOrScout(who)) throw refuse('not-allowed', 'Only an owner or a scout can give every project a code at once.');
   const used = usedRefs(ctx);
   if (!used) throw refuse('internal', CANT_CHECK_REFS);
   const keys = new Set();

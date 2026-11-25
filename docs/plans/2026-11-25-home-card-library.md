@@ -118,4 +118,11 @@ A runs first; B, C and D then run in parallel against the contract. B exposes `o
 
 ## Review outcomes
 
-<Filled at step 10.>
+Build: Builder A (Sonnet) server and contract; B (Opus) save engine and shell; C (Sonnet) Home and logic; D (Sonnet) panel, tour, help, docs. Lead: test-kit and tour fixtures, Help split into its own page (`help/customise-home.md`, word limit), What's new moved to 0.85.0 (main released 0.84.0 meanwhile).
+
+- **Security (Opus):** no findings. Tampered prefs can only hide items or add a button for a skill or tool the person can already use; extra fields are stripped on save.
+- **Correctness (Opus):** 1 confirmed. A bootstrap begun before a save, landing while a later save waited, became the "saved" list, so a failed save fell back to a stale list and undid a confirmed hide (also affected favourites). Fixed in `pref-list.ts` `keepBoot`, test `pref-list.test.ts` (seen failing first). Untested wiring it named now has tests: `PanelToggle.test.tsx`, leaving Home in `ShellProvider.help.test.tsx` (checked by breaking the code: the test fails).
+- **UX/UI expert (Opus):** no WCAG failures. Confirmed and fixed: "Also in Pinned skills" never showed (pins not passed); waiting/gone tool shortcuts showed the raw id (now the tool's own title, meta "Tool"); Add opened an empty menu when nothing was left (now disabled with a hint); shortcut row is a named `<ul aria-label="Shortcuts">`; Remove has a short tip; redundant Start my day hint dropped; design-system doc matches the lone-card selector. Dropped: "Close customise home" lowercasing (shared Dock behaviour for every panel; reads the same aloud).
+- **Drift and copy (Sonnet):** all 21 decisions built. Fixed: What's new said nothing changes, but a lone last card now fills the row. Dropped by decision: the hidden count includes a hidden Ads approvals card on days nothing waits (that is the point of the line, risk R1).
+- **Browser check (lead, demo mode, 1440 and 900 px):** toggle opens the panel with focus on its heading; hiding, the foot count, a shortcut added and shown, lone last card spans the row, all kept after reload with the panel closed; narrow floats over Home, Esc closes and focus returns to the toggle; no console errors.
+- **Gates:** `pnpm check` green (6401 tests, lint, typecheck, build). Large-deletion scan: only `favourite-list.ts` (logic moved to `pref-list.ts`, intended).

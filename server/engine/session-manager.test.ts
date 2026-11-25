@@ -6456,6 +6456,25 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect(title.startsWith("Line one line two 'quoted' x")).toBe(true);
   });
 
+  it('tells Claude the code line for emails only when the project has its own code', async () => {
+    const { queries } = projectSetup({
+      cards: [
+        card('urban-cooling/web', { ref: 'URB4K7', refState: 'ok' }),
+        card('urban-cooling/seo', { ref: 'URB2A3', refState: 'duplicate' }),
+        card('urban-cooling/ads', { ref: 'not a code`', refState: 'ok' }),
+      ],
+    });
+    await mgr.start({ prompt: 'hi', project: 'urban-cooling/web' });
+    await mgr.start({ prompt: 'hi', project: 'urban-cooling/seo' });
+    await mgr.start({ prompt: 'hi', project: 'urban-cooling/ads' });
+    await flush();
+    expect(append(queries[0])).toContain(
+      'end the message text with the line `Ref: [URB4K7]` on its own, above any signature, unless that thread already has the code in its subject or an earlier message. Never put the code in a signature. Tell the user where each file went.',
+    );
+    expect(append(queries[1])).not.toContain('Ref: [');
+    expect(append(queries[2])).not.toContain('Ref: [');
+  });
+
   it("a client chat with no project lists the client's open projects", async () => {
     const { queries } = projectSetup();
     await mgr.start({ prompt: 'hi', client: 'urban-cooling' });

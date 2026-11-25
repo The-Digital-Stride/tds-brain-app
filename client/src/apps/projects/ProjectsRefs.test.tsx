@@ -39,6 +39,8 @@ vi.mock('../../api.ts', () => ({
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({ useShell: () => ({ dispatch: vi.fn() }) }));
 
+import { gmailComposeUrl } from '../../../../shared/project-email-threads-contract.ts';
+
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
 const { ApiFailure } = await import('../../api.ts');
@@ -76,7 +78,7 @@ describe('project code on the Overview', () => {
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(
       screen.getByText(
-        /Put this in a meeting invite or an email's subject or text so they find this project\./,
+        /Write an email opens Gmail with this code already in it\. You can also paste the code into a meeting invite or any email\./,
       ),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Copy code SKY4K7' }));
@@ -87,11 +89,35 @@ describe('project code on the Overview', () => {
     );
   });
 
+  it('Write an email is a link to Gmail compose with the code, opening in a new tab', async () => {
+    store.boot.identity = { slug: 'me', email: 'me@tds.example' } as typeof store.boot.identity;
+    await openProject();
+    const link = screen.getByRole('link', { name: /Write an email/ });
+    expect(link.getAttribute('href')).toBe(gmailComposeUrl('me@tds.example', 'SKY4K7'));
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.textContent).toContain('(opens in a new tab)');
+    store.boot.identity = { slug: 'me' } as typeof store.boot.identity;
+  });
+
+  it('Write an email uses no account when the identity has no email', async () => {
+    await openProject();
+    expect(screen.getByRole('link', { name: /Write an email/ }).getAttribute('href')).toBe(
+      gmailComposeUrl(null, 'SKY4K7'),
+    );
+  });
+
+  it('Write an email only shows when the code shows (missing, no client code)', async () => {
+    await openProject(mk({ ref: null, refState: 'missing' }));
+    expect(screen.queryByRole('link', { name: /Write an email/ })).toBeNull();
+  });
+
   it('a duplicate shows plain text: no Copy, no help line, no buttons without canRef', async () => {
     await openProject(mk({ refState: 'duplicate', refDuplicateOf: ['skyseal/other'] }), {});
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Copy/ })).toBeNull();
-    expect(screen.queryByText(/Put this in a meeting invite/)).toBeNull();
+    expect(screen.queryByText(/Write an email opens Gmail/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Write an email/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Make a new code' })).toBeNull();
   });
 

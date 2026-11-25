@@ -30,6 +30,7 @@ import {
   PROJECTS_EMAIL_CAPABILITY,
   type ProjectEmailEntryInput,
 } from '../../shared/project-email-contract.ts';
+import type { EmailDraftThread } from '../../shared/project-email-threads-contract.ts';
 import { UPDATE_SUMMARY_MAX, UPDATES_DIR } from '../../shared/project-updates-contract.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
 import {
@@ -118,6 +119,8 @@ export async function memberEmailOfSlug(root: string, slug: string): Promise<str
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const strList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
+const isStrMap = (v: unknown): v is Record<string, string> =>
+  !!v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every(isStr);
 const isPerson = (v: unknown): v is EmailPerson =>
   !!v &&
   typeof v === 'object' &&
@@ -154,7 +157,14 @@ export function parseDraft(text: string, id: string): EmailDraftFile | null {
     !isStr(d.summary) ||
     !strList(d.codes_subject) ||
     !strList(d.codes_body) ||
-    !(d.requested === null || isStr(d.requested))
+    !(d.requested === null || isStr(d.requested)) ||
+    // The thread fields are optional (older drafts have none); when present they must be the right shape.
+    (d.thread_keys !== undefined && !strList(d.thread_keys)) ||
+    (d.codes_thread !== undefined && !strList(d.codes_thread)) ||
+    (d.near_keys !== undefined && !isStrMap(d.near_keys)) ||
+    (d.message_id !== undefined && !isStr(d.message_id)) ||
+    (d.fresh_at_draft !== undefined &&
+      !(Number.isInteger(d.fresh_at_draft) && (d.fresh_at_draft as number) > 0))
   )
     return null;
   return d as unknown as EmailDraftFile;
@@ -170,13 +180,22 @@ function shown(p: EmailPerson): string {
 
 // ─── Emails already in projects ──────────────────────────────────────────────────────────────────
 
+/** Who saved the newest entry holding a message key, and when. */
+interface HeldBy {
+  key: ProjectKey;
+  by: string;
+  at: string;
+  time: number;
+}
 interface Linked {
   threads: Map<string, ProjectKey>;
+  /** HELD keys: every entry's `email_key`, old `email_message_id` and `email_thread_keys` (never `email_thread_link`). */
   messages: Map<string, ProjectKey>;
+  held: Map<string, HeldBy>;
 }
 
 async function scanEmailEntries(root: string, cards: ProjectCard[]): Promise<Linked> {
-  const out: Linked = { threads: new Map(), messages: new Map() };
+  const out: Linked = { threads: new Map(), messages: new Map(), held: new Map() };
   await Promise.all(
     cards.map(async (card) => {
       const dir = join(root, ...card.folder.split('/'), UPDATES_DIR);
@@ -199,8 +218,21 @@ async function scanEmailEntries(root: string, cards: ProjectCard[]): Promise<Lin
           const owner = typeof data.email_inbox_owner === 'string' ? data.email_inbox_owner : '';
           const thread = typeof data.email_thread_id === 'string' ? data.email_thread_id : '';
           if (owner && thread) out.threads.set(`${owner}\0${thread}`, card.key);
-          for (const k of [data.email_key, data.email_message_id])
-            if (typeof k === 'string' && k !== '') out.messages.set(k, card.key);
+          const by = typeof data.by === 'string' ? data.by : '';
+          const at = typeof data.at === 'string' ? data.at : '';
+          const time = Date.parse(at);
+          const listed = Array.isArray(data.email_thread_keys)
+            ? data.email_thread_keys
+            : typeof data.email_thread_keys === 'string'
+              ? [data.email_thread_keys]
+              : [];
+          for (const k of [data.email_key, data.email_message_id, ...listed]) {
+            if (typeof k !== 'string' || k === '') continue;
+            out.messages.set(k, card.key);
+            const cur = out.held.get(k);
+            const t = Number.isFinite(time) ? time : 0;
+            if (!cur || t > cur.time) out.held.set(k, { key: card.key, by, at, time: t });
+          }
         } catch {
           // an unreadable entry says nothing
         }
@@ -362,8 +394,28 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
       resolveCode: (code) => index.refs?.resolve(code) ?? null,
       liveProjectsOfDomain: toDomain,
     };
+    const isHeld = (k: string, near: Record<string, string>) =>
+      linked.held.has(k) || (near[k] !== undefined && linked.held.has(near[k]));
+    let roster: Map<string, string> | null = null;
+    const nameOf = async (by: string): Promise<string | null> => {
+      if (by === '') return null;
+      if (!roster) {
+        roster = new Map();
+        for (const m of await readTeam(root).catch(() => [])) {
+          roster.set(m.slug, m.name);
+          const alt = memberSlug(m.name);
+          if (alt && !roster.has(alt)) roster.set(alt, m.name);
+        }
+      }
+      return roster.get(by) ?? by;
+    };
     const drafts: EmailDraftItem[] = [];
     for (const d of mine) {
+      const near = d.near_keys ?? {};
+      // A teammate saved this very email first: hidden, never deleted (it returns if that entry is removed).
+      // The same when an entry holds it under its Message-ID (a save made without a thread list).
+      if (isHeld(d.email_key, near) || (d.message_id !== undefined && linked.held.has(d.message_id)))
+        continue;
       const route = routeEmail(
         {
           requested: d.requested,
@@ -373,11 +425,36 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
           threadMessageIds: d.thread_message_ids,
           codesSubject: d.codes_subject,
           codesBody: d.codes_body,
+          threadKeys: d.thread_keys ?? [],
+          nearKeys: near,
+          codesThread: d.codes_thread ?? [],
           fromDomain: d.from_domain.toLowerCase(),
         },
         ctx,
       );
       if (keyFilter !== null && route.key !== keyFilter) continue;
+      let thread: EmailDraftThread | undefined;
+      if (
+        d.thread_keys !== undefined ||
+        d.near_keys !== undefined ||
+        d.codes_thread !== undefined ||
+        d.fresh_at_draft !== undefined
+      ) {
+        const keys = d.thread_keys ?? [];
+        const covered = keys.filter((k) => isHeld(k, near));
+        const fresh = Math.max(1, keys.length + 1 - covered.length);
+        let latest: HeldBy | null = null;
+        for (const k of covered) {
+          const h = linked.held.get(k) ?? linked.held.get(near[k] ?? '');
+          if (h && (!latest || h.time > latest.time)) latest = h;
+        }
+        thread = {
+          total: keys.length + 1,
+          fresh,
+          ...(latest ? { partOf: { key: latest.key, byName: await nameOf(latest.by), at: latest.at } } : {}),
+          ...(d.fresh_at_draft !== undefined && fresh < d.fresh_at_draft ? { overlap: true } : {}),
+        };
+      }
       drafts.push({
         id: d.id,
         subject: d.subject,
@@ -386,6 +463,7 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
         sentAt: d.sent_at,
         summary: d.summary,
         route,
+        ...(thread ? { thread } : {}),
       });
     }
     drafts.sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt));

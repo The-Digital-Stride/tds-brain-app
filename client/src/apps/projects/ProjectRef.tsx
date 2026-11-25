@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { gmailComposeUrl } from '../../../../shared/project-email-threads-contract.ts';
 import type { ProjectCard, ProjectList } from '../../../../shared/projects-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useCopy } from '../../shell/useCopy.ts';
+import { useStore } from '../../store.tsx';
 import { useProjectChange } from './useChange.ts';
 
 /** What gets copied: the code in square brackets, so it stands out in a subject line. */
@@ -21,6 +23,7 @@ export function ProjectRef({
   /** The other project's title for a duplicate, when the list has it. */
   title: (key: string) => string;
 }) {
+  const { boot } = useStore();
   const change = useProjectChange({ reloadOnChanged: true });
   const { said, copy } = useCopy();
   const [busy, setBusy] = useState(false);
@@ -85,6 +88,15 @@ export function ProjectRef({
             <span className="visually-hidden" role="status">
               {said ?? ''}
             </span>
+            <a
+              className="btn"
+              data-size="small"
+              href={gmailComposeUrl(boot?.identity.email ?? null, ref)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Write an email<span className="visually-hidden"> (opens in a new tab)</span>
+            </a>
           </>
         ) : null}
         {duplicate ? <code className="proj-ref-code">{ref}</code> : null}
@@ -137,7 +149,8 @@ export function ProjectRef({
       ) : null}
       {shown ? (
         <p className="proj-note">
-          Put this in a meeting invite or an email's subject or text so they find this project.
+          Write an email opens Gmail with this code already in it. You can also paste the code into a meeting
+          invite or any email.
         </p>
       ) : null}
       {problem ? (

@@ -16,6 +16,10 @@ export interface EmailRouteFacts {
   threadMessageIds: string[];
   codesSubject: string[];
   codesBody: string[];
+  /** The draft's thread-message keys, near keys and codes from earlier messages (all optional: old drafts have none). */
+  threadKeys?: string[];
+  nearKeys?: Record<string, string>;
+  codesThread?: string[];
   /** Lower-case domain of the sender, '' when unknown. */
   fromDomain: string;
 }
@@ -40,14 +44,6 @@ export function routeEmail(f: EmailRouteFacts, ctx: EmailRouteContext): EmailRou
 
   if (f.requested !== null && ctx.isLive(f.requested)) return { key: f.requested, why: 'requested' };
 
-  const thread = ctx.linkedThread(f.inboxOwner, f.threadId);
-  if (live(thread)) return { key: thread, why: 'thread' };
-
-  for (const id of [f.emailKey, ...f.threadMessageIds]) {
-    const hit = ctx.linkedMessage(id);
-    if (live(hit)) return { key: hit, why: 'message' };
-  }
-
   // Codes: an unknown code, or one for a project that isn't live, says nothing and is ignored.
   const known = (codes: string[]): Map<ProjectKey, string> => {
     const out = new Map<ProjectKey, string>();
@@ -60,9 +56,29 @@ export function routeEmail(f: EmailRouteFacts, ctx: EmailRouteContext): EmailRou
   const subject = known(f.codesSubject);
   const body = known(f.codesBody);
   const all = new Map([...subject, ...body]);
+  /** A newer code naming a different live project than the one a saved thread points at. */
+  const withOverruled = (key: ProjectKey, why: 'thread' | 'message'): EmailRoute => {
+    for (const [other, code] of all) if (other !== key) return { key, why, overruled: code };
+    return { key, why };
+  };
+
+  const thread = ctx.linkedThread(f.inboxOwner, f.threadId);
+  if (live(thread)) return withOverruled(thread, 'thread');
+
+  const near = f.nearKeys ?? {};
+  const ids = [f.emailKey, ...f.threadMessageIds, ...(f.threadKeys ?? [])];
+  for (const id of [...ids, ...Object.values(near)]) {
+    const hit = ctx.linkedMessage(id);
+    if (live(hit)) return withOverruled(hit, 'message');
+  }
+
   if (all.size >= 2) return { key: null, why: 'codes-disagree', codes: [...all.values()] };
   if (subject.size === 1) return { key: [...subject.keys()][0] as ProjectKey, why: 'subject-code' };
   if (body.size === 1) return { key: [...body.keys()][0] as ProjectKey, why: 'body-code' };
+
+  const fromThread = known(f.codesThread ?? []);
+  if (fromThread.size >= 2) return { key: null, why: 'codes-disagree', codes: [...fromThread.values()] };
+  if (fromThread.size === 1) return { key: [...fromThread.keys()][0] as ProjectKey, why: 'thread-code' };
 
   if (f.fromDomain !== '') {
     const projects = (ctx.liveProjectsOfDomain(f.fromDomain) ?? []).filter((k) => ctx.isLive(k));

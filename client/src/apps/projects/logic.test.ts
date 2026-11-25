@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
 import {
   changedFields,
   EMPTY_VALUES,
@@ -6,11 +7,13 @@ import {
   filterProjects,
   groupByStage,
   groupProjects,
+  groupUpdates,
   isMine,
   LIGHT_WORDS,
   NO_FILTERS,
   slugFromTitle,
   teamRows,
+  threadLine,
   todosForProject,
   validate,
   valuesFromCard,
@@ -124,5 +127,72 @@ describe('the health words', () => {
   it('say what the light means; the stored values stay colours', () => {
     expect(LIGHT_WORDS).toEqual({ green: 'On track', amber: 'At risk', red: 'Off track' });
     expect(valuesFromCard(card({ health: 'amber' })).health).toBe('amber');
+  });
+});
+
+describe('groupUpdates', () => {
+  const u = (path: string, over: Partial<ProjectUpdateItem> = {}): ProjectUpdateItem => ({
+    v: 1,
+    kind: 'email',
+    by: 'me',
+    at: '2026-11-23T14:05:00Z',
+    clientSafe: false,
+    summary: 's',
+    path,
+    version: `h-${path}`,
+    byName: 'Me',
+    canRemove: false,
+    ...over,
+  });
+
+  it('leaves entries without a conversation as single rows, in order', () => {
+    const rows = groupUpdates([u('a', { kind: 'note' }), u('b'), u('c', { emailThread: undefined })]);
+    expect(rows.map((r) => r.parts.map((p) => p.path))).toEqual([['a'], ['b'], ['c']]);
+    expect(rows.every((r) => !r.thread)).toBe(true);
+  });
+
+  it('joins parts sharing emailThread into one row at the first part, newest sent first', () => {
+    const rows = groupUpdates([
+      u('a', { kind: 'note' }),
+      u('p1', { emailThread: 't', emailSentAt: '2026-11-20T10:00:00Z' }),
+      u('b', { kind: 'note' }),
+      u('p2', { emailThread: 't', emailSentAt: '2026-11-24T09:00:00Z' }),
+      u('p3', { emailThread: 't', emailSentAt: '2026-11-22T09:00:00Z' }),
+    ]);
+    expect(rows.map((r) => r.parts.map((p) => p.path))).toEqual([['a'], ['p2', 'p3', 'p1'], ['b']]);
+    expect(rows[1]?.thread).toBe(true);
+  });
+
+  it('falls back to the saved time when a part has no sent time', () => {
+    const rows = groupUpdates([
+      u('old', { emailThread: 't', at: '2026-11-01T00:00:00Z' }),
+      u('new', { emailThread: 't', at: '2026-11-05T00:00:00Z' }),
+    ]);
+    expect(rows[0]?.parts.map((p) => p.path)).toEqual(['new', 'old']);
+  });
+
+  it('keeps a conversation with one part visible as a thread row of one', () => {
+    const rows = groupUpdates([u('x', { emailThread: 't' })]);
+    expect(rows[0]?.parts).toHaveLength(1);
+    expect(rows[0]?.thread).toBe(true);
+  });
+
+  it('with a filter, a row shows when any part passes and only passing parts show', () => {
+    const rows = groupUpdates(
+      [
+        u('p1', { emailThread: 't', clientSafe: true }),
+        u('p2', { emailThread: 't', clientSafe: false }),
+        u('n', { kind: 'note', clientSafe: false }),
+      ],
+      (x) => x.clientSafe,
+    );
+    expect(rows.map((r) => r.parts.map((p) => p.path))).toEqual([['p1']]);
+  });
+});
+
+describe('threadLine', () => {
+  it('counts the updates and names the latest date', () => {
+    expect(threadLine(3, '2026-11-24T09:00:00Z')).toBe('3 updates · latest 24 Nov 2026');
+    expect(threadLine(1, '2026-11-24T09:00:00Z')).toBe('1 update · latest 24 Nov 2026');
   });
 });

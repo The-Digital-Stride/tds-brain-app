@@ -8,7 +8,7 @@ benefit: The team sees what was agreed by email without opening anyone's inbox.
 roles: all
 related: [projects, project-codes]
 since: 0.73.0
-reviewed: 2026-11-24
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -32,7 +32,11 @@ Claude can suggest client emails for a project. Each one waits for the person wh
 - Only the summary, subject, names and date are saved. The email itself and email addresses never are.
 - Notes stay internal unless you tick **Client can see this**.
 - Only you can save emails from your inbox. Teammates see "In Sam's inbox" instead of a Gmail link.
-- A project code in the subject or text picks the project for you.
+- A project code anywhere in the thread picks the project for you. Paste it once and later replies still find it. A code in a signature never counts.
+- A conversation is one row on **Updates**. Each person adds only what is new. Open **Earlier in this thread** to read the older parts.
+- Each part keeps its own **Client can see this** setting and its own delete button.
+- Did a summary miss something? The person who saved that part deletes it and saves again.
+- To start an email from a project, press **Write an email** on its **Overview**.
 
 ## Try this
 

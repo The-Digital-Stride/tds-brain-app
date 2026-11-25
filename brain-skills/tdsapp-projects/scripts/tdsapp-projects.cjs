@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.7.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// tdsapp-projects.cjs (v0.8.0): make and change project cards (`project.md`) the way TDS Cortex does,
 // move a project to another client, archive, unarchive or delete one, keep its updates log, and give
 // projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md), and keep email
-// drafts for their inbox owner's approval (docs/plans/2026-11-24-projects-r2-email-entries.md). The
+// drafts for their inbox owner's approval (docs/plans/2026-11-24-projects-r2-email-entries.md), with
+// email threads known across inboxes (docs/plans/2026-11-25-project-email-threads.md). The
 // plans are the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
 // docs/plans/2026-11-21-project-move.md, docs/plans/2026-11-21-project-archive-delete.md and
 // docs/plans/2026-11-23-projects-r2-updates-log.md; the shapes are in its shared/projects-contract.ts
@@ -12,7 +13,8 @@
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
 //   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | update |
-//             update-remove | ref | find-ref | email-draft | email-draft-remove | capabilities
+//             update-remove | ref | find-ref | email-draft | email-draft-remove | email-check |
+//             capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
 //             link {key, path, expect}, unlink {key, path, expect},
@@ -21,7 +23,8 @@
 //             delete {key, expect?, check?: true, filesExpect?, leftover?: true},
 //             update {key, entry: {kind: note|call, summary, clientSafe}}, update-remove {key, file, expect},
 //             ref {key, expect, replace?: true} or {all: true}, find-ref {text},
-//             email-draft {EmailDraftInput}, email-draft-remove {id, dismiss},
+//             email-draft {EmailDraftInput, optional thread and threadCodes}, email-draft-remove {id, dismiss},
+//             email-check {inboxAddress, threadId, subject, thread} (read only),
 //             update {key, entry: {kind: email, draft, token, summary, subject, from, people, clientSafe}}
 //             (the app only, on the inbox owner's Save),
 //             update {key, entry: {kind: chat, summary, clientSafe, chat, title}} (the app only, on
@@ -40,6 +43,7 @@
 //             and `skipped` (plus key and version for one card); `find-ref` answers `found` and `near`.
 //             `email-draft` and `email-draft-remove` answer `id` (never the draft's token); an
 //             `exists` refusal for an email adds `file` and `key`, the entry that already holds it.
+//             `email-check` answers `covered`, `fresh` and `project` (EmailCheckReply).
 //   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed, dismissed);
 //             exit 1 internal.
 //
@@ -118,7 +122,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.7.0';
+const SCRIPT_VERSION = '0.8.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -152,6 +156,19 @@ const EMAIL = {
   MESSAGE_ID_MAX: 300,
   EMAIL_NAME_MAX: 120,
 };
+// Project email threads (docs/plans/2026-11-25-project-email-threads.md), as
+// shared/project-email-threads-contract.ts (a test checks these match).
+const PROJECTS_EMAIL_THREADS_CAPABILITY = 'projects-email-threads-v1';
+const EMAIL_THREADS = {
+  EMAIL_THREAD_MESSAGES_MAX: 30,
+  EMAIL_THREAD_CODES_MAX: 10,
+  EMAIL_KEY_SLOP_SECONDS: 5,
+};
+// One `threadCodes` item: a code, perhaps in brackets, never a passage of text.
+const THREAD_CODE_ITEM_MAX = 40;
+// A thread message may be dated this far after this Mac's clock, no further: a message not yet sent
+// can't be claimed ahead of time (security review, 2026-11-25).
+const THREAD_CLOCK_AHEAD_MS = 5 * 60 * 1000;
 const EMAIL_DRAFTS_DIR_MODE = 0o700;
 const EMAIL_DRAFT_FILE_MODE = 0o600;
 const EMAIL_DRAFT_MAX_BYTES = 64 * 1024;
@@ -230,7 +247,7 @@ const NAME_MAX = 80;
 const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'dismissed', 'internal']);
 const ACTION_NAMES = [
   'create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'update', 'update-remove',
-  'ref', 'find-ref', 'email-draft', 'email-draft-remove', 'capabilities',
+  'ref', 'find-ref', 'email-draft', 'email-draft-remove', 'email-check', 'capabilities',
 ];
 // A move lists at most this many of the folder's files in its check, and walks at most this many entries.
 const MOVE_FILES_SHOWN = 50;
@@ -2907,6 +2924,7 @@ function capabilities() {
       PROJECTS_REFS_CAPABILITY,
       PROJECTS_EMAIL_CAPABILITY,
       PROJECTS_CHAT_SUMMARY_CAPABILITY,
+      PROJECTS_EMAIL_THREADS_CAPABILITY,
     ],
   };
 }
@@ -2923,6 +2941,14 @@ function capabilities() {
 // key file exists, the token matches and the draft is unchanged. That entry takes its thread id, key, sent time and inbox owner
 // from the draft and the rest (as edited on screen) from the request, and is never written twice for
 // one email (`email_key`, across every project). Entries hold names, never addresses.
+//
+// Threads (0.8.0, docs/plans/2026-11-25-project-email-threads.md): `email-draft` may also take the
+// thread's messages (sender and sent time, newest first) and codes Claude saw earlier in it. The draft
+// keeps only their `x:` keys (`thread_keys`, `near_keys`), the codes (`codes_thread`) and how many were
+// new (`fresh_at_draft`). On Save the entry gains `email_thread_keys` (the messages no entry held then)
+// and `email_thread_link` (one already-held key, to join the conversation; it holds nothing).
+// `email-check` says which messages of a thread some project holds, writing nothing. A code or a
+// thread match only pre-selects a project: the inbox owner still approves every entry.
 
 const ONE_LINE_BAD = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 const SPACE_BAD = /[\s\p{Cc}\p{Zl}\p{Zp}]/u;
@@ -2998,10 +3024,10 @@ function messageIdOf(value, name) {
   return id;
 }
 
-function sentTime(value) {
+function sentTime(value, name = 'sentAt') {
   const m = typeof value === 'string' ? ISO_TIME.exec(value) : null;
   const t = m && isRealDate(m[1]) ? new Date(value) : null;
-  if (!t || Number.isNaN(t.getTime())) throw refuse('bad-request', 'sentAt must be an ISO time, such as 2026-11-20T16:30:00Z');
+  if (!t || Number.isNaN(t.getTime())) throw refuse('bad-request', `${name} must be an ISO time, such as 2026-11-20T16:30:00Z`);
   return t;
 }
 
@@ -3037,6 +3063,100 @@ function ownText(text) {
 // Distinct valid project codes in `text` (the shared code rules), upper case, in order.
 function codesIn(text) {
   return refCandidates(text).filter(isValidRef);
+}
+
+// The newest message's quoted lines (`>`), before any unquoted `-- ` line. A quoted signature (a line
+// that is `-- ` once its `>` marks are taken off) skips the lines quoted as deep after it, so a
+// signature never counts at any depth (threads decision 1).
+function quotedText(text) {
+  const out = [];
+  let signatureDepth = null;
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (line === '-- ') break;
+    const m = /^\s*((?:>[ \t]?)+)(.*)$/.exec(line);
+    if (!m) continue;
+    const depth = (m[1].match(/>/g) || []).length;
+    if (signatureDepth !== null && depth === signatureDepth) continue;
+    signatureDepth = null;
+    if (m[2] === '-- ') {
+      signatureDepth = depth;
+      continue;
+    }
+    out.push(m[2]);
+  }
+  return out.join('\n');
+}
+
+// The key one minute either side, for a message sent within EMAIL_KEY_SLOP_SECONDS of a minute
+// boundary (threads decision 3), else null. Matching only: stored keys stay exact-minute.
+function nearKeyOf(from, sent, subject) {
+  const slop = EMAIL_THREADS.EMAIL_KEY_SLOP_SECONDS * 1000;
+  const into = ((sent.getTime() % 60000) + 60000) % 60000;
+  let shift = 0;
+  if (into <= slop) shift = -60000;
+  else if (60000 - into <= slop) shift = 60000;
+  return shift === 0 ? null : emailKeyOf(null, from, new Date(sent.getTime() + shift), subject);
+}
+
+// A `thread` (EmailThreadMessage[], newest first): each message's exact key, its near key (or null)
+// and its sentAt as given. Addresses are read for the keys only and never kept. Refused (`bad-request`)
+// when it isn't a list of 1 to EMAIL_THREAD_MESSAGES_MAX messages with an address and an ISO time, or
+// when a message is dated after now. A near key equal to another listed message's own key is dropped:
+// one inbox never holds a message twice, so that match would be a different message (a quick
+// follow-up from the same sender), and taking it for a copy would lose it (correctness review).
+function threadOf(value, subject, ctx) {
+  const max = EMAIL_THREADS.EMAIL_THREAD_MESSAGES_MAX;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw refuse('bad-request', `thread must list the thread's messages, newest first (at most ${max})`);
+  }
+  if (value.length > max) {
+    throw refuse('bad-request', `thread has more than ${max} messages: send fewer thread messages (the newest ${max})`);
+  }
+  const latest = ctx.now.getTime() + THREAD_CLOCK_AHEAD_MS;
+  const messages = value.map((m) => {
+    if (m === null || typeof m !== 'object' || Array.isArray(m)) {
+      throw refuse('bad-request', 'each thread message must be {from, sentAt}');
+    }
+    const from = { address: emailAddress(m.from, "a thread message's from") };
+    const sent = sentTime(m.sentAt, "a thread message's sentAt");
+    if (sent.getTime() > latest) {
+      throw refuse('bad-request', "a thread message's sentAt is in the future: send only messages already in the thread");
+    }
+    const own = m.subject === undefined || m.subject === null
+      ? subject
+      : emailLine(m.subject, "a thread message's subject", EMAIL.EMAIL_SUBJECT_MAX, true);
+    return { key: emailKeyOf(null, from, sent, own), near: nearKeyOf(from, sent, own), sentAt: m.sentAt };
+  });
+  const own = new Set(messages.map(m => m.key));
+  for (const m of messages) if (m.near !== null && own.has(m.near)) m.near = null;
+  return messages;
+}
+
+// `threadCodes`: codes Claude saw in earlier messages, at most EMAIL_THREAD_CODES_MAX. Only valid
+// code shapes are kept (distinct, upper case, in order).
+function threadCodesOf(value) {
+  const max = EMAIL_THREADS.EMAIL_THREAD_CODES_MAX;
+  if (!Array.isArray(value) || value.length > max) {
+    throw refuse('bad-request', `threadCodes must be a list of at most ${max} project codes`);
+  }
+  for (const c of value) {
+    if (!isText(c) || c.length > THREAD_CODE_ITEM_MAX) {
+      throw refuse('bad-request', `each of threadCodes must be one project code (at most ${THREAD_CODE_ITEM_MAX} characters)`);
+    }
+  }
+  return value.flatMap(codesIn);
+}
+
+// Distinct items of `lists`, in order, leaving out anything in `skip`.
+function distinctExcept(lists, skip) {
+  const seen = new Set(skip);
+  const out = [];
+  for (const x of lists.flat()) {
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 function draftsRel(name) {
@@ -3268,11 +3388,18 @@ function readDismissed(ctx, folder, slug) {
   return out;
 }
 
-// The earliest `email` entry in any project (every folder, archives and old folders too) for this
-// key, or an old file's `email_message_id` equal to it: `{file, key}`, or null.
-function emailHeld(ctx, emailKey) {
-  const messageId = emailKey.startsWith('<') ? emailKey : null;
-  let best = null;
+// Every key some `email` entry holds, in any project (every folder, archives and old folders too),
+// mapped to the earliest such entry, `{file, key, at}`. HELD (threads contract, overseer B1): an
+// entry holds its `email_key`, every key in its `email_thread_keys`, and an old file's
+// `email_message_id` (as `<id>`, so only a Message-ID finds it). `email_thread_link` holds nothing.
+// Built once per command (overseer S1) and asked with `heldBy`.
+function heldKeys(ctx) {
+  const held = new Map();
+  const hold = (k, found) => {
+    if (!isText(k) || k === '') return;
+    const best = held.get(k);
+    if (!best || found.at < best.at || (found.at === best.at && found.file < best.file)) held.set(k, found);
+  };
   for (const b of projectBases(ctx)) {
     for (const name of b.names) {
       const projectKey = `${b.client}/${name}`;
@@ -3303,19 +3430,37 @@ function emailHeld(ctx, emailKey) {
         if (!parts) continue;
         const v = cardValues(parts.entries);
         if (v.kind !== 'email') continue;
-        const same = v.email_key === emailKey
-          || (messageId !== null && (v.email_message_id === messageId || v.email_message_id === messageId.slice(1, -1)));
-        if (!same) continue;
         const found = { file: `${dirRel}/${f}`, key: projectKey, at: isText(v.at) ? v.at : '' };
-        if (!best || found.at < best.at || (found.at === best.at && found.file < best.file)) best = found;
+        hold(v.email_key, found);
+        if (isText(v.email_message_id) && v.email_message_id !== '') {
+          hold(v.email_message_id.startsWith('<') ? v.email_message_id : `<${v.email_message_id}>`, found);
+        }
+        if (Array.isArray(v.email_thread_keys)) for (const k of v.email_thread_keys) hold(k, found);
       }
     }
   }
-  return best ? { file: best.file, key: best.key } : null;
+  return held;
+}
+
+// The entry holding the first of `keys` that any entry holds (nulls skipped): `{file, key, held}`,
+// `held` being the key as that entry has it; or null.
+function heldBy(held, keys) {
+  for (const k of keys) {
+    const found = k === null || k === undefined ? undefined : held.get(k);
+    if (found) return { file: found.file, key: found.key, held: k };
+  }
+  return null;
 }
 
 function alreadyIn(held) {
   return refuse('exists', `That email is already in ${held.key}.`, { file: held.file, key: held.key });
+}
+
+// The inbox named must be this Mac's identity's own email (overseer 7).
+function requireOwnInbox(who, inboxAddress, verb) {
+  if (who.member.email.trim().toLowerCase() !== inboxAddress.toLowerCase()) {
+    throw refuse('not-allowed', `that inbox isn't yours: only its owner, on their own Mac, can ${verb}`);
+  }
 }
 
 // This Mac's team member, with the email roles.json gives them; refused when there is none.
@@ -3390,11 +3535,30 @@ function emailDraft(input, ctx) {
     if (!parseKey(input.requested)) throw refuse('bad-request', 'requested must be <client>/<slug> or personal/<slug>');
     requested = input.requested;
   }
+  // Threads (0.8.0), only when sent: a call without them makes the draft exactly as 0.7.0 did.
+  const hasThread = input.thread !== undefined && input.thread !== null;
+  const hasThreadCodes = input.threadCodes !== undefined && input.threadCodes !== null;
+  const thread = hasThread ? threadOf(input.thread, subject, ctx) : null;
+  const threadCodes = hasThreadCodes ? threadCodesOf(input.threadCodes) : [];
+  // The drafted email's derived key. With a thread it is the email_key even when a Message-ID is given
+  // (correctness review): every inbox can derive it, so a teammate's copy is known as the same email at
+  // Save and in the app. The Message-ID then only joins `thread_message_ids`. Without a thread, 0.7.0's
+  // key stands (the Message-ID when given).
+  const ownKey = emailKeyOf(null, from, sent, subject);
+  const messageKey = emailKeyOf(messageId, from, sent, subject);
+  const emailKey = thread ? ownKey : messageKey;
+  const self = thread ? thread.find(m => m.key === ownKey) : null;
+  if (thread && !self) {
+    throw refuse('bad-request', "thread doesn't hold the email being drafted (the same sender, minute and subject): send this email's own thread");
+  }
+  // Its near key, as the thread list has it (dropped when it is another listed message's key).
+  const ownNear = self ? self.near : null;
+  if (thread && messageId !== null && messageKey !== ownKey) {
+    threadMessageIds = [...new Set([messageKey, ...threadMessageIds])].slice(0, EMAIL.EMAIL_THREAD_IDS_MAX);
+  }
 
   const who = inboxOwner(ctx);
-  if (who.member.email.trim().toLowerCase() !== inboxAddress.toLowerCase()) {
-    throw refuse('not-allowed', "that inbox isn't yours: only its owner, on their own Mac, can draft its emails for a project");
-  }
+  requireOwnInbox(who, inboxAddress, 'draft its emails for a project');
   if (requested !== null) requireRequested(ctx, requested);
 
   // Git must ignore the very files written: the new draft and this owner's dismissals.
@@ -3402,16 +3566,20 @@ function emailDraft(input, ctx) {
   const folder = draftsFolder(ctx, true, [draftsRel(`${id}.json`), draftsRel(dismissedName(who.slug))]);
   sweepDrafts(ctx, folder);
 
-  const emailKey = emailKeyOf(messageId, from, sent, subject);
-  if (Object.prototype.hasOwnProperty.call(readDismissed(ctx, folder, who.slug), emailKey)) {
+  // Under either key: an email dismissed by its Message-ID stays dismissed when drafted with a thread.
+  const dismissed = readDismissed(ctx, folder, who.slug);
+  if ([emailKey, messageKey].some(k => Object.prototype.hasOwnProperty.call(dismissed, k))) {
     throw refuse('dismissed', 'You said this email is not for a project, so it is not suggested again.');
   }
-  const held = emailHeld(ctx, emailKey);
+  const heldMap = heldKeys(ctx);
+  // With a thread, the drafted email is also asked for by its derived key and near key (threads decision 3).
+  const held = heldBy(heldMap, thread ? [messageKey, ownKey, ownNear] : [emailKey]);
   if (held) throw alreadyIn(held);
 
   for (const name of draftNames(folder)) {
     const r = readDraft(folder, name);
-    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && r.draft.email_key === emailKey) {
+    // The same email under either key (a waiting draft made without a thread has the Message-ID).
+    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && (r.draft.email_key === emailKey || r.draft.email_key === messageKey)) {
       removeQuietly(r.abs);
       removeKey(ctx, r.draft.id);
     }
@@ -3434,6 +3602,26 @@ function emailDraft(input, ctx) {
     codes_body: codesIn(ownText(input.newestText)),
     requested,
   };
+  if (thread) {
+    // Hashes only, newest first; the drafted email itself left out (it is `email_key`).
+    // The email's Message-ID, when given: asked for again at Save and by the app, so an entry a
+    // teammate saved under it (0.7.0, or a call without a thread) still stops a repeat.
+    if (messageKey !== ownKey) draft.message_id = messageKey;
+    draft.thread_keys = distinctExcept([thread.map(m => m.key)], [emailKey]);
+    const near = {};
+    if (ownNear !== null) near[emailKey] = ownNear;
+    for (const m of thread) if (m.near !== null && draft.thread_keys.includes(m.key)) near[m.key] = m.near;
+    if (Object.keys(near).length > 0) draft.near_keys = near;
+    // Counted over distinct keys, as the app counts (two messages can share one): the drafted email,
+    // just found not held, plus each other key no entry holds. At least 1.
+    draft.fresh_at_draft = 1 + draft.thread_keys.filter(k => !heldBy(heldMap, [k, near[k]])).length;
+  }
+  if (hasThread || hasThreadCodes) {
+    draft.codes_thread = distinctExcept(
+      [codesIn(quotedText(input.newestText)), threadCodes],
+      [...draft.codes_subject, ...draft.codes_body],
+    );
+  }
   const bytes = `${JSON.stringify(draft, null, 2)}\n`;
   writePrivate(folder, `${id}.json`, bytes, false);
   try {
@@ -3486,6 +3674,36 @@ function emailDraftRemove(input, ctx) {
   removeKey(ctx, id);
   syncDir(folder.abs);
   return { ok: true, action: 'email-draft-remove', id };
+}
+
+// `email-check` (EmailCheckInput): which of a thread's messages some project already holds, so Claude
+// summarises only the rest (threads decision 5, overseer S4). Read only: writes nothing, needs no
+// drafts folder, and is refused for an inbox that isn't this Mac's identity's, as `email-draft` is.
+function emailCheck(input, ctx) {
+  if (hasBcc(input)) throw refuse('bad-request', NEVER_BCC);
+  if (!isText(input.threadId) || !GMAIL_THREAD_ID_PATTERN.test(input.threadId)) {
+    throw refuse('bad-request', "threadId must be the Gmail thread id (8 to 32 hex characters)");
+  }
+  const inboxAddress = emailAddress(input.inboxAddress, 'inboxAddress');
+  const subject = emailLine(input.subject, 'subject', EMAIL.EMAIL_SUBJECT_MAX, true);
+  const thread = threadOf(input.thread, subject, ctx);
+  const who = inboxOwner(ctx);
+  requireOwnInbox(who, inboxAddress, 'check its emails against projects');
+  const heldMap = heldKeys(ctx);
+  const covered = [];
+  const fresh = [];
+  const projectsHolding = new Set();
+  thread.forEach((m, index) => {
+    const by = heldBy(heldMap, [m.key, m.near]);
+    if (by) {
+      covered.push(index);
+      projectsHolding.add(by.key);
+    } else {
+      fresh.push({ index, sentAt: m.sentAt });
+    }
+  });
+  const project = projectsHolding.size === 1 ? [...projectsHolding][0] : null;
+  return { ok: true, action: 'email-check', covered, fresh, project };
 }
 
 // Email text comes from outsiders, so it is never refused for its quote marks: when a value can't be
@@ -3563,11 +3781,20 @@ function emailUpdate(input, entry, loc, ctx) {
   if (!sameToken(sha256(bytes), key.draft_sha256)) throw notApproved();
   requireNames([from, ...people]);
 
-  const held = emailHeld(ctx, r.draft.email_key);
-  if (held) {
-    removeQuietly(r.abs);
-    removeKey(ctx, id);
-    throw alreadyIn(held);
+  // One scan (overseer S1). A held draft is kept, never deleted (overseer S2): the app hides it, and it
+  // can be saved if that entry is removed.
+  const heldMap = heldKeys(ctx);
+  const near = draftNearKeys(r.draft);
+  const held = heldBy(heldMap, [r.draft.email_key, near[r.draft.email_key], draftMessageId(r.draft)]);
+  if (held) throw alreadyIn(held);
+  // The thread's other messages: the ones no entry holds now are this entry's to hold; the newest one
+  // some entry holds links it to that conversation, written as that entry has it (overseer B1).
+  const threadKeys = [];
+  let threadLink = null;
+  for (const k of draftThreadKeys(r.draft)) {
+    const by = heldBy(heldMap, [k, near[k]]);
+    if (!by) threadKeys.push(k);
+    else if (threadLink === null) threadLink = by.held;
   }
   const updates = updatesFolder(ctx, loc, true);
   const file = writeEntry(ctx, loc, who, updates, {
@@ -3581,6 +3808,8 @@ function emailUpdate(input, entry, loc, ctx) {
       threadId: r.draft.thread_id,
       key: r.draft.email_key,
       inboxOwner: r.draft.inbox_owner,
+      threadKeys,
+      threadLink,
     },
   }, summary);
   removeQuietly(r.abs);
@@ -3600,7 +3829,32 @@ function emailLines(e) {
     `email_key: ${factValue(e.key)}`,
     `email_inbox_owner: ${e.inboxOwner}`,
   );
+  // Threads (0.8.0): both left out when empty, so an entry without a thread is as 0.7.0 wrote it.
+  if (e.threadKeys && e.threadKeys.length > 0) {
+    lines.push('email_thread_keys:', ...e.threadKeys.map(k => `  - ${yamlItem(k)}`));
+  }
+  if (e.threadLink) lines.push(`email_thread_link: ${factValue(e.threadLink)}`);
   return lines;
+}
+
+// A draft's thread keys and near keys as this script writes them (`x:` + 64 hex); anything else in
+// an older or odd draft is ignored, so a missing field reads as empty.
+const THREAD_KEY_PATTERN = /^x:[0-9a-f]{64}$/;
+function draftThreadKeys(d) {
+  return Array.isArray(d.thread_keys) ? d.thread_keys.filter(k => isText(k) && THREAD_KEY_PATTERN.test(k)) : [];
+}
+// A draft's `message_id` (`<...>`, as `messageIdOf` wrote it), or null.
+function draftMessageId(d) {
+  return isText(d.message_id) && /^<[^\s<>]+>$/.test(d.message_id) && d.message_id.length <= EMAIL.MESSAGE_ID_MAX + 2
+    ? d.message_id
+    : null;
+}
+function draftNearKeys(d) {
+  const out = Object.create(null);
+  const n = d.near_keys;
+  if (n === null || typeof n !== 'object' || Array.isArray(n)) return out;
+  for (const [k, v] of Object.entries(n)) if (isText(v) && THREAD_KEY_PATTERN.test(v)) out[k] = v;
+  return out;
 }
 
 // ---- command line --------------------------------------------------------------------------------
@@ -3608,7 +3862,7 @@ function emailLines(e) {
 const ACTIONS = {
   create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, update,
   'update-remove': updateRemove, ref: refAction, 'find-ref': findRef, 'email-draft': emailDraft,
-  'email-draft-remove': emailDraftRemove, capabilities,
+  'email-draft-remove': emailDraftRemove, 'email-check': emailCheck, capabilities,
 };
 
 function defaultCtx() {
@@ -3684,9 +3938,11 @@ module.exports = {
   PROJECTS_REFS_CAPABILITY,
   PROJECTS_EMAIL_CAPABILITY,
   PROJECTS_CHAT_SUMMARY_CAPABILITY,
+  PROJECTS_EMAIL_THREADS_CAPABILITY,
   CHAT_ID_PATTERN,
   CHAT_TITLE_MAX,
   EMAIL,
+  EMAIL_THREADS,
   EMAIL_DRAFT_FILE_PATTERN,
   EMAIL_KEYS_SUBDIR,
   emailKeysDir: keysDir,

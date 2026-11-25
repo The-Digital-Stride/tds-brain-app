@@ -150,6 +150,119 @@ describe('the Updates tab', () => {
     expect(screen.getByText(/· In Sam's inbox$/)).toBeTruthy();
   });
 
+  describe('one row per email conversation', () => {
+    const part = (path: string, over: Partial<ProjectUpdateItem> = {}) =>
+      item({
+        kind: 'email',
+        path,
+        emailThread: 'thread-1',
+        emailSubject: 'Budget for December',
+        emailFrom: 'Alex Smith',
+        byName: 'Ian',
+        summary: `Summary ${path}.`,
+        emailSentAt: '2026-11-20T16:30:00Z',
+        ...over,
+      } as Partial<ProjectUpdateItem>);
+
+    it('names the saver on each Delete, and keeps the keyboard in the thread after one part goes', async () => {
+      const p3 = part('p3', { emailSentAt: '2026-11-24T09:00:00Z', byName: 'Sam', canRemove: true });
+      const p1 = part('p1', { emailSentAt: '2026-11-20T16:30:00Z', canRemove: true, version: 'v-p1' });
+      api.projectUpdates.mockResolvedValue(reply([p3, p1]));
+      await openUpdates();
+      await screen.findByText('Summary p3.');
+      fireEvent.click(screen.getByRole('button', { name: /Earlier in this thread/ }));
+      // Same saved time, different savers: the labels still differ.
+      expect(screen.getByRole('button', { name: /^Delete update: Sam, / })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /^Delete update: Ian, / })).toBeTruthy();
+      api.changeProject.mockResolvedValue(projectList([SKY]));
+      api.projectUpdates.mockResolvedValue(reply([{ ...p3, emailThread: undefined }]));
+      fireEvent.click(document.querySelector('[data-delete="p1"]') as HTMLElement);
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete update' }));
+      await waitFor(() => expect(document.activeElement).toBe(document.querySelector('[data-delete="p3"]')));
+    });
+
+    it('shows the subject once, the newest part open and the others folded', async () => {
+      api.projectUpdates.mockResolvedValue(
+        reply([
+          part('p1', { emailSentAt: '2026-11-20T16:30:00Z', canRemove: true, version: 'v-p1' }),
+          part('p3', { emailSentAt: '2026-11-24T09:00:00Z', byName: 'Sam', canRemove: true }),
+          part('p2', { emailSentAt: '2026-11-22T09:00:00Z', clientSafe: true }),
+          item({ path: 'solo', kind: 'email', emailSubject: 'Another email', summary: 'Alone.' }),
+        ]),
+      );
+      await openUpdates();
+      expect(await screen.findAllByText('Budget for December')).toHaveLength(1);
+      expect(screen.getByText(/^3 updates · latest 24 Nov 2026/)).toBeTruthy();
+      expect(screen.getByText('Another email')).toBeTruthy();
+      const fold = screen.getByRole('button', { name: /Earlier in this thread/ });
+      expect(fold.textContent).toContain('Earlier in this thread (2)');
+      expect(fold.getAttribute('aria-expanded')).toBe('false');
+      // The newest part (p3) is outside the fold; the older two are inside it.
+      const rows = fold.closest('.fold')?.querySelector('.fold-rows') as HTMLElement;
+      expect(screen.getByText('Summary p3.').closest('.fold')).toBeNull();
+      expect(rows.contains(screen.getByText('Summary p1.', { exact: true }))).toBe(true);
+      expect(rows.contains(screen.getByText('Summary p2.'))).toBe(true);
+      expect(screen.getByText('Alone.')).toBeTruthy();
+    });
+
+    it('keeps each part its own saver, client mark and Remove, and never marks the row', async () => {
+      api.projectUpdates.mockResolvedValue(
+        reply([
+          part('p3', { emailSentAt: '2026-11-24T09:00:00Z', byName: 'Sam', canRemove: true }),
+          part('p2', { emailSentAt: '2026-11-22T09:00:00Z', clientSafe: true }),
+          part('p1', { emailSentAt: '2026-11-20T16:30:00Z', canRemove: true, version: 'v-p1' }),
+        ]),
+      );
+      await openUpdates();
+      await screen.findByText('Summary p3.');
+      expect(screen.getAllByText('Fine to share with the client')).toHaveLength(1);
+      expect(screen.getByText('Sam')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Earlier in this thread/ }));
+      expect(screen.getAllByRole('button', { name: /^Delete update:/ })).toHaveLength(2);
+      api.changeProject.mockResolvedValue(projectList([SKY]));
+      const del = document.querySelector('[data-delete="p1"]') as HTMLElement;
+      fireEvent.click(del);
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete update' }));
+      await waitFor(() =>
+        expect(api.changeProject).toHaveBeenCalledWith({
+          kind: 'update-remove',
+          key: SKY.key,
+          file: 'p1',
+          expect: 'v-p1',
+        }),
+      );
+    });
+
+    it('has one Gmail line for the row, from the first part that has a link', async () => {
+      api.projectUpdates.mockResolvedValue(
+        reply([
+          part('p3', { emailSentAt: '2026-11-24T09:00:00Z', byName: 'Sam' }),
+          part('p2', {
+            emailSentAt: '2026-11-22T09:00:00Z',
+            gmailUrl: 'https://mail.google.com/mail/?authuser=i%40x.com#all/thread-f:1',
+          }),
+          part('p1', { emailSentAt: '2026-11-20T16:30:00Z' }),
+        ]),
+      );
+      await openUpdates();
+      await screen.findByText('Summary p3.');
+      expect(screen.getAllByRole('link', { name: /Open in Gmail/ })).toHaveLength(1);
+      expect(screen.queryByText(/In Sam's inbox/)).toBeNull();
+    });
+
+    it('says whose inbox it is when no part has a link', async () => {
+      api.projectUpdates.mockResolvedValue(
+        reply([
+          part('p2', { emailSentAt: '2026-11-22T09:00:00Z', byName: 'Sam' }),
+          part('p1', { emailSentAt: '2026-11-20T16:30:00Z' }),
+        ]),
+      );
+      await openUpdates();
+      expect(await screen.findByText(/· In Sam's inbox$/)).toBeTruthy();
+      expect(screen.queryByRole('link')).toBeNull();
+    });
+  });
+
   it('opens the form from the tab row and sends the update action', async () => {
     await openUpdates();
     expect(screen.queryByLabelText('Update')).toBeNull();

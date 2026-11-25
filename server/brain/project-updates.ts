@@ -95,6 +95,9 @@ interface Parsed {
   item: Omit<ProjectUpdateItem, 'byName' | 'canRemove'>;
   time: number;
   name: string;
+  /** `email_thread_keys` and `email_thread_link` (project-email-threads-contract.ts): they only join entries into a conversation. */
+  threadKeys: string[];
+  threadLink?: string;
 }
 interface Listing {
   entries: Parsed[];
@@ -165,7 +168,17 @@ function parseEntry(path: string, name: string, bytes: Buffer, old: boolean): Pa
     version: sha256(bytes),
     ...(old ? { fromOldFolder: true as const } : {}),
   };
-  return { item, time, name };
+  const listed = data.email_thread_keys;
+  const threadKeys = (Array.isArray(listed) ? listed : listed === undefined ? [] : [listed]).filter(
+    (k) => k !== '',
+  );
+  return {
+    item,
+    time,
+    name,
+    threadKeys,
+    ...(text(data.email_thread_link) ? { threadLink: text(data.email_thread_link) } : {}),
+  };
 }
 
 /**
@@ -184,6 +197,88 @@ function collapseEmails(entries: Parsed[]): Parsed[] {
     const k = e.item.kind === 'email' ? (e.item.emailKey ?? e.item.emailMessageId) : undefined;
     return !k || first.get(k) === e;
   });
+}
+
+/**
+ * One conversation, one `emailThread` (project-email-threads-contract.ts, JOIN): within one project, email
+ * entries that share any of `email_key`, `email_thread_keys`, `email_thread_link`, or the same inbox owner and
+ * Gmail thread id, transitively, get the file name of the earliest entry as `emailThread`. An entry alone gets
+ * none. Runs after `collapseEmails`.
+ */
+function joinConversations(entries: Parsed[]): Parsed[] {
+  const emails = entries.filter((e) => e.item.kind === 'email');
+  const parent = new Map<Parsed, Parsed>();
+  const find = (e: Parsed): Parsed => {
+    let root = e;
+    while (parent.get(root) !== root) root = parent.get(root) as Parsed;
+    parent.set(e, root);
+    return root;
+  };
+  const owner = new Map<string, Parsed>();
+  for (const e of emails) parent.set(e, e);
+  for (const e of emails) {
+    const tokens = [e.item.emailKey, ...e.threadKeys, e.threadLink]
+      .filter((k): k is string => !!k)
+      .map((k) => `k:${k}`);
+    if (e.item.emailInboxOwner && e.item.emailThreadId)
+      tokens.push(`t:${e.item.emailInboxOwner}\0${e.item.emailThreadId}`);
+    for (const t of tokens) {
+      const seen = owner.get(t);
+      if (!seen) owner.set(t, e);
+      else parent.set(find(e), find(seen));
+    }
+  }
+  const groups = new Map<Parsed, Parsed[]>();
+  for (const e of emails) {
+    const r = find(e);
+    groups.set(r, [...(groups.get(r) ?? []), e]);
+  }
+  const thread = new Map<Parsed, string>();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const earliest = members.reduce((a, b) =>
+      b.time < a.time || (b.time === a.time && b.name < a.name) ? b : a,
+    );
+    for (const m of members) thread.set(m, earliest.name);
+  }
+  return entries.map((e) => {
+    const t = thread.get(e);
+    return t ? { ...e, item: { ...e.item, emailThread: t } } : e;
+  });
+}
+
+/**
+ * Before paging, all parts of a conversation sit together at the position of its newest-saved part, ordered
+ * inside by `email_sent_at`, newest first (overseer S3). `entries` arrives sorted newest-saved first.
+ */
+function groupConversations(entries: Parsed[]): Parsed[] {
+  const parts = new Map<string, Parsed[]>();
+  for (const e of entries) {
+    const t = e.item.emailThread;
+    if (t) parts.set(t, [...(parts.get(t) ?? []), e]);
+  }
+  const sentAt = (e: Parsed) => {
+    const t = Date.parse(e.item.emailSentAt ?? '');
+    return Number.isFinite(t) ? t : e.time;
+  };
+  const out: Parsed[] = [];
+  const placed = new Set<string>();
+  for (const e of entries) {
+    const t = e.item.emailThread;
+    if (!t) {
+      out.push(e);
+      continue;
+    }
+    if (placed.has(t)) continue;
+    placed.add(t);
+    out.push(
+      ...(parts.get(t) as Parsed[]).sort(
+        (a, b) =>
+          sentAt(b) - sentAt(a) || b.time - a.time || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0),
+      ),
+    );
+  }
+  return out;
 }
 
 async function readFolder(root: string, folder: string, old: boolean): Promise<Listing> {
@@ -272,8 +367,9 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     const hit = cache.get(card.key);
     if (hit && hit.stamp === stamp) return hit.value;
     const parts = await Promise.all(folders.map((f) => readFolder(root, f.folder, f.old)));
-    const entries = collapseEmails(parts.flatMap((p) => p.entries));
+    const entries = joinConversations(collapseEmails(parts.flatMap((p) => p.entries)));
     entries.sort((a, b) => b.time - a.time || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
+    entries.splice(0, entries.length, ...groupConversations(entries));
     const value = { entries, unreadable: parts.reduce((n, p) => n + p.unreadable, 0) };
     cache.set(card.key, { stamp, value });
     return value;
@@ -314,7 +410,11 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     }
     // The script refuses both changes without a live, readable card.
     const live = !card.archived && card.card === 'ok';
-    const page = all.entries.slice(start, start + UPDATES_PAGE);
+    // A conversation is never split across pages: a page may run over its size to finish one.
+    let end = Math.min(start + UPDATES_PAGE, all.entries.length);
+    const tail = all.entries[end - 1]?.item.emailThread;
+    while (tail && end < all.entries.length && all.entries[end]?.item.emailThread === tail) end++;
+    const page = all.entries.slice(start, end);
     // "Open in Gmail" only for the inbox owner: their roles.json email is the Gmail account to open.
     const gmail = new Map<string, string | null>();
     for (const { item } of page) {
@@ -371,7 +471,7 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     });
     return {
       updates,
-      more: start + UPDATES_PAGE < all.entries.length,
+      more: end < all.entries.length,
       unreadable: all.unreadable,
       canAdd: hasCap && allowed && live,
     };

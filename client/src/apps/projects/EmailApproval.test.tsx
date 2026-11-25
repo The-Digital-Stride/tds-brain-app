@@ -44,6 +44,9 @@ describe('routeWords', () => {
       'The email has codes for different projects: SKY1A1, SKY2B2. Choose one.',
     );
     expect(routeWords({ key: null, why: 'none' })).toBe('No project matched this email. Choose one.');
+    expect(routeWords({ key: 'a/b', why: 'thread-code' })).toBe(
+      'A project code earlier in this thread picked this project.',
+    );
   });
 });
 
@@ -128,5 +131,96 @@ describe('EmailApproval', () => {
     await waitFor(() =>
       expect(onDone).toHaveBeenCalledWith({ done: 'exists', key: 'skyseal/seo', byName: 'Sam' }),
     );
+  });
+});
+
+describe('EmailApproval thread lines', () => {
+  const thread = (over: Partial<NonNullable<EmailDraftItem['thread']>> = {}) => ({
+    total: 4,
+    fresh: 2,
+    ...over,
+  });
+  const show = (d: EmailDraftItem) =>
+    render(<EmailApproval draft={d} projects={projects} onDone={vi.fn()} />);
+
+  it('says a code earlier in the thread picked the project', () => {
+    show(draft({ route: { key: 'skyseal/site', why: 'thread-code' } }));
+    expect(screen.getByText('A project code earlier in this thread picked this project.')).toBeTruthy();
+  });
+
+  it('says when the thread already in the project outranks a different code', () => {
+    show(draft({ route: { key: 'skyseal/site', why: 'thread', overruled: 'SKY9Z9' }, thread: thread() }));
+    expect(
+      screen.getByText(
+        /The newest email has the code SKY9Z9, but an earlier part of this thread is already saved here\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says which thread it adds to, and who saved it', () => {
+    show(
+      draft({
+        thread: thread({ partOf: { key: 'skyseal/site', byName: 'Sam', at: '2026-11-20T10:00:00Z' } }),
+      }),
+    );
+    expect(screen.getByText('Adds to a thread Sam saved on 20 Nov 2026.')).toBeTruthy();
+  });
+
+  it('calls an unnamed saver a teammate', () => {
+    show(
+      draft({
+        thread: thread({ partOf: { key: 'skyseal/site', byName: null, at: '2026-11-20T10:00:00Z' } }),
+      }),
+    );
+    expect(screen.getByText('Adds to a thread a teammate saved on 20 Nov 2026.')).toBeTruthy();
+  });
+
+  it('says how much of the thread the summary covers, above Save, and nothing for a thread of one', () => {
+    show(draft({ thread: thread({ total: 4, fresh: 2 }) }));
+    const some = screen.getByText(
+      'This summary covers 2 of the 4 messages in this thread. The rest are already in a project.',
+    );
+    expect(some.compareDocumentPosition(screen.getByRole('button', { name: 'Save to project' }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    cleanup();
+    show(draft({ thread: thread({ total: 3, fresh: 3 }) }));
+    expect(screen.getByText('This summary covers all 3 messages in this thread.')).toBeTruthy();
+    cleanup();
+    show(draft({ thread: thread({ total: 1, fresh: 1 }) }));
+    expect(screen.queryByText(/This summary covers/)).toBeNull();
+  });
+
+  it('warns when a teammate saved part of the thread after the draft', () => {
+    show(
+      draft({
+        thread: thread({
+          overlap: true,
+          partOf: { key: 'skyseal/site', byName: 'Sam', at: '2026-11-20T10:00:00Z' },
+        }),
+      }),
+    );
+    expect(
+      screen.getByText(
+        'Sam saved part of this thread after this was drafted. Check the summary for repeats.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('names an unknown saver in the warning as A teammate', () => {
+    show(draft({ thread: thread({ overlap: true }) }));
+    expect(
+      screen.getByText(
+        'A teammate saved part of this thread after this was drafted. Check the summary for repeats.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('shows none of it for a draft without thread', () => {
+    show(draft());
+    expect(screen.queryByText(/This summary covers/)).toBeNull();
+    expect(screen.queryByText(/Adds to a thread/)).toBeNull();
+    expect(screen.queryByText(/Check the summary for repeats/)).toBeNull();
+    expect(screen.queryByText(/The newest email has the code/)).toBeNull();
   });
 });

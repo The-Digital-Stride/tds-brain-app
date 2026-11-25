@@ -692,7 +692,7 @@ describe('find-ref', () => {
 describe('capabilities', () => {
   it('answers projects-refs-v1 from 0.5.0 on', () => {
     const r = call('capabilities');
-    expect(r.reply.version).toBe('0.7.0');
+    expect(r.reply.version).toBe('0.8.0');
     expect(r.reply.features).toContain(PROJECTS_REFS_CAPABILITY);
   });
 });
@@ -714,6 +714,6 @@ describe('the skill file', () => {
     expect(skill).toContain(PROJECTS_REFS_CAPABILITY);
     expect(skill).toContain('never in signatures');
     expect(skill).toContain('A code points at a project; it never gives permission.');
-    expect(skill).toContain('last_updated: 2026-11-24');
+    expect(skill).toContain('last_updated: 2026-11-25');
   });
 });

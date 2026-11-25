@@ -17,7 +17,7 @@ import {
   PROJECTS_EMAIL_CAPABILITY,
 } from '../../shared/project-email-contract.ts';
 import { type ProjectCard, ProjectsError } from '../../shared/projects-contract.ts';
-import { createEmailDrafts, isSlugOf, memberEmailOfSlug } from './email-drafts.ts';
+import { createEmailDrafts, isSlugOf, memberEmailOfSlug, parseDraft } from './email-drafts.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { PROJECTS_SCRIPT } from './projects-skill.ts';
 
@@ -245,7 +245,118 @@ describe('listing drafts', () => {
       ],
       refs: { ZET1A2: 'zeta/one' },
     }).svc.list(null);
-    expect(r.drafts[0]?.route).toEqual({ key: 'acme/web', why: 'thread' });
+    expect(r.drafts[0]?.route).toEqual({ key: 'acme/web', why: 'thread', overruled: 'ZET1A2' });
+  });
+});
+
+describe('thread facts and held drafts', () => {
+  const putEntry = (name: string, extra: string, by = 'ben-mcadam', at = '2026-11-21T09:00:00Z') =>
+    put(
+      `clients/acme/projects/web/updates/${name}.md`,
+      `---\nv: 1\nkind: email\nby: ${by}\nat: ${at}\n${extra}---\nx\n`,
+    );
+  const threadDraft = (over: Partial<EmailDraftFile> = {}) =>
+    draft('aaaaaaaaaaaa', {
+      thread_keys: ['x:t1', 'x:t2'],
+      near_keys: { 'x:t2': 'x:t2n' },
+      fresh_at_draft: 3,
+      ...over,
+    });
+
+  it('a draft without thread fields has no thread', async () => {
+    putDraft(draft('aaaaaaaaaaaa'));
+    const r = await setup().svc.list(null);
+    expect(r.drafts).toHaveLength(1);
+    expect(r.drafts[0]).not.toHaveProperty('thread');
+  });
+
+  it('thread facts with nothing held: total, fresh, no partOf, no overlap', async () => {
+    putDraft(threadDraft());
+    const r = await setup().svc.list(null);
+    expect(r.drafts[0]?.thread).toEqual({ total: 3, fresh: 3 });
+  });
+
+  it('thread facts: partOf names the project and who saved the latest covering part', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:other\nemail_thread_keys:\n  - x:t1\n');
+    putEntry(
+      '2026-11-22-0900-sam-example-bbb222',
+      'email_key: x:other2\nemail_thread_keys: [x:t2n]\n',
+      'sam-example',
+      '2026-11-22T09:00:00Z',
+    );
+    putDraft(threadDraft());
+    const r = await setup().svc.list(null);
+    expect(r.drafts[0]?.thread).toMatchObject({
+      total: 3,
+      fresh: 1,
+      overlap: true,
+      partOf: { key: 'acme/web', at: '2026-11-22T09:00:00Z' },
+    });
+    expect(typeof r.drafts[0]?.thread?.partOf?.byName).toBe('string');
+  });
+
+  it('no overlap when as many are new as when the draft was made', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:other\nemail_thread_keys: [x:t1]\n');
+    putDraft(threadDraft({ fresh_at_draft: 2 }));
+    expect((await setup().svc.list(null)).drafts[0]?.thread).toMatchObject({ fresh: 2 });
+    expect((await setup().svc.list(null)).drafts[0]?.thread?.overlap).toBeUndefined();
+  });
+
+  it('a thread key already held routes the draft there', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:other\nemail_thread_keys: [x:t1]\n');
+    putDraft(threadDraft());
+    expect((await setup().svc.list(null)).drafts[0]?.route).toEqual({ key: 'acme/web', why: 'message' });
+  });
+
+  it('a thread_link is not held: it joins, it never claims', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:other\nemail_thread_link: x:t1\n');
+    putDraft(threadDraft());
+    expect((await setup().svc.list(null)).drafts[0]?.thread).toEqual({ total: 3, fresh: 3 });
+  });
+
+  it('hides a draft whose own email is held, exact or near, and does not count it unreadable', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:own\n');
+    putEntry('2026-11-21-0901-ben-mcadam-bbb222', 'email_key: x:ownnear\n');
+    putDraft(draft('aaaaaaaaaaaa', { email_key: 'x:own' }));
+    putDraft(draft('bbbbbbbbbbbb', { email_key: 'x:mine', near_keys: { 'x:mine': 'x:ownnear' } }));
+    putDraft(draft('cccccccccccc', { email_key: 'x:free' }));
+    const r = await setup().svc.list(null);
+    expect(r.drafts.map((d) => d.id)).toEqual(['cccccccccccc']);
+    expect(r.unreadable).toBe(0);
+    // Hidden, never deleted.
+    expect(existsSync(join(root, 'briefing/email-drafts/aaaaaaaaaaaa.json'))).toBe(true);
+  });
+
+  it('a held draft returns when the holding entry is gone', async () => {
+    putDraft(draft('aaaaaaaaaaaa', { email_key: 'x:own' }));
+    expect((await setup().svc.list(null)).drafts).toHaveLength(1);
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: x:own\n');
+    expect((await setup().svc.list(null)).drafts).toHaveLength(0);
+    rmSync(join(root, 'clients/acme/projects/web/updates/2026-11-21-0900-ben-mcadam-aaa111.md'));
+    expect((await setup().svc.list(null)).drafts).toHaveLength(1);
+  });
+
+  it.each([
+    ['thread_keys not a list', { thread_keys: 'x:t1' }],
+    ['thread_keys with a number', { thread_keys: ['x:t1', 2] }],
+    ['codes_thread not a list', { codes_thread: 'ACM1A2' }],
+    ['near_keys a list', { near_keys: ['x:a'] }],
+    ['near_keys with a non-string value', { near_keys: { 'x:a': 1 } }],
+    ['near_keys null', { near_keys: null }],
+    ['fresh_at_draft zero', { fresh_at_draft: 0 }],
+    ['fresh_at_draft a fraction', { fresh_at_draft: 1.5 }],
+    ['fresh_at_draft a string', { fresh_at_draft: '2' }],
+  ])('a draft with malformed %s is unreadable', async (_n, bad) => {
+    put('briefing/email-drafts/aaaaaaaaaaaa.json', JSON.stringify({ ...draft('aaaaaaaaaaaa'), ...bad }));
+    expect(parseDraft(JSON.stringify({ ...draft('aaaaaaaaaaaa'), ...bad }), 'aaaaaaaaaaaa')).toBeNull();
+    const r = await setup().svc.list(null);
+    expect(r.drafts).toEqual([]);
+    expect(r.unreadable).toBe(1);
+  });
+
+  it('old drafts and well-formed new ones both parse', () => {
+    expect(parseDraft(JSON.stringify(draft('aaaaaaaaaaaa')), 'aaaaaaaaaaaa')).not.toBeNull();
+    expect(parseDraft(JSON.stringify(threadDraft()), 'aaaaaaaaaaaa')).not.toBeNull();
   });
 });
 

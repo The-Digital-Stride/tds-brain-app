@@ -37,7 +37,14 @@ const LIST: EmailDraftsResponse = {
       people: ['Jo'],
       sentAt: '2026-11-20T16:30:00Z',
       summary: 'Agreed.',
-      route: { key: 'acme/web', why: 'domain' },
+      route: { key: 'acme/web', why: 'thread', overruled: 'ZET1A2' },
+      // The thread facts pass through the real gate unchanged.
+      thread: {
+        total: 3,
+        fresh: 1,
+        partOf: { key: 'acme/web', byName: 'Ben McAdam', at: '2026-11-21T09:00:00Z' },
+        overlap: true,
+      },
     },
   ],
   unreadable: 0,

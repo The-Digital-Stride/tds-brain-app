@@ -3,6 +3,11 @@
  * inbox owner's approval. Copied to shared/project-email-contract.ts. The script (`tdsapp-projects` 0.6.0),
  * the server and the Projects app build against this file. The app never writes brain files itself.
  */
+import type {
+  EmailDraftThread,
+  EmailDraftThreadFields,
+  EmailDraftThreadInput,
+} from './project-email-threads-contract.ts';
 import type { ProjectKey } from './projects-contract.ts';
 
 // ─── Capability ──────────────────────────────────────────────────────────────────────────────────
@@ -78,7 +83,7 @@ export interface EmailPerson {
   address: string;
 }
 
-export interface EmailDraftInput {
+export interface EmailDraftInput extends EmailDraftThreadInput {
   /** This inbox's Gmail thread id (GMAIL_THREAD_ID_PATTERN). */
   threadId: string;
   /** The Gmail address of the inbox being read (the connector's `authuser`). Refused unless it equals this identity's email in `.team-config/roles.json`, case-insensitive (overseer 7). */
@@ -113,7 +118,7 @@ export interface EmailDraftInput {
 export type EmailKey = string;
 
 /** The draft file on disk (snake_case). Never holds the email text. Mode 0600. */
-export interface EmailDraftFile {
+export interface EmailDraftFile extends EmailDraftThreadFields {
   v: 1;
   id: string;
   /** Team slug from this Mac's identity at draft time. */
@@ -150,7 +155,7 @@ export interface EmailDraftRemoveInput {
  * `inbox_owner` is this Mac's identity (`not-allowed`), takes thread id, Message-ID, sent time and inbox owner
  * from the draft, the rest from here, writes the entry (frontmatter as R1's `ProjectUpdate`), then deletes the
  * draft. `exists` (with `file` and `key` of the entry) when any project already holds that Message-ID; the
- * draft is then deleted too. Answers `{ok:true, action:'update', key, version, file}`.
+ * draft is kept and hidden (0.8.0, project email threads S2; 0.7.0 deleted it). Answers `{ok:true, action:'update', key, version, file}`.
  */
 export interface ProjectEmailEntryInput {
   kind: 'email';
@@ -184,6 +189,7 @@ export type EmailRouteWhy =
   | 'message' // one of the thread's Message-IDs is already in a project
   | 'subject-code'
   | 'body-code'
+  | 'thread-code' // a code in an earlier message or in quoted text (project-email-threads-contract.ts)
   | 'domain'
   | 'codes-disagree' // two or more different codes: no pre-selection
   | 'domain-several' // the client has more than one live project
@@ -195,6 +201,8 @@ export interface EmailRoute {
   why: EmailRouteWhy;
   /** For 'codes-disagree': the codes found. */
   codes?: string[];
+  /** For 'thread' and 'message': a code in the newest message's subject or text that names a different live project. */
+  overruled?: string;
 }
 
 /** One draft as the app shows it. Only drafts whose inbox_owner is this Mac's identity are listed. */
@@ -206,6 +214,8 @@ export interface EmailDraftItem {
   sentAt: string;
   summary: string;
   route: EmailRoute;
+  /** Thread facts (project-email-threads-contract.ts); absent for a draft made without a thread list. */
+  thread?: EmailDraftThread;
 }
 
 /** `GET ROUTES.projectEmailDrafts[?key=<ProjectKey>]` → this. With `key`, only drafts routed to that project. */

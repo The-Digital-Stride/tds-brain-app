@@ -14,7 +14,7 @@ import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { useStore } from '../../store.tsx';
-import { dateWords, READ_ONLY_NOTICE } from './logic.ts';
+import { dateWords, groupUpdates, READ_ONLY_NOTICE, threadLine } from './logic.ts';
 import { SaveToProject } from './SaveToProject.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
@@ -79,6 +79,31 @@ function EmailBody({ u }: { u: ProjectUpdateItem }) {
         )}
       </p>
     </>
+  );
+}
+
+/** The top of a conversation row: the subject once, how many parts, and one Gmail line for the row. */
+function EmailThreadHead({ parts }: { parts: ProjectUpdateItem[] }) {
+  const latest = parts[0];
+  const subject = parts.find((p) => p.emailSubject)?.emailSubject;
+  const withLink = parts.find((p) => p.gmailUrl);
+  const name = latest?.byName;
+  return (
+    <div className="proj-thread-head">
+      {subject ? <strong className="proj-email-subject">{subject}</strong> : null}
+      <p className="proj-email-meta">
+        {threadLine(parts.length, latest?.emailSentAt ?? latest?.at ?? '')} ·{' '}
+        {withLink?.gmailUrl ? (
+          <a href={withLink.gmailUrl} target="_blank" rel="noopener noreferrer">
+            Open in Gmail<span className="visually-hidden"> (opens in a new tab)</span>
+          </a>
+        ) : name ? (
+          `In ${name}'s inbox`
+        ) : (
+          'In their inbox'
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -375,6 +400,63 @@ export function ProjectUpdates({
       listRef.current?.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(path)}"]`)?.focus(),
     );
 
+  /** One saved entry: head, body and Delete. `inThread` entries leave the subject and Gmail line to their row. */
+  const entry = (u: ProjectUpdateItem, inThread: boolean) => (
+    <>
+      <div className="line proj-update">
+        <div className="proj-update-body">
+          <div className="proj-update-head">
+            <span className="line-title">{u.byName}</span>
+            <span className="line-meta">{whenWords(u.at)}</span>
+            <span className="chip">{kindWords(u.kind)}</span>
+            {u.clientSafe ? <span className="chip">Fine to share with the client</span> : null}
+            {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
+          </div>
+          {u.kind === 'email' && !inThread ? <EmailBody u={u} /> : null}
+          {u.kind === 'email' && inThread ? <p className="proj-email-meta">{emailLine(u)}</p> : null}
+          {u.kind === 'chat' ? (
+            <ChatSummary
+              u={u}
+              onOpenDoc={(ref) => void openDoc(ref)}
+              onOpenChat={(chat) => void openChat(chat)}
+            />
+          ) : (
+            <Markdown text={u.summary} />
+          )}
+        </div>
+        {u.canRemove ? (
+          <button
+            type="button"
+            className="icon-btn"
+            data-delete={u.path}
+            data-tip="Delete update"
+            aria-label={`Delete update: ${whenWords(u.at)}`}
+            onClick={() => {
+              setRemoveMessage('');
+              setRemoving(u.path);
+            }}
+          >
+            <Icon name="bin" size={14} />
+          </button>
+        ) : null}
+      </div>
+      {u.canRemove && removing === u.path ? (
+        <Confirm
+          label="Delete this update"
+          text={deleteWords(personal)}
+          action="Delete update"
+          variant="danger"
+          busy={removeBusy}
+          onConfirm={() => void remove(u)}
+          onCancel={() => {
+            setRemoving(null);
+            focusDelete(u.path);
+          }}
+        />
+      ) : null}
+    </>
+  );
+
   if (failed && !page)
     return (
       <StateNote kind="error" onRetry={() => void load()}>
@@ -535,60 +617,37 @@ export function ProjectUpdates({
               </h3>
             </div>
             <ul className="lib-list" ref={listRef}>
-              {page.updates.map((u) => (
-                <li key={u.path} className="proj-update-item">
-                  <div className="line proj-update">
-                    <div className="proj-update-body">
-                      <div className="proj-update-head">
-                        <span className="line-title">{u.byName}</span>
-                        <span className="line-meta">{whenWords(u.at)}</span>
-                        <span className="chip">{kindWords(u.kind)}</span>
-                        {u.clientSafe ? <span className="chip">Fine to share with the client</span> : null}
-                        {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
-                      </div>
-                      {u.kind === 'email' ? <EmailBody u={u} /> : null}
-                      {u.kind === 'chat' ? (
-                        <ChatSummary
-                          u={u}
-                          onOpenDoc={(ref) => void openDoc(ref)}
-                          onOpenChat={(chat) => void openChat(chat)}
-                        />
-                      ) : (
-                        <Markdown text={u.summary} />
-                      )}
-                    </div>
-                    {u.canRemove ? (
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        data-delete={u.path}
-                        data-tip="Delete update"
-                        aria-label={`Delete update: ${whenWords(u.at)}`}
-                        onClick={() => {
-                          setRemoveMessage('');
-                          setRemoving(u.path);
-                        }}
+              {groupUpdates(page.updates).map((row) => {
+                const first = row.parts[0];
+                if (!first) return null;
+                if (!row.thread)
+                  return (
+                    <li key={first.path} className="proj-update-item">
+                      {entry(first, false)}
+                    </li>
+                  );
+                const [latest, ...earlier] = row.parts;
+                if (!latest) return null;
+                return (
+                  <li key={`thread:${first.emailThread}`} className="proj-update-item proj-thread">
+                    <EmailThreadHead parts={row.parts} />
+                    {entry(latest, true)}
+                    {earlier.length > 0 ? (
+                      <Fold
+                        title={`Earlier in this thread (${earlier.length})`}
+                        defaultOpen={false}
+                        level={4}
                       >
-                        <Icon name="bin" size={14} />
-                      </button>
+                        {earlier.map((u) => (
+                          <div key={u.path} className="proj-thread-part">
+                            {entry(u, true)}
+                          </div>
+                        ))}
+                      </Fold>
                     ) : null}
-                  </div>
-                  {u.canRemove && removing === u.path ? (
-                    <Confirm
-                      label="Delete this update"
-                      text={deleteWords(personal)}
-                      action="Delete update"
-                      variant="danger"
-                      busy={removeBusy}
-                      onConfirm={() => void remove(u)}
-                      onCancel={() => {
-                        setRemoving(null);
-                        focusDelete(u.path);
-                      }}
-                    />
-                  ) : null}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         </div>

@@ -1,5 +1,6 @@
 import type { TeamMember } from '../../../../shared/contract.ts';
 import { foldRef, nearRefs, refCandidates } from '../../../../shared/project-refs.ts';
+import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
 import { matchedKey } from '../../../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
@@ -529,3 +530,49 @@ export function mergeOntoLatest(old: ProjectCard, mine: FormValues, latest: Proj
   }
   return out as unknown as FormValues;
 }
+
+// ─── Updates: one row per email conversation ─────────────────────────────────────────────────────
+
+/** One row of the Updates list: a single entry, or every saved part of one email conversation (newest first). */
+export interface UpdateRow {
+  /** True when the entries share `emailThread`; a lone entry is a plain row. */
+  thread: boolean;
+  parts: ProjectUpdateItem[];
+}
+
+const sentTime = (u: ProjectUpdateItem): number => {
+  const t = Date.parse(u.emailSentAt ?? u.at);
+  return Number.isNaN(t) ? 0 : t;
+};
+
+/**
+ * Groups email entries that share `emailThread` into one row, placed where the first of them is in the list
+ * (the server already puts a conversation together). Inside a row the newest sent part comes first. With
+ * `keep`, only passing entries count: a row shows when any part passes, and only those parts show.
+ */
+export function groupUpdates(
+  updates: readonly ProjectUpdateItem[],
+  keep?: (u: ProjectUpdateItem) => boolean,
+): UpdateRow[] {
+  const rows: UpdateRow[] = [];
+  const byThread = new Map<string, UpdateRow>();
+  for (const u of updates) {
+    if (keep && !keep(u)) continue;
+    if (u.kind === 'email' && u.emailThread) {
+      const row = byThread.get(u.emailThread);
+      if (row) {
+        row.parts.push(u);
+        continue;
+      }
+      const made: UpdateRow = { thread: true, parts: [u] };
+      byThread.set(u.emailThread, made);
+      rows.push(made);
+    } else rows.push({ thread: false, parts: [u] });
+  }
+  for (const row of rows) if (row.thread) row.parts.sort((a, b) => sentTime(b) - sentTime(a));
+  return rows;
+}
+
+/** "3 updates · latest 24 Nov 2026" for a conversation row. */
+export const threadLine = (n: number, latestSentAt: string): string =>
+  `${n} ${n === 1 ? 'update' : 'updates'} · latest ${dateWords(latestSentAt)}`;

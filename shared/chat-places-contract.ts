@@ -62,6 +62,8 @@ export interface ChatProjectFacts {
   /** Brain-relative live folder, from the projects index, never from the request. */
   folder: string;
   space: 'client' | 'personal' | 'legacy';
+  /** The project's code, only when it has one that is its alone (project email threads, decision 9). */
+  ref?: string;
 }
 
 /** One row of the "which project?" list: the client's live, not-done projects. */

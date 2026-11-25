@@ -110,6 +110,8 @@ export interface ProjectUpdateItem extends Omit<ProjectUpdate, 'kind'>, ChatUpda
   emailKey?: string;
   /** Email entries, only when this Mac's identity is the entry's inbox owner: "Open in Gmail". */
   gmailUrl?: string;
+  /** Email entries of one conversation in this project share this value (project-email-threads-contract.ts); absent when alone. */
+  emailThread?: string;
   /** Brain-relative path of the entry file (its id). */
   path: string;
   /** SHA-256 of the entry file's bytes, sent back as `expect` on `update-remove`. */

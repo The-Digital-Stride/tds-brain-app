@@ -93,6 +93,8 @@ import {
 import { brandedFileName, brandedPage, brandingMessage, suggestionMessage } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX, type PageAskRequest, type PageRef } from '../../shared/pages-contract.ts';
 import { EMAIL_DRAFTS_DIR, emailKeysDir } from '../../shared/project-email-contract.ts';
+import { emailCodeLine } from '../../shared/project-email-threads-contract.ts';
+import { isValidRef } from '../../shared/project-refs.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
 import type { ProjectCard, ProjectKey } from '../../shared/projects-contract.ts';
 import type { ProjectsIndex } from '../brain/projects.ts';
@@ -727,6 +729,12 @@ export function projectLine(project: ChatProjectFacts, client: string | null): s
     `Never create or use ${RESERVED_LIST} inside the project folder. Add a project update only with the tdsapp-projects skill's \`update\` action, marked internal unless the user says it's fine for the client. Email goes into this project only as an \`email-draft\` its inbox owner approves, as said above.`,
     `These still go where the brain's save rules say: ${shared ? `anything with names, emails, phone numbers or addresses (\`clients/${c}/crm/data/\`), ` : ''}call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (\`data/\`) and files for an ad platform (\`clients/${c}/created/\`).`,
     `When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's \`link\` action${shared ? ', but never link a file from `crm/data/` or `personal/` to a shared project' : ''}.`,
+    // Project email threads, decision 9: only a code that passes the shared code rules reaches the prompt.
+    ...(project.ref && isValidRef(project.ref)
+      ? [
+          `When you draft an email for this project, new or a reply, end the message text with the line \`${emailCodeLine(project.ref)}\` on its own, above any signature, unless that thread already has the code in its subject or an earlier message. Never put the code in a signature.`,
+        ]
+      : []),
     'Tell the user where each file went.',
   ].join(' ');
 }
@@ -3345,6 +3353,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     title: card.title,
     folder: card.folder,
     space: card.space,
+    ...(card.refState === 'ok' && card.ref ? { ref: card.ref } : {}),
   });
 
   /** The client's live, not-done projects, by title; none when the projects can't be read. */

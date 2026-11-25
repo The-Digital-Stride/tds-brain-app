@@ -486,6 +486,118 @@ describe('email entries (phase 5)', () => {
   });
 });
 
+describe('email conversations (project email threads)', () => {
+  const EMAIL_CAPS = [PROJECTS_CAPABILITY, PROJECTS_UPDATES_CAPABILITY, PROJECTS_EMAIL_CAPABILITY];
+  /** An email entry saved at `at` (file name `rand`), sent at `sent`, with optional join fields. */
+  const mail = (
+    at: string,
+    rand: string,
+    f: { key: string; keys?: string[]; link?: string; owner?: string; thread?: string; sent?: string },
+  ) =>
+    add(
+      at,
+      entry(
+        at,
+        'sam-example',
+        'email',
+        'x',
+        `email_sent_at: ${f.sent ?? at}\nemail_key: ${f.key}\n${
+          f.keys ? `email_thread_keys:\n${f.keys.map((k) => `  - ${k}\n`).join('')}` : ''
+        }${f.link ? `email_thread_link: ${f.link}\n` : ''}${
+          f.thread ? `email_thread_id: ${f.thread}\nemail_inbox_owner: ${f.owner ?? 'sam-example'}\n` : ''
+        }`,
+      ),
+      FOLDER,
+      rand,
+    );
+  const read = async (before: string | null = null) =>
+    (await setup({ caps: EMAIL_CAPS }).svc.read(KEY, before, me())).updates;
+  const rand = (path: string) => path.split('-').pop()?.slice(0, 6);
+
+  it('entries sharing a key in email_thread_keys are one conversation named for the earliest', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', { key: 'x:1', keys: ['x:2'] });
+    mail('2026-11-22T10:00:00Z', 'bbb222', { key: 'x:2' });
+    const u = await read();
+    expect(u).toHaveLength(2);
+    const name = (u[1] as { path: string }).path.split('/').pop();
+    expect(u.map((x) => x.emailThread)).toEqual([name, name]);
+  });
+
+  it('entries sharing a thread link are one conversation', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', { key: 'x:1' });
+    mail('2026-11-22T10:00:00Z', 'bbb222', { key: 'x:9', link: 'x:1' });
+    const u = await read();
+    expect(u[0]?.emailThread).toBeDefined();
+    expect(u[0]?.emailThread).toBe(u[1]?.emailThread);
+  });
+
+  it('the same owner and Gmail thread id are one conversation; another owner is not', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', { key: 'x:1', thread: 'abc123', owner: 'sam-example' });
+    mail('2026-11-21T10:00:00Z', 'bbb222', { key: 'x:2', thread: 'abc123', owner: 'sam-example' });
+    mail('2026-11-22T10:00:00Z', 'ccc333', { key: 'x:3', thread: 'abc123', owner: 'ben-mcadam' });
+    const u = await read();
+    const by = (r: string) => u.find((x) => rand(x.path) === r)?.emailThread;
+    expect(by('aaa111')).toBeDefined();
+    expect(by('aaa111')).toBe(by('bbb222'));
+    expect(by('ccc333')).toBeUndefined();
+  });
+
+  it('joins transitively: A and B share a key, B and C share a link', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', { key: 'x:a', keys: ['x:b'] });
+    mail('2026-11-21T10:00:00Z', 'bbb222', { key: 'x:b', link: 'x:c' });
+    mail('2026-11-22T10:00:00Z', 'ccc333', { key: 'x:c2', link: 'x:c' });
+    const u = await read();
+    expect(new Set(u.map((x) => x.emailThread)).size).toBe(1);
+    expect(u[0]?.emailThread).toBe((u.find((x) => rand(x.path) === 'aaa111')?.path ?? '').split('/').pop());
+  });
+
+  it('unrelated entries, notes and old entries get no emailThread', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', { key: 'x:1', thread: 'abc123' });
+    mail('2026-11-21T10:00:00Z', 'bbb222', { key: 'x:2', thread: 'def456' });
+    add('2026-11-22T10:00:00Z');
+    const u = await read();
+    expect(u).toHaveLength(3);
+    expect(u.every((x) => x.emailThread === undefined)).toBe(true);
+  });
+
+  it('places a conversation at its newest-saved part, ordered inside by email_sent_at', async () => {
+    mail('2026-11-20T10:00:00Z', 'aaa111', {
+      key: 'x:1',
+      keys: ['x:2', 'x:3'],
+      sent: '2026-11-19T09:00:00Z',
+    });
+    add('2026-11-21T10:00:00Z', entry('2026-11-21T10:00:00Z'), FOLDER, 'note11');
+    // Saved later but its message was sent in the middle of the thread.
+    mail('2026-11-23T10:00:00Z', 'bbb222', { key: 'x:2', sent: '2026-11-19T12:00:00Z' });
+    add('2026-11-22T10:00:00Z', entry('2026-11-22T10:00:00Z'), FOLDER, 'note22');
+    mail('2026-11-22T11:00:00Z', 'ccc333', { key: 'x:3', sent: '2026-11-19T15:00:00Z' });
+    const u = await read();
+    // newest-saved part is bbb222 (23 Nov): the conversation sits first; the notes follow in their order.
+    expect(u.map((x) => rand(x.path))).toEqual(['ccc333', 'bbb222', 'aaa111', 'note22', 'note11']);
+  });
+
+  it('never splits a conversation across a page edge', async () => {
+    const day = (n: number) => `2026-10-${String(n).padStart(2, '0')}T10:00:00Z`;
+    // 48 notes newer than a three-part conversation whose parts straddle position 50.
+    for (let i = 0; i < 48; i++) {
+      const at = `2026-11-${String(1 + Math.floor(i / 24)).padStart(2, '0')}T${String(i % 24).padStart(2, '0')}:30:00Z`;
+      add(at, entry(at), FOLDER, `n${String(i).padStart(5, '0')}`);
+    }
+    mail(day(1), 'aaa111', { key: 'x:1', keys: ['x:2', 'x:3'], sent: day(1) });
+    mail(day(2), 'bbb222', { key: 'x:2', sent: day(2) });
+    mail(day(3), 'ccc333', { key: 'x:3', sent: day(3) });
+    add('2026-09-01T10:00:00Z', entry('2026-09-01T10:00:00Z'), FOLDER, 'last11');
+    const svc = setup({ caps: EMAIL_CAPS }).svc;
+    const first = await svc.read(KEY, null, me());
+    // 48 notes + the 3 parts sit at 49..51: the page ends after the whole conversation.
+    expect(first.updates).toHaveLength(51);
+    expect(first.more).toBe(true);
+    const next = await svc.read(KEY, first.updates[50]?.path ?? null, me());
+    expect(next.updates.map((x) => rand(x.path))).toEqual(['last11']);
+    expect(next.more).toBe(false);
+  });
+});
+
 describe('chat entries', () => {
   const CHAT = '0b8f6c52-1a2b-4c3d-8e9f-0123456789ab';
   const OTHER = '11111111-2222-4333-8444-555555555555';

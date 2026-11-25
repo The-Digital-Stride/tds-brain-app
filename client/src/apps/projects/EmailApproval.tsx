@@ -32,6 +32,8 @@ export function routeWords(route: EmailDraftItem['route']): string {
       return 'The project code is in the subject.';
     case 'body-code':
       return 'The project code is in the email.';
+    case 'thread-code':
+      return 'A project code earlier in this thread.';
     case 'domain':
       return "The sender's company has only this project.";
     case 'codes-disagree':
@@ -42,6 +44,14 @@ export function routeWords(route: EmailDraftItem['route']): string {
       return 'No project matched this email. Choose one.';
   }
 }
+
+/** "Adds to a thread Sam saved on 20 Nov 2026." (a teammate when the name is unknown) */
+export const partOfWords = (partOf: { byName: string | null; at: string }): string =>
+  `Adds to a thread ${partOf.byName ?? 'a teammate'} saved on ${dateWords(partOf.at)}.`;
+
+/** "This summary covers 1 message." / "…3 messages." */
+export const coversWords = (fresh: number): string =>
+  `This summary covers ${fresh} ${fresh === 1 ? 'message' : 'messages'}.`;
 
 export type ApprovalResult =
   | { done: 'saved'; key: string }
@@ -219,7 +229,11 @@ export function EmailApproval({
         <p className="proj-note" id={`${id}-why`}>
           {/* The reason only describes the project the app suggested (UX review). */}
           {project === (draft.route.key ?? '') ? routeWords(draft.route) : 'You chose this project.'}
+          {project === (draft.route.key ?? '') && draft.route.overruled
+            ? ` The newest email has the code ${draft.route.overruled}, but this thread is already in this project.`
+            : ''}
         </p>
+        {draft.thread?.partOf ? <p className="proj-note">{partOfWords(draft.thread.partOf)}</p> : null}
       </div>
       <div className="form-field">
         <label htmlFor={`${id}-subject`}>Subject</label>
@@ -285,6 +299,13 @@ export function EmailApproval({
           {message}
         </p>
       ) : null}
+      {draft.thread?.overlap ? (
+        <p className="notice" data-level="warn" data-shape="box" role="status">
+          {draft.thread.partOf?.byName ?? 'A teammate'} saved part of this thread after this was drafted.
+          Check the summary for repeats.
+        </p>
+      ) : null}
+      {draft.thread ? <p className="proj-note">{coversWords(draft.thread.fresh)}</p> : null}
       <div className="proj-buttons">
         <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
           Save to project

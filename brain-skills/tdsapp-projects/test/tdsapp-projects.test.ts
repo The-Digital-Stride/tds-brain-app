@@ -20,9 +20,9 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir, userInfo } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
 import {
   CHAT_ID_PATTERN,
@@ -45,6 +45,12 @@ import {
   MESSAGE_ID_MAX,
   PROJECTS_EMAIL_CAPABILITY,
 } from '../../../shared/project-email-contract.ts';
+import {
+  EMAIL_KEY_SLOP_SECONDS,
+  EMAIL_THREAD_CODES_MAX,
+  EMAIL_THREAD_MESSAGES_MAX,
+  PROJECTS_EMAIL_THREADS_CAPABILITY,
+} from '../../../shared/project-email-threads-contract.ts';
 import { PROJECTS_REFS_CAPABILITY } from '../../../shared/project-refs-contract.ts';
 import {
   PROJECTS_UPDATES_CAPABILITY,
@@ -111,6 +117,8 @@ interface ProjectsModule {
   PROJECTS_UPDATES_CAPABILITY: string;
   PROJECTS_EMAIL_CAPABILITY: string;
   PROJECTS_CHAT_SUMMARY_CAPABILITY: string;
+  PROJECTS_EMAIL_THREADS_CAPABILITY: string;
+  EMAIL_THREADS: Record<string, number>;
   CHAT_ID_PATTERN: RegExp;
   CHAT_TITLE_MAX: number;
   EMAIL: Record<string, number | string>;
@@ -733,10 +741,11 @@ describe('capabilities and the command line', () => {
           PROJECTS_REFS_CAPABILITY,
           PROJECTS_EMAIL_CAPABILITY,
           PROJECTS_CHAT_SUMMARY_CAPABILITY,
+          PROJECTS_EMAIL_THREADS_CAPABILITY,
         ],
       },
     });
-    expect(projects.SCRIPT_VERSION).toBe('0.7.0');
+    expect(projects.SCRIPT_VERSION).toBe('0.8.0');
   });
 
   it('runs from the command line: one JSON line, exit 0, 2 and 1', () => {
@@ -807,6 +816,12 @@ describe('constants', () => {
       EMAIL_NEWEST_TEXT_MAX,
       MESSAGE_ID_MAX,
       EMAIL_NAME_MAX,
+    });
+    expect(projects.PROJECTS_EMAIL_THREADS_CAPABILITY).toBe(PROJECTS_EMAIL_THREADS_CAPABILITY);
+    expect(projects.EMAIL_THREADS).toEqual({
+      EMAIL_THREAD_MESSAGES_MAX,
+      EMAIL_THREAD_CODES_MAX,
+      EMAIL_KEY_SLOP_SECONDS,
     });
     expect(projects.UPDATES_DIR).toBe(UPDATES_DIR);
     expect(projects.UPDATE_FILE_PATTERN.source).toBe(UPDATE_FILE_PATTERN.source);
@@ -1333,6 +1348,7 @@ describe('move', () => {
       PROJECTS_REFS_CAPABILITY,
       PROJECTS_EMAIL_CAPABILITY,
       PROJECTS_CHAT_SUMMARY_CAPABILITY,
+      PROJECTS_EMAIL_THREADS_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),
@@ -3647,14 +3663,18 @@ describe('email entries', () => {
       expect(approve(id, { people: ['ops'] }).reply).toMatchObject({ ok: true });
     });
 
-    it('refuses an email already in any project with exists, answering where, and clears the draft', () => {
+    it('refuses an email already in any project with exists, answering where, and keeps the draft (S2)', () => {
       const id = newDraft();
       const file = emailEntry(`${OTHER}/updates`, 'tess-team', KEY);
       const r = approve(id);
       expect(r.exit).toBe(2);
       expect(r.reply).toMatchObject({ ok: false, error: 'exists', file, key: 'skyseal/roof' });
       expect(entries()).toEqual([]);
-      expect(draftFiles()).toEqual([]);
+      // Hidden by the app, never deleted: it can be saved once that entry is removed.
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      expect(existsSync(keyPath(id))).toBe(true);
+      rmSync(abs(file));
+      expect(approve(id).reply).toMatchObject({ ok: true });
     });
 
     it('follows the note and call rules for the project', () => {
@@ -3722,6 +3742,443 @@ describe('email entries', () => {
     });
   });
 
+  // Project email threads (docs/plans/2026-11-25-project-email-threads.md, decisions 1-5, 7 and 10 with
+  // the overseer's pre-review outcomes; shared/project-email-threads-contract.ts).
+  describe('email threads', () => {
+    const xKey = (address: string, minute: string, subject = 'budget for december [acm4k7]') =>
+      `x:${createHash('sha256').update(`${address.toLowerCase()}\n${minute}\n${subject}`).digest('hex')}`;
+    const SELF = { from: 'Alex@Client.Example', sentAt: DRAFT.sentAt };
+    const BOB = { from: 'Bob@Elsewhere.Example', sentAt: '2026-11-19T12:00:20Z' };
+    const OLDER = {
+      from: 'alex@client.example',
+      sentAt: '2026-11-18T09:15:40Z',
+      subject: 'Budget for December',
+    };
+    const FIRST = { from: 'carol@agency.example', sentAt: '2026-11-17T08:00:30Z' };
+    const K_BOB = xKey('bob@elsewhere.example', '2026-11-19T12:00');
+    const K_OLDER = xKey('alex@client.example', '2026-11-18T09:15', 'budget for december');
+    const K_FIRST = xKey('carol@agency.example', '2026-11-17T08:00');
+    const THREAD = [SELF, BOB, OLDER, FIRST];
+    const check = (over: Record<string, unknown> = {}) =>
+      runAt('email-check', {
+        inboxAddress: 'sam@example.test',
+        threadId: DRAFT.threadId,
+        subject: DRAFT.subject,
+        thread: THREAD,
+        ...over,
+      });
+    // An entry another Mac wrote that holds `key`, with extra frontmatter lines.
+    const holder = (dir: string, by: string, key: string, name: string, extra = '') =>
+      emailEntry(dir, by, key, name, extra);
+    const listLines = (name: string, keys: string[]) =>
+      `${name}:\n${keys.map((k) => `  - "${k}"\n`).join('')}`;
+
+    it('stores thread keys (hashes only, never an address), the drafted email left out, newest first', () => {
+      const id = newDraft({ thread: THREAD });
+      const file = draftOf(id);
+      expect(file).toMatchObject({
+        email_key: KEY,
+        thread_keys: [K_BOB, K_OLDER, K_FIRST],
+        codes_thread: ['ACM2C3', 'ACM3D4'],
+        fresh_at_draft: 4,
+      });
+      expect(file.near_keys).toBeUndefined();
+      const text = read(`${DRAFTS}/${id}.json`).toLowerCase();
+      for (const address of [
+        'bob@elsewhere.example',
+        'carol@agency.example',
+        'elsewhere',
+        'agency.example',
+      ]) {
+        expect(text).not.toContain(address);
+      }
+      // A thread holding only the drafted email: no other keys.
+      expect(draftOf(newDraft({ thread: [SELF], subject: DRAFT.subject })).thread_keys).toEqual([]);
+    });
+
+    it('without thread or threadCodes, the draft is exactly as 0.7.0 made it', () => {
+      const id = newDraft();
+      expect(Object.keys(draftOf(id)).sort()).toEqual(
+        [
+          'v',
+          'id',
+          'inbox_owner',
+          'created_at',
+          'thread_id',
+          'email_key',
+          'thread_message_ids',
+          'subject',
+          'from',
+          'from_domain',
+          'people',
+          'sent_at',
+          'summary',
+          'codes_subject',
+          'codes_body',
+          'requested',
+        ].sort(),
+      );
+      const r = approve(id);
+      expect(read(String(r.reply.file))).not.toMatch(/email_thread_(keys|link)/);
+    });
+
+    it('refuses a thread over 30, a bad address or time, or one without the drafted email', () => {
+      const many = Array.from({ length: EMAIL_THREAD_MESSAGES_MAX + 1 }, (_, i) =>
+        i === 0 ? SELF : { from: `p${i}@x.example`, sentAt: `2026-11-0${(i % 9) + 1}T10:00:30Z` },
+      );
+      const over = draft({ thread: many });
+      expect(refusal(over)).toEqual({ exit: 2, error: 'bad-request' });
+      expect(over.reply.message).toContain('send fewer thread messages');
+      const bad: Record<string, unknown>[] = [
+        { thread: 'all of it' },
+        { thread: [] },
+        { thread: [SELF, null] },
+        { thread: [SELF, { from: 'not an address', sentAt: BOB.sentAt }] },
+        { thread: [SELF, { from: 'bob@', sentAt: BOB.sentAt }] },
+        { thread: [SELF, { sentAt: BOB.sentAt }] },
+        { thread: [SELF, { from: BOB.from, sentAt: 'yesterday' }] },
+        { thread: [SELF, { from: BOB.from, sentAt: '2026-02-30T10:00:00Z' }] },
+        { thread: [SELF, { ...BOB, subject: 'two\nlines' }] },
+        { thread: [SELF, { ...BOB, subject: 'x'.repeat(EMAIL_SUBJECT_MAX + 1) }] },
+        // Not the same conversation: none of its messages is the drafted email.
+        { thread: [BOB, OLDER] },
+        { thread: [{ ...SELF, sentAt: '2026-11-19T16:31:30Z' }] },
+        { threadCodes: 'ACM2C3' },
+        { threadCodes: [5] },
+        { threadCodes: ['x'.repeat(41)] },
+        { threadCodes: Array.from({ length: EMAIL_THREAD_CODES_MAX + 1 }, () => 'ACM2C3') },
+      ];
+      for (const o of bad) {
+        expect(refusal(draft(o)), JSON.stringify(o).slice(0, 80)).toEqual({ exit: 2, error: 'bad-request' });
+      }
+      expect(draftFiles()).toEqual([]);
+      // At the limits is fine.
+      const id = newDraft({
+        thread: many.slice(0, EMAIL_THREAD_MESSAGES_MAX),
+        threadCodes: Array.from({ length: EMAIL_THREAD_CODES_MAX }, () => 'ACM2C3'),
+      });
+      expect(draftOf(id).thread_keys).toHaveLength(EMAIL_THREAD_MESSAGES_MAX - 1);
+    });
+
+    it('finds thread codes in quoted lines and threadCodes, never after a signature, never repeating subject or body codes', () => {
+      const id = newDraft({
+        thread: THREAD,
+        newestText: [
+          'See ACM4K7.',
+          '> earlier ACM2C3 and SKY4K7',
+          '>> older ACM3D4',
+          '> -- ',
+          '> Bob Jones ACM5E5',
+          '>> still older ACM7G7',
+          '-- ',
+          'Alex ACM6F6',
+          '> ACM9C9',
+        ].join('\r\n'),
+        threadCodes: ['acm8h8', '[ACM2C3]', 'ACM4K7', 'not a code', 'ACM2X9'],
+      });
+      expect(draftOf(id)).toMatchObject({
+        codes_subject: ['ACM4K7'],
+        codes_body: ['ACM4K7'],
+        codes_thread: ['ACM2C3', 'SKY4K7', 'ACM3D4', 'ACM7G7', 'ACM8H8', 'ACM2X9'],
+      });
+      // threadCodes alone: codes only, no thread keys.
+      const only = draftOf(newDraft({ subject: 'Other', threadCodes: ['ACM2C3'] }));
+      expect(only.codes_thread).toEqual(['ACM2C3', 'ACM3D4']);
+      expect(only.thread_keys).toBeUndefined();
+      expect(only.fresh_at_draft).toBeUndefined();
+    });
+
+    it('makes a near key only within 5 seconds of a minute boundary, the drafted email included', () => {
+      const at = (sentAt: string) => ({ from: 'dan@x.example', sentAt });
+      const dan = (minute: string) => xKey('dan@x.example', minute);
+      const self = { from: SELF.from, sentAt: '2026-11-19T16:30:02Z' };
+      const id = newDraft({
+        sentAt: self.sentAt,
+        thread: [
+          self,
+          at('2026-11-19T15:00:03Z'),
+          at('2026-11-19T14:00:57.500Z'),
+          at('2026-11-19T13:00:05Z'),
+          at('2026-11-19T12:00:06Z'),
+          at('2026-11-19T11:00:54Z'),
+          at('2026-11-19T10:00:55Z'),
+          at('2026-11-19T09:00:30Z'),
+        ],
+      });
+      const file = draftOf(id);
+      expect(file.email_key).toBe(KEY);
+      expect(file.near_keys).toEqual({
+        [KEY]: xKey('alex@client.example', '2026-11-19T16:29'),
+        [dan('2026-11-19T15:00')]: dan('2026-11-19T14:59'),
+        [dan('2026-11-19T14:00')]: dan('2026-11-19T14:01'),
+        [dan('2026-11-19T13:00')]: dan('2026-11-19T12:59'),
+        [dan('2026-11-19T10:00')]: dan('2026-11-19T10:01'),
+      });
+      expect(file.thread_keys).toHaveLength(7);
+    });
+
+    it("holds an email named in another entry's email_thread_keys, for every caller", () => {
+      const file = holder(
+        `${OTHER}/updates`,
+        'tess-team',
+        'x:tess',
+        '2026-11-19-0900-tess-team-ttt001.md',
+        listLines('email_thread_keys', [K_OLDER, KEY]),
+      );
+      expect(draft({ thread: THREAD }).reply).toMatchObject({
+        ok: false,
+        error: 'exists',
+        file,
+        key: 'skyseal/roof',
+      });
+      expect(draft().reply).toMatchObject({ ok: false, error: 'exists', file });
+      expect(draftFiles()).toEqual([]);
+    });
+
+    it('holds an email by its near key when the thread is sent, and only then', () => {
+      const file = holder(
+        `${OTHER}/updates`,
+        'tess-team',
+        xKey('alex@client.example', '2026-11-19T16:29'),
+        '2026-11-19-0900-tess-team-ttt002.md',
+      );
+      const self = { from: SELF.from, sentAt: '2026-11-19T16:30:02Z' };
+      expect(draft({ sentAt: self.sentAt, thread: [self, BOB] }).reply).toMatchObject({
+        error: 'exists',
+        file,
+      });
+      // An older caller (no thread) matches exactly, as 0.7.0 did.
+      const id = newDraft({ sentAt: self.sentAt });
+      expect(draftOf(id).email_key).toBe(KEY);
+    });
+
+    it('refuses approval when a near key became held after the draft was made', () => {
+      const self = { from: SELF.from, sentAt: '2026-11-19T16:30:58Z' };
+      const id = newDraft({ sentAt: self.sentAt, thread: [self, BOB] });
+      const file = holder(
+        `${OTHER}/updates`,
+        'tess-team',
+        xKey('alex@client.example', '2026-11-19T16:31'),
+        '2026-11-19-0900-tess-team-ttt003.md',
+      );
+      expect(approve(id).reply).toMatchObject({ ok: false, error: 'exists', file });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+    });
+
+    it('never holds a message by email_thread_link, and removing an entry frees exactly its messages (B1)', () => {
+      const a = holder(
+        UPDATES,
+        'tess-team',
+        'x:a',
+        '2026-11-19-0900-tess-team-bbb001.md',
+        listLines('email_thread_keys', [K_BOB]),
+      );
+      holder(
+        UPDATES,
+        'terry-team',
+        'x:b',
+        '2026-11-19-0901-terry-team-bbb002.md',
+        `email_thread_link: ${K_OLDER}\n`,
+      );
+      const olderDraft = {
+        from: { name: 'Alex Smith', address: OLDER.from },
+        sentAt: OLDER.sentAt,
+        subject: OLDER.subject,
+      };
+      expect(draft(olderDraft).reply).toMatchObject({ ok: true });
+      const bobDraft = { from: { name: 'Bob', address: BOB.from }, sentAt: BOB.sentAt };
+      expect(draft(bobDraft).reply).toMatchObject({ error: 'exists', file: a });
+      expect(runAt('update-remove', { key: 'acme/website', file: a, expect: sha(a) }).reply).toMatchObject({
+        ok: true,
+      });
+      expect(draft(bobDraft).reply).toMatchObject({ ok: true });
+    });
+
+    it('approval writes the thread keys no entry holds and links the newest held one, as that entry has it', () => {
+      const near = { ...BOB, sentAt: '2026-11-19T12:00:02Z' };
+      const nearHeld = xKey('bob@elsewhere.example', '2026-11-19T11:59');
+      holder(
+        `${OTHER}/updates`,
+        'tess-team',
+        'x:tess',
+        '2026-11-19-0900-tess-team-ccc001.md',
+        listLines('email_thread_keys', [nearHeld]),
+      );
+      holder(`${OTHER}/updates`, 'terry-team', K_OLDER, '2026-11-19-0901-terry-team-ccc002.md');
+      const id = newDraft({ thread: [SELF, near, OLDER, FIRST] });
+      expect(draftOf(id).fresh_at_draft).toBe(2);
+      const r = approve(id);
+      expect(r.reply).toMatchObject({ ok: true });
+      const text = read(String(r.reply.file));
+      expect(text).toContain(
+        [
+          'email_inbox_owner: sam-example',
+          'email_thread_keys:',
+          `  - "${K_FIRST}"`,
+          `email_thread_link: ${nearHeld}`,
+        ].join('\n'),
+      );
+      expect(parseFrontmatter(text).data).toMatchObject({
+        email_key: KEY,
+        email_thread_keys: [K_FIRST],
+        email_thread_link: nearHeld,
+      });
+      expect(text.toLowerCase()).not.toContain('elsewhere');
+      // The new entry now holds its own messages, never the linked one.
+      const firstDraft = { from: { name: 'Carol', address: FIRST.from }, sentAt: FIRST.sentAt };
+      expect(draft(firstDraft).reply).toMatchObject({ error: 'exists', file: r.reply.file });
+    });
+
+    it('approval reads what is held at that moment: all new, then one saved by a teammate meanwhile', () => {
+      const id = newDraft({ thread: THREAD });
+      const r = approve(id);
+      const data = parseFrontmatter(read(String(r.reply.file))).data;
+      expect(data.email_thread_keys).toEqual([K_BOB, K_OLDER, K_FIRST]);
+      expect(data.email_thread_link).toBeUndefined();
+      rmSync(abs(String(r.reply.file)));
+      const id2 = newDraft({ thread: THREAD, summary: 'Again.' });
+      holder(`${OTHER}/updates`, 'terry-team', K_OLDER, '2026-11-19-0901-terry-team-ddd001.md');
+      const r2 = approve(id2);
+      const data2 = parseFrontmatter(read(String(r2.reply.file))).data;
+      expect(data2.email_thread_keys).toEqual([K_BOB, K_FIRST]);
+      expect(data2.email_thread_link).toBe(K_OLDER);
+      // A thread of only the drafted email writes neither line.
+      rmSync(abs(String(r2.reply.file)));
+      const r3 = approve(newDraft({ thread: [SELF] }));
+      expect(read(String(r3.reply.file))).not.toMatch(/email_thread_(keys|link)/);
+    });
+
+    it('email-check answers covered, fresh and the project, writes nothing and needs no drafts folder', () => {
+      writeFileSync(join(root, '.gitignore'), 'personal/\n');
+      expect(check()).toEqual({
+        exit: 0,
+        reply: {
+          ok: true,
+          action: 'email-check',
+          covered: [],
+          fresh: THREAD.map((m, index) => ({ index, sentAt: m.sentAt })),
+          project: null,
+        },
+      });
+      holder(
+        UPDATES,
+        'tess-team',
+        K_BOB,
+        '2026-11-19-0900-tess-team-eee001.md',
+        listLines('email_thread_keys', [xKey('carol@agency.example', '2026-11-17T07:59')]),
+      );
+      holder(
+        UPDATES,
+        'terry-team',
+        'x:t',
+        '2026-11-19-0901-terry-team-eee002.md',
+        `email_thread_link: ${KEY}\n`,
+      );
+      const nearFirst = { ...FIRST, sentAt: '2026-11-17T08:00:01Z' };
+      const before = readdirSync(abs(UPDATES)).sort();
+      expect(check({ thread: [SELF, BOB, OLDER, nearFirst] }).reply).toEqual({
+        ok: true,
+        action: 'email-check',
+        covered: [1, 3],
+        fresh: [
+          { index: 0, sentAt: SELF.sentAt },
+          { index: 2, sentAt: OLDER.sentAt },
+        ],
+        project: 'acme/website',
+      });
+      // Held in two projects: no one project.
+      holder(`${OTHER}/updates`, 'terry-team', K_OLDER, '2026-11-19-0902-terry-team-eee003.md');
+      expect(check({ thread: [SELF, BOB, OLDER, nearFirst] }).reply).toMatchObject({
+        covered: [1, 2, 3],
+        project: null,
+      });
+      expect(readdirSync(abs(UPDATES)).sort()).toEqual(before);
+      expect(existsSync(abs('briefing'))).toBe(false);
+    });
+
+    it('email-check refuses another inbox and bad fields', () => {
+      expect(refusal(check({ inboxAddress: 'olive@example.test' }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      as('stranger@example.test');
+      expect(refusal(check())).toEqual({ exit: 2, error: 'not-allowed' });
+      as('sam@example.test');
+      const many = Array.from({ length: EMAIL_THREAD_MESSAGES_MAX + 1 }, () => SELF);
+      const over = check({ thread: many });
+      expect(refusal(over)).toEqual({ exit: 2, error: 'bad-request' });
+      expect(over.reply.message).toContain('send fewer thread messages');
+      for (const o of [
+        { thread: [] },
+        { thread: undefined },
+        { thread: [{ from: 'nope', sentAt: SELF.sentAt }] },
+        { thread: [{ from: SELF.from, sentAt: 'soon' }] },
+        { threadId: 'zz' },
+        { subject: 'a\nb' },
+        { inboxAddress: undefined },
+        { bcc: 'x@y.example' },
+      ]) {
+        expect(refusal(check(o)), JSON.stringify(o)).toEqual({ exit: 2, error: 'bad-request' });
+      }
+      expect(check({ thread: many.slice(0, EMAIL_THREAD_MESSAGES_MAX) }).reply).toMatchObject({ ok: true });
+    });
+
+    it('reads every updates folder once per run with a 30-message thread (S1)', () => {
+      for (let p = 0; p < 12; p++) {
+        const dir = `clients/acme/projects/p${p}`;
+        put(`${dir}/project.md`, `---\nv: 1\ntitle: P${p}\nclient: acme\n---\n`);
+        for (let e = 0; e < 5; e++) {
+          const name = `2026-11-19-090${e}-tess-team-s${String(p).padStart(2, '0')}e${e}a.md`;
+          holder(
+            `${dir}/updates`,
+            'tess-team',
+            `x:p${p}e${e}`,
+            name,
+            listLines('email_thread_keys', [`x:q${p}e${e}`]),
+          );
+        }
+      }
+      const thread = [
+        SELF,
+        ...Array.from({ length: EMAIL_THREAD_MESSAGES_MAX - 1 }, (_, i) => ({
+          from: `p${i}@x.example`,
+          sentAt: `2026-11-1${i % 9}T10:${String(i).padStart(2, '0')}:30Z`,
+        })),
+      ];
+      // The script's own `fs` (the same module object), so its directory reads can be counted.
+      const spy = vi.spyOn(require('node:fs') as typeof import('node:fs'), 'readdirSync');
+      const updatesReads = () =>
+        spy.mock.calls.map((c) => String(c[0])).filter((p) => p.endsWith(`${sep}${UPDATES_DIR}`));
+      try {
+        const started = Date.now();
+        const d = draft({ thread });
+        expect(d.reply).toMatchObject({ ok: true });
+        // Each of the twelve updates folders read once (the website and roof projects have none yet).
+        const perRun = updatesReads();
+        expect(perRun.length).toBe(new Set(perRun).size);
+        expect(perRun.length).toBeGreaterThanOrEqual(12);
+        spy.mockClear();
+        expect(check({ thread }).reply).toMatchObject({ ok: true, covered: [] });
+        expect(updatesReads()).toEqual(perRun);
+        spy.mockClear();
+        expect(approve(String(d.reply.id)).reply).toMatchObject({ ok: true });
+        expect(updatesReads()).toEqual(perRun);
+        expect(Date.now() - started).toBeLessThan(4000);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('never sweeps a waiting draft whose email a teammate saved (S2)', () => {
+      const id = newDraft({ thread: THREAD });
+      holder(`${OTHER}/updates`, 'tess-team', KEY, '2026-11-19-0900-tess-team-fff001.md');
+      newDraft({ subject: 'Something else' });
+      runAt('email-draft-remove', { id: String(newDraft({ subject: 'Third' })), dismiss: false });
+      expect(draftFiles()).toContain(`${id}.json`);
+      expect(existsSync(keyPath(id))).toBe(true);
+    });
+  });
+
   it('is documented in the skill file, with the rule that only the app saves an email', () => {
     const skill = readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8');
     expect(skill).toContain('| `email-draft` |');
@@ -3730,5 +4187,16 @@ describe('email entries', () => {
     expect(skill).toContain('0.7.0');
     expect(skill).toMatch(/never call `update` with `kind` `"email"`/i);
     expect(skill).toContain('briefing/email-drafts');
+  });
+
+  it('documents thread, threadCodes, email-check and the code line in the skill file (0.8.0)', () => {
+    const skill = readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8');
+    expect(skill).toContain('| `email-check` |');
+    expect(skill).toContain(PROJECTS_EMAIL_THREADS_CAPABILITY);
+    expect(skill).toContain('`threadCodes`');
+    expect(skill).toContain('`fresh`');
+    expect(skill).toContain('Ref: [AST4K7]');
+    expect(skill).toMatch(/0\.8\.0 [^\n]*thread/);
+    expect(skill).not.toMatch(/subjects only/i);
   });
 });

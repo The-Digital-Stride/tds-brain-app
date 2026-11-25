@@ -525,6 +525,16 @@
     font-size: var(--fs-control);
     color: var(--iron);
   }
+  /* One row per conversation: the subject and the Gmail line once, then each saved part. */
+  .proj-thread-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-8) var(--sp-12) 0;
+  }
+  .proj-thread-part {
+    border-top: 1px solid var(--line);
+  }
   .proj-email-row {
     align-items: center;
   }

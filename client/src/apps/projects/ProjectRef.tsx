@@ -1,11 +1,12 @@
-import { type MouseEvent, useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { BusinessContact } from '../../../../shared/project-business-contract.ts';
 import { gmailComposeUrl } from '../../../../shared/project-email-threads-contract.ts';
 import type { ProjectCard, ProjectList } from '../../../../shared/projects-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
+import { openGmailWindow } from '../../shell/gmail-window.ts';
 import { useCopy } from '../../shell/useCopy.ts';
 import { useStore } from '../../store.tsx';
-import { composeContacts, composeWindowFeatures, contactWords, SOMEONE_ELSE } from './compose.ts';
+import { composeContacts, contactWords, SOMEONE_ELSE } from './compose.ts';
 import { useProjectChange } from './useChange.ts';
 
 /** What gets copied: the code in square brackets, so it stands out in a subject line. */
@@ -92,13 +93,6 @@ export function ProjectRef({
   const shown = state === 'ok' && ref !== '';
   const duplicate = state === 'duplicate' && ref !== '';
   const composeUrl = gmailComposeUrl(ownEmail, ref, to === '' ? undefined : to);
-  /** A plain click opens the small window; a click that asks for a tab or a new window is left to the browser. */
-  const openCompose = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    window.open(composeUrl, '_blank', composeWindowFeatures(window));
-  };
-
   return (
     <div className="proj-ref">
       <div className="proj-ref-row">
@@ -165,7 +159,7 @@ export function ProjectRef({
                 href={composeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={openCompose}
+                onClick={(e) => openGmailWindow(e, composeUrl)}
               >
                 Write an email<span className="visually-hidden"> (opens Gmail in a small window)</span>
               </a>

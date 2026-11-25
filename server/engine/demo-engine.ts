@@ -57,7 +57,25 @@ const HISTORY: Record<string, string[]> = {
   ],
   '7a2d3e4f-5b6c-4d7e-9f80-1b2c3d4e5f60': [
     'Draft the monthly update email for Northwind.',
-    'Here is a short draft. It leads with the good news and ends with one clear next step.',
+    [
+      'Here is a short draft. It leads with the good news and ends with one clear next step.',
+      '',
+      '```email',
+      'To: priya@northwind.example',
+      'Subject: Northwind: your November update',
+      '',
+      'Hi Priya,',
+      '',
+      'Good news first: enquiries from the website are up by a fifth on October.',
+      '',
+      'The new landing page went live on the 12th and is already your second most visited page.',
+      '',
+      'One thing from you: please confirm the December budget by Friday, so we can book the ads.',
+      '',
+      'Best wishes,',
+      'Sam',
+      '```',
+    ].join('\n'),
   ],
 };
 

@@ -50,20 +50,5 @@ export const contactWords = (c: BusinessContact): string => (c.name ? `${c.name}
 /** The picker's last line: Gmail opens with nobody filled in. */
 export const SOMEONE_ELSE = 'Someone else';
 
-export const COMPOSE_WIDTH = 680;
-export const COMPOSE_HEIGHT = 760;
-
-/**
- * `window.open` features for the compose window: a small window at the right of the Cortex window, kept on
- * the screen, with no link back to this page (`noopener`, `noreferrer`: Gmail learns nothing about Cortex).
- */
-export function composeWindowFeatures(win: {
-  screenX: number;
-  screenY: number;
-  outerWidth: number;
-  outerHeight: number;
-}): string {
-  const left = Math.max(0, Math.round(win.screenX + win.outerWidth - COMPOSE_WIDTH - 24));
-  const top = Math.max(0, Math.round(win.screenY + Math.max(0, (win.outerHeight - COMPOSE_HEIGHT) / 2)));
-  return `popup=yes,width=${COMPOSE_WIDTH},height=${COMPOSE_HEIGHT},left=${left},top=${top},noopener,noreferrer`;
-}
+// The small window itself is shared with the email card in a chat.
+export { COMPOSE_HEIGHT, COMPOSE_WIDTH, composeWindowFeatures } from '../../shell/gmail-window.ts';

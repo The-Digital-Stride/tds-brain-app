@@ -310,6 +310,61 @@
     color: var(--iron);
   }
 
+  /* An email Claude drafted (EmailDraftCard): what Gmail will be given, as plain text, then the buttons. */
+  .email-draft {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-10);
+    margin: var(--sp-12) 0;
+    padding: var(--sp-12);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-12);
+    box-shadow: var(--lift-0);
+    font-size: var(--fs-reading);
+  }
+  .email-draft:first-child {
+    margin-top: 0;
+  }
+  .email-draft:last-child {
+    margin-bottom: 0;
+  }
+  .email-draft-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    margin: 0;
+    padding-bottom: var(--sp-10);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-control);
+  }
+  .email-draft-head > div {
+    display: flex;
+    gap: var(--sp-8);
+  }
+  .email-draft-head dt {
+    flex: 0 0 56px;
+    color: var(--iron);
+  }
+  .email-draft-head dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* The message is plain text in the reading face: line breaks kept, long lines wrapped, never clipped. */
+  .email-draft-body {
+    margin: 0;
+    font: inherit;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .email-draft-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+
   /* Where earlier messages were summarised: a quiet notice, not a warning. */
   .notice[data-shape][data-kind="summary"] {
     background: var(--tint-1);

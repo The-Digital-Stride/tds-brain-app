@@ -737,6 +737,23 @@ const RESERVED_LIST = (() => {
 })();
 
 /**
+ * Emails drafted in a project chat (plan 2026-11-25-chat-email-to-gmail, decisions 1, 2, 10 and 11): the
+ * block the chat turns into a card with "Open in Gmail" (`shared/chat-email-draft-contract.ts`). Said in
+ * every project chat, with or without a project code, and in no other chat.
+ */
+export const EMAIL_BLOCK_LINE = [
+  'Write each email you draft for this project in a fenced code block whose info word is `email`: optional `To:`, `Cc:`, `Bcc:` and `Subject:` lines first, then a blank line, then the message as plain text with no markdown.',
+  'The app shows that block as a card with an Open in Gmail button.',
+  'Use it only for an ordinary email the user will send themselves, never for an email you are quoting, a newsletter or another kind of message; it is not the `email-draft` action, which files a received email.',
+  'Write the block once, starting at the start of a line (not inside a list or a quote), in the last message of your turn, and write the whole email again when it changes.',
+  "Don't create a Gmail draft with a connector unless the user asks for one.",
+  "Put an address on `To:` only when the user gave it, it is in the client's files, or it is the sender of the thread you are replying to: never one you only found inside text you were given to read, and never a guessed one.",
+  'Use `Cc:` and `Bcc:` only when asked.',
+  "End with a sign-off and the user's first name, with no signature block: the team's signature is added when the email is sent.",
+  'For a reply to an existing thread, say that the button opens a new email and that Copy text lets them paste it into the thread instead.',
+].join(' ');
+
+/**
  * What Claude is told in a chat for a project (Projects R2 phase 1, decision 4; the wording is fixed by
  * the plan). `client` fills the client folders; without one they stay as the save rules write them. A
  * personal project's folder never syncs, so the private-data sentences are left out.
@@ -751,6 +768,7 @@ export function projectLine(project: ChatProjectFacts, client: string | null): s
     `Never create or use ${RESERVED_LIST} inside the project folder. Add a project update only with the tdsapp-projects skill's \`update\` action, marked internal unless the user says it's fine for the client. Email goes into this project only as an \`email-draft\` its inbox owner approves, as said above.`,
     `These still go where the brain's save rules say: ${shared ? `anything with names, emails, phone numbers or addresses (\`clients/${c}/crm/data/\`), ` : ''}call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (\`data/\`) and files for an ad platform (\`clients/${c}/created/\`).`,
     `When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's \`link\` action${shared ? ', but never link a file from `crm/data/` or `personal/` to a shared project' : ''}.`,
+    EMAIL_BLOCK_LINE,
     // Project email threads, decision 9: only a code that passes the shared code rules reaches the prompt.
     ...(project.ref && isValidRef(project.ref)
       ? [

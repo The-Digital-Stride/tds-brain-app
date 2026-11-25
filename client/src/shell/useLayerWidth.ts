@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react';
 import { useDesk, useShell } from './ShellProvider.tsx';
 
-/** The gap round the viewer drawer (`--viewer-pad` in viewer.css). */
+/**
+ * The gap round the viewer drawer (`--viewer-pad` in viewer.css). 8px under 600px wide, where the drawer fills the
+ * window and has no handle, so this is not used there.
+ */
 export const VIEWER_PAD = 12;
 /** What the viewer leaves clear on the left so the rail stays in view (the same 70px viewer.css leaves). */
 const RAIL_ROOM = 70;

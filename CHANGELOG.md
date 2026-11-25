@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.89.0 — 2026-11-25
+
+- **feat**: pick who an email goes to; Gmail opens in a small window
+- **fix**: safer contact names, quick reads of hostile client files, review wording
+- **fix**: pair a name with the address beside it; one-pass heading key
+- **fix**: one rule for which name goes with an address
+- **fix**: a lone word or a company is not a contact's name
+
 ## v0.88.1 — 2026-11-25
 
 - **fix**: Recent cards show my own things, not the team's

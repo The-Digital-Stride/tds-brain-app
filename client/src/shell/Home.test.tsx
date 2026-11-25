@@ -24,6 +24,8 @@ const api = vi.hoisted(() => ({
   close: vi.fn(),
   updatePrefs: vi.fn(),
   libraryItems: vi.fn(),
+  libraryRecent: vi.fn(),
+  libraryScopes: vi.fn(() => new Promise(() => {})),
   projects: vi.fn(),
   homeMeetings: vi.fn(async () => ({ cache: 'none', checked: null, meetings: [] })),
 }));
@@ -35,6 +37,10 @@ vi.mock('../api.ts', () => ({
 
 class FakeEventSource {
   static CLOSED = 2;
+  static last: FakeEventSource | null = null;
+  constructor() {
+    FakeEventSource.last = this;
+  }
   readyState = 1;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
@@ -66,7 +72,7 @@ const boot = {
   appVersion: '0',
   appState: { kind: 'ready' as const },
   service: { underService: true },
-  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'team', knownMember: true },
+  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'owner', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [skill('meeting-notes', 'Meeting notes'), skill('standup', 'Standup')],
@@ -172,6 +178,7 @@ beforeEach(() => {
   api.startSession.mockResolvedValue({ session: chat('new1', 'New chat', 'working') });
   api.updatePrefs.mockResolvedValue(boot.prefs);
   api.libraryItems.mockResolvedValue({ files: [] });
+  api.libraryRecent.mockResolvedValue({ files: [], partial: false });
 });
 afterEach(() => {
   projectChoice.set('');
@@ -840,21 +847,33 @@ describe('Home', () => {
     const drawer = () => document.getElementById('drawer') as HTMLElement;
     expect(drawer().hasAttribute('inert')).toBe(true);
     for (const name of ['All tasks', 'All chats', 'All skills']) {
-      expect(screen.getByRole('button', { name }).getAttribute('data-size')).toBe('small');
+      expect(screen.getAllByRole('button', { name })[0]?.getAttribute('data-size')).toBe('small');
     }
-    fireEvent.click(screen.getByRole('button', { name: 'All tasks' }));
+    fireEvent.click(card('Pinned tasks').getByRole('button', { name: 'All tasks' }));
     await waitFor(() => expect(drawer().hasAttribute('inert')).toBe(false));
     expect(within(drawer()).getByRole('heading', { name: 'Tasks' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'All chats' }));
+    fireEvent.click(card('Pinned chats').getByRole('button', { name: 'All chats' }));
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Chats' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'All skills' }));
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Skills' })).toBeTruthy());
   });
 
-  it('has no "All skills" for someone the Skills drawer is not for (team)', async () => {
+  it('has no Pinned skills card, and no "All skills", for someone the Skills drawer is not for (team)', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'team' } });
     await renderHome();
+    expect(screen.queryByRole('heading', { name: /skills/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'All skills' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'All chats' })).toBeTruthy();
+    expect(card('Pinned chats').getByRole('button', { name: 'All chats' })).toBeTruthy();
+  });
+
+  it('never counts the Pinned skills card as hidden for the team', async () => {
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      identity: { ...boot.identity, role: 'team' },
+      prefs: { ...boot.prefs, homeHidden: ['skills'], homeShortcuts: [] },
+    });
+    await renderHome();
+    expect(screen.queryByText(/cards? hidden\./)).toBeNull();
   });
 });
 
@@ -866,35 +885,69 @@ describe('Home: moving the cards', () => {
   it('moves a card with the keyboard on its grip, saves it for this person, and resets', async () => {
     await renderHome();
     await card('Pinned tasks').findByText('Write the call tracking case');
-    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned chats', 'Pinned files', 'Pinned skills']);
+    expect(order()).toEqual([
+      'Meetings',
+      'Pinned tasks',
+      'Recent tasks',
+      'Pinned chats',
+      'Recent chats',
+      'Pinned files',
+      'Recent documents',
+      'Recent images',
+      'Pinned skills',
+    ]);
     expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
 
-    const grip = screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 5' });
+    const grip = screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 9' });
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
-    expect(order()).toEqual(['Meetings', 'Pinned chats', 'Pinned tasks', 'Pinned files', 'Pinned skills']);
-    expect(screen.getByText('Pinned tasks moved to 3 of 5')).toBeTruthy();
+    expect(order()).toEqual([
+      'Meetings',
+      'Recent tasks',
+      'Pinned tasks',
+      'Pinned chats',
+      'Recent chats',
+      'Pinned files',
+      'Recent documents',
+      'Recent images',
+      'Pinned skills',
+    ]);
+    expect(screen.getByText('Pinned tasks moved to 3 of 9')).toBeTruthy();
     // Ads approvals and Recent projects are hidden (nothing waiting, no projects) but keep their default places in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
       'ads',
-      'chats',
-      'projects',
+      'recent-todos',
       'todos',
+      'projects',
+      'chats',
+      'recent-chats',
       'files',
+      'recent-documents',
+      'recent-images',
       'skills',
     ]);
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 5' })),
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 9' })),
     );
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Pinned files, 4 of 5' }), { key: 'Home' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Pinned files, 6 of 9' }), { key: 'Home' });
     expect(order()[0]).toBe('Pinned files');
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset card order' }));
-    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned chats', 'Pinned files', 'Pinned skills']);
+    expect(order()).toEqual([
+      'Meetings',
+      'Pinned tasks',
+      'Recent tasks',
+      'Pinned chats',
+      'Recent chats',
+      'Pinned files',
+      'Recent documents',
+      'Recent images',
+      'Pinned skills',
+    ]);
     expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual([]);
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 5' })),
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 9' })),
     );
   });
 
@@ -903,16 +956,26 @@ describe('Home: moving the cards', () => {
     localStorage.setItem('tds.home.cardOrder.v1:other-person', JSON.stringify(['chats']));
     await renderHome();
     await waitFor(() =>
-      expect(order()).toEqual(['Pinned skills', 'Pinned files', 'Meetings', 'Pinned tasks', 'Pinned chats']),
+      expect(order()).toEqual([
+        'Pinned skills',
+        'Pinned files',
+        'Meetings',
+        'Pinned tasks',
+        'Recent tasks',
+        'Pinned chats',
+        'Recent chats',
+        'Recent documents',
+        'Recent images',
+      ]),
     );
     expect(screen.getByRole('button', { name: 'Reset card order' })).toBeTruthy();
   });
 
   it('a key that moves nothing saves nothing', async () => {
     await renderHome();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Meetings, 1 of 5' }), { key: 'ArrowUp' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Meetings, 1 of 9' }), { key: 'ArrowUp' });
     expect(localStorage.getItem(KEY)).toBeNull();
-    expect(screen.getByText('Meetings moved to 1 of 5')).toBeTruthy();
+    expect(screen.getByText('Meetings moved to 1 of 9')).toBeTruthy();
   });
 
   it('a card is only draggable while its grip is pressed', async () => {
@@ -950,16 +1013,22 @@ describe('Home: choosing what shows', () => {
     api.bootstrap.mockResolvedValue({ ...boot, ...more, prefs: { ...boot.prefs, ...extra } });
 
   it('a hidden card disappears, and the grip counts only the cards shown', async () => {
-    withPrefs({ homeHidden: ['chats', 'files'], homeShortcuts: [] });
+    withPrefs({
+      homeHidden: ['chats', 'files', 'recent-chats', 'recent-documents', 'recent-images'],
+      homeShortcuts: [],
+    });
     await renderHome();
     await card('Pinned tasks').findByText('Write the call tracking case');
-    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned skills']);
-    expect(screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 3' })).toBeTruthy();
+    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Recent tasks', 'Pinned skills']);
+    expect(screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 4' })).toBeTruthy();
   });
 
   it('hiding a card keeps the saved order for when it comes back', async () => {
     localStorage.setItem(KEY, JSON.stringify(['skills', 'files', 'chats']));
-    withPrefs({ homeHidden: ['files'], homeShortcuts: [] });
+    withPrefs({
+      homeHidden: ['files', 'recent-todos', 'recent-chats', 'recent-documents', 'recent-images'],
+      homeShortcuts: [],
+    });
     await renderHome();
     await waitFor(() =>
       expect(order()).toEqual(['Pinned skills', 'Pinned chats', 'Meetings', 'Pinned tasks']),
@@ -1009,26 +1078,33 @@ describe('Home: choosing what shows', () => {
   });
 
   it('says so when every card is hidden', async () => {
-    withPrefs({ homeHidden: ['meetings', 'todos', 'chats', 'files', 'skills'], homeShortcuts: [] });
+    withPrefs({
+      homeHidden: [
+        'meetings',
+        'todos',
+        'chats',
+        'files',
+        'skills',
+        'recent-todos',
+        'recent-chats',
+        'recent-documents',
+        'recent-images',
+      ],
+      homeShortcuts: [],
+    });
     await renderHome();
     expect(await screen.findByText('Your Home has no cards. Customise Home to add some.')).toBeTruthy();
   });
 
-  it('shows a ready skill shortcut, which opens the skill without running it, and hides a gone one', async () => {
+  it('never shows a skill as a shortcut, even one that slipped into the settings', async () => {
     withPrefs({
       homeHidden: [],
-      homeShortcuts: [
-        { kind: 'skill', name: 'standup' },
-        { kind: 'skill', name: 'removed-skill' },
-      ],
+      homeShortcuts: [{ kind: 'skill', name: 'standup' } as never, { kind: 'drawer', drawer: 'chats' }],
     });
     await renderHome();
-    await screen.findByRole('button', { name: 'Standup' });
     const row = within(document.querySelector('.home-shortcuts') as HTMLElement);
-    expect(row.getByRole('button', { name: 'Standup' })).toBeTruthy();
-    expect(row.queryByRole('button', { name: /removed-skill/ })).toBeNull();
-    fireEvent.click(row.getByRole('button', { name: 'Standup' }));
-    expect(api.startSession).not.toHaveBeenCalled();
+    expect(row.getByRole('button', { name: 'Chats' })).toBeTruthy();
+    expect(row.queryByRole('button', { name: 'Standup' })).toBeNull();
   });
 
   it('a drawer shortcut opens its drawer and a place shortcut opens the place', async () => {
@@ -1063,5 +1139,564 @@ describe('Home: choosing what shows', () => {
     withPrefs({ homeHidden: ['files'], homeShortcuts: [] });
     await renderHome();
     expect(tray()?.getAttribute('data-odd')).toBe('false');
+  });
+});
+
+describe('Home: recent cards', () => {
+  const rtodo = (
+    id: string,
+    title: string,
+    created: string | null,
+    over: Partial<TodoItem> = {},
+  ): TodoItem => ({
+    ...todo(id, title, null),
+    created,
+    ...over,
+  });
+  const rfile = (
+    id: string,
+    title: string,
+    kind: 'document' | 'image' = 'document',
+    projects?: string[],
+  ) => ({
+    item: {
+      id,
+      title,
+      name: `${title}.md`,
+      kind,
+      modified: '2026-11-24T10:00:00.000Z',
+      projects,
+    } as unknown as LibraryItem,
+    scope: { id: 'client:acme', name: 'Acme Heating' } as unknown as LibraryScope,
+  });
+  // Working on only holds a project the list knows.
+  const withProject = () => {
+    projectsStore.reset();
+    api.projects.mockResolvedValue({
+      projects: [
+        {
+          key: 'northwind/site',
+          space: 'client',
+          slug: 'site',
+          client: 'northwind',
+          folder: 'clients/northwind/projects/site',
+          archived: false,
+          status: 'active',
+          title: 'Site rebuild',
+        },
+      ],
+      duplicates: [],
+    });
+  };
+  afterEach(() => projectsStore.reset());
+  const withTodos = (mine: TodoItem[], open: TodoItem[] = []) =>
+    api.todos.mockResolvedValue({ mine, open, othersCount: 0 });
+  const unpinned = () =>
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      prefs: { ...boot.prefs, favouriteTodos: [], favouriteChats: [], favouriteFiles: [] },
+    });
+
+  describe('Recent tasks', () => {
+    it('lists the newest first with "Added" and "Passed to you", leaves personal ones out', async () => {
+      withTodos(
+        [
+          rtodo('old.md', 'Old one', '2026-11-01', { client: 'acme' }),
+          rtodo('p.md', 'Private one', '2026-11-25', { scope: 'personal', key: 'personal/p.md' }),
+          rtodo('passed.md', 'Passed one', '2026-11-02', {
+            handover: {
+              by: 'x',
+              byName: 'X',
+              at: '2026-11-24T10:00:00+00:00',
+              from: null,
+              via: null,
+              source: 'stamp',
+            },
+          }),
+        ],
+        [rtodo('new.md', 'New one', '2026-11-25')],
+      );
+      await renderHome();
+      const c = card('Recent tasks');
+      await c.findByText('New one');
+      const rows = c.getAllByRole('listitem');
+      expect(rows.map((r) => r.textContent)).toEqual([
+        'New oneAdded 25 Nov',
+        'Passed onePassed to you 24 Nov',
+        'Old oneAdded 1 Nov, Acme Heating',
+      ]);
+      expect(c.queryByText('Private one')).toBeNull();
+    });
+
+    it('says so when empty, in a project and out of it, and has an All tasks button', async () => {
+      withTodos([]);
+      await renderHome();
+      expect(await card('Recent tasks').findByText('No tasks yet.')).toBeTruthy();
+      fireEvent.click(card('Recent tasks').getByRole('button', { name: 'All tasks' }));
+      await waitFor(() =>
+        expect(
+          within(document.getElementById('drawer') as HTMLElement).getByRole('heading', { name: 'Tasks' }),
+        ),
+      );
+      cleanup();
+      withProject();
+      projectChoice.set('northwind/site');
+      await renderHome();
+      expect(await card('Recent tasks').findByText('No tasks in this project.')).toBeTruthy();
+    });
+
+    it('Working on narrows it', async () => {
+      withProject();
+      projectChoice.set('northwind/site');
+      withTodos([
+        rtodo('in.md', 'Inside', '2026-11-20', { projectMatch: { how: 'key', key: 'northwind/site' } }),
+        rtodo('out.md', 'Outside', '2026-11-21'),
+      ]);
+      await renderHome();
+      const c = card('Recent tasks');
+      await c.findByText('Inside');
+      expect(c.queryByText('Outside')).toBeNull();
+    });
+
+    it('shows five rows and Show N more, never more than 20', async () => {
+      withTodos(
+        Array.from({ length: 25 }, (_, i) =>
+          rtodo(`m${i}.md`, `Task ${i}`, `2026-10-${String(i + 1).padStart(2, '0')}`),
+        ),
+      );
+      await renderHome();
+      const c = card('Recent tasks');
+      await c.findByText('Task 24');
+      expect(c.getAllByRole('listitem')).toHaveLength(5);
+      fireEvent.click(c.getByRole('button', { name: /Show 15 more tasks/ }));
+      expect(c.getAllByRole('listitem')).toHaveLength(20);
+    });
+
+    it('a star press flips the star and the row stays', async () => {
+      withTodos([rtodo('t-a.md', 'Starred later', '2026-11-20'), rtodo('x.md', 'Other', '2026-11-19')]);
+      api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteTodos: ['x.md'] } });
+      api.updatePrefs.mockImplementation(async (p: object) => ({ ...boot.prefs, ...p }));
+      await renderHome();
+      const c = card('Recent tasks');
+      const star = await c.findByRole('button', { name: 'Pin: Starred later' });
+      expect(star.getAttribute('aria-pressed')).toBe('false');
+      expect(c.getByRole('button', { name: 'Pin: Other' }).getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(star);
+      await waitFor(() =>
+        expect(
+          card('Recent tasks')
+            .getByRole('button', { name: 'Pin: Starred later' })
+            .getAttribute('aria-pressed'),
+        ).toBe('true'),
+      );
+      expect(card('Recent tasks').getAllByRole('listitem')).toHaveLength(2);
+    });
+  });
+
+  describe('Recent chats', () => {
+    it('lists open and earlier chats newest first, once each, and stars only chats with an id', async () => {
+      api.sessions.mockResolvedValue({
+        live: [
+          { ...chat('s1', 'Open one', 'working'), lastActivityAt: '2026-11-25T09:00:00.000Z' },
+          { ...chat('x9', 'No id yet', 'working'), lastActivityAt: '2026-11-25T11:00:00.000Z' },
+        ],
+        past: [
+          {
+            sdkSessionId: SID1,
+            title: 'Same as open',
+            lastModified: '2026-11-25T12:00:00.000Z',
+            kind: 'tds',
+          },
+          {
+            sdkSessionId: 'old-1',
+            title: 'Earlier one',
+            lastModified: '2026-11-25T10:00:00.000Z',
+            kind: 'tds',
+          },
+        ],
+      });
+      unpinned();
+      await renderHome();
+      const c = card('Recent chats');
+      await c.findByText('Earlier one');
+      expect(c.getAllByRole('listitem').map((r) => r.querySelector('.line-title')?.textContent)).toEqual([
+        'No id yet',
+        'Earlier one',
+        'Open one',
+      ]);
+      expect(c.queryByRole('button', { name: 'Pin: No id yet' })).toBeNull();
+      expect(c.getByRole('button', { name: 'Pin: Open one' }).getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(c.getByRole('button', { name: /^Earlier one/ }));
+      await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    });
+
+    it('says so when empty, and is not narrowed by Working on', async () => {
+      api.sessions.mockResolvedValue({ live: [], past: [] });
+      await renderHome();
+      expect(await card('Recent chats').findByText('No chats yet.')).toBeTruthy();
+      expect(card('Recent chats').getByRole('button', { name: 'All chats' })).toBeTruthy();
+      cleanup();
+      withProject();
+      projectChoice.set('northwind/site');
+      api.sessions.mockResolvedValue({ live: [chat('s1', 'Any project', 'working')], past: [] });
+      await renderHome();
+      expect(await card('Recent chats').findByText('Any project')).toBeTruthy();
+    });
+
+    it('a star press flips the star and the row stays', async () => {
+      api.sessions.mockResolvedValue({ live: [chat('s1', 'Open one', 'working')], past: [] });
+      unpinned();
+      api.updatePrefs.mockImplementation(async (p: object) => ({ ...boot.prefs, ...p }));
+      await renderHome();
+      const star = await card('Recent chats').findByRole('button', { name: 'Pin: Open one' });
+      expect(star.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(star);
+      await waitFor(() =>
+        expect(
+          card('Recent chats').getByRole('button', { name: 'Pin: Open one' }).getAttribute('aria-pressed'),
+        ).toBe('true'),
+      );
+      expect(card('Recent chats').getAllByRole('listitem')).toHaveLength(1);
+    });
+  });
+
+  describe.each([
+    {
+      name: 'Recent documents',
+      kind: 'document' as const,
+      call: 'doc',
+      all: 'All documents',
+      none: 'No documents yet.',
+      noneIn: 'No documents in this project.',
+      failed: "Couldn't load recent documents.",
+      view: 'Documents',
+    },
+    {
+      name: 'Recent images',
+      kind: 'image' as const,
+      call: 'image',
+      all: 'All images',
+      none: 'No images yet.',
+      noneIn: 'No images in this project.',
+      failed: "Couldn't load recent images.",
+      view: 'Images',
+    },
+  ])('$name', ({ name, kind, all, none, noneIn, failed, view }) => {
+    const askedFor = (project?: string) =>
+      api.libraryRecent.mock.calls.filter((c) => c[0] === kind && c[1] === project);
+
+    it('lists rows with the place and change date, opens the viewer, and has an All button', async () => {
+      api.libraryRecent.mockImplementation(async (k: string) => ({
+        files: k === kind ? [rfile('f1', 'Newest file', kind), rfile('f2', 'Second file', kind)] : [],
+        partial: false,
+      }));
+      await renderHome();
+      const c = card(name);
+      await c.findByText('Newest file');
+      expect(c.getAllByRole('listitem').map((r) => r.textContent)).toEqual([
+        'Newest fileChanged 24 Nov, Acme Heating',
+        'Second fileChanged 24 Nov, Acme Heating',
+      ]);
+      fireEvent.click(c.getByRole('button', { name: /^Newest file/ }));
+      expect(await screen.findByRole('heading', { level: 2, name: 'Newest file' })).toBeTruthy();
+      cleanup();
+      await renderHome();
+      fireEvent.click(card(name).getByRole('button', { name: all }));
+      await screen.findByRole('heading', { level: 1, name: view });
+    });
+
+    it('says so when empty and when the server is older (404)', async () => {
+      await renderHome();
+      expect(await card(name).findByText(none)).toBeTruthy();
+      cleanup();
+      api.libraryRecent.mockRejectedValue(new Error('404'));
+      await renderHome();
+      expect(await card(name).findByText(failed)).toBeTruthy();
+    });
+
+    it('asks for the project when Working on is set, and says so when empty there', async () => {
+      withProject();
+      projectChoice.set('northwind/site');
+      await renderHome();
+      expect(await card(name).findByText(noneIn)).toBeTruthy();
+      expect(askedFor('northwind/site').length).toBeGreaterThan(0);
+    });
+
+    it('makes no request while hidden', async () => {
+      api.bootstrap.mockResolvedValue({
+        ...boot,
+        prefs: {
+          ...boot.prefs,
+          homeHidden: [kind === 'document' ? 'recent-documents' : 'recent-images'],
+          homeShortcuts: [],
+        },
+      });
+      await renderHome();
+      await card('Pinned tasks').findByText('Write the call tracking case');
+      expect(api.libraryRecent.mock.calls.filter((c) => c[0] === kind)).toHaveLength(0);
+      expect(api.libraryRecent.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('keeps the loading note and asks again while the answer is partial', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let n = 0;
+        api.libraryRecent.mockImplementation(async (k: string) => {
+          if (k !== kind) return { files: [], partial: false };
+          n += 1;
+          return n === 1
+            ? { files: [], partial: true }
+            : { files: [rfile('f1', 'Arrived late', kind)], partial: false };
+        });
+        await renderHome();
+        await waitFor(() => expect(n).toBe(1));
+        expect(card(name).getByText('Loading…')).toBeTruthy();
+        expect(card(name).queryByText(none)).toBeNull();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1100);
+        });
+        expect(await card(name).findByText('Arrived late')).toBeTruthy();
+        expect(n).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('drops a late reply for an older project', async () => {
+      let release: (v: unknown) => void = () => {};
+      api.libraryRecent.mockImplementation((k: string, project?: string) =>
+        k !== kind
+          ? Promise.resolve({ files: [], partial: false })
+          : project === 'northwind/site'
+            ? new Promise((r) => {
+                release = r;
+              })
+            : Promise.resolve({ files: [rfile('g1', 'Other project file', kind)], partial: false }),
+      );
+      withProject();
+      projectChoice.set('northwind/site');
+      await renderHome();
+      await waitFor(() => expect(askedFor('northwind/site').length).toBe(1));
+      act(() => projectChoice.set(''));
+      expect(await card(name).findByText('Other project file')).toBeTruthy();
+      await act(async () => {
+        release({ files: [rfile('f9', 'Stale file', kind)], partial: false });
+      });
+      expect(card(name).queryByText('Stale file')).toBeNull();
+      expect(card(name).getByText('Other project file')).toBeTruthy();
+    });
+
+    it('shows five rows and Show N more, at most 20', async () => {
+      api.libraryRecent.mockImplementation(async (k: string) => ({
+        files: k === kind ? Array.from({ length: 20 }, (_, i) => rfile(`f${i}`, `File ${i}`, kind)) : [],
+        partial: false,
+      }));
+      await renderHome();
+      const c = card(name);
+      await c.findByText('File 0');
+      expect(c.getAllByRole('listitem')).toHaveLength(5);
+      fireEvent.click(c.getByRole('button', { name: /Show 15 more/ }));
+      expect(c.getAllByRole('listitem')).toHaveLength(20);
+    });
+
+    it("shows the error, not the old project's files, when the new project's request fails", async () => {
+      withProject();
+      api.libraryRecent.mockImplementation(async (k: string, project?: string) => {
+        if (k !== kind) return { files: [], partial: false };
+        if (project === 'northwind/site') throw new Error('500');
+        return { files: [rfile('g1', 'Old project file', kind)], partial: false };
+      });
+      await renderHome();
+      expect(await card(name).findByText('Old project file')).toBeTruthy();
+      act(() => projectChoice.set('northwind/site'));
+      expect(await card(name).findByText(failed)).toBeTruthy();
+      expect(card(name).queryByText('Old project file')).toBeNull();
+    });
+
+    it('shows the error when a partial empty answer is followed by a failure', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let n = 0;
+        api.libraryRecent.mockImplementation(async (k: string) => {
+          if (k !== kind) return { files: [], partial: false };
+          n += 1;
+          if (n === 1) return { files: [], partial: true };
+          throw new Error('500');
+        });
+        await renderHome();
+        await waitFor(() => expect(n).toBe(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1100);
+        });
+        expect(await card(name).findByText(failed)).toBeTruthy();
+        expect(card(name).queryByText(none)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows the error, and stops asking, when every retry is still partial and empty', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let n = 0;
+        api.libraryRecent.mockImplementation(async (k: string) => {
+          if (k === kind) n += 1;
+          return { files: [], partial: true };
+        });
+        await renderHome();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        expect(await card(name).findByText(failed)).toBeTruthy();
+        expect(card(name).queryByText(none)).toBeNull();
+        expect(n).toBe(6);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        expect(n).toBe(6);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops asking again once the card is hidden', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let n = 0;
+        api.libraryRecent.mockImplementation(async (k: string) => {
+          if (k === kind) n += 1;
+          return { files: [], partial: true };
+        });
+        await renderHome();
+        await waitFor(() => expect(n).toBe(1));
+        api.bootstrap.mockResolvedValue({
+          ...boot,
+          prefs: {
+            ...boot.prefs,
+            homeHidden: [kind === 'document' ? 'recent-documents' : 'recent-images'],
+            homeShortcuts: [],
+          },
+        });
+        act(() =>
+          FakeEventSource.last?.onmessage?.({
+            data: JSON.stringify({ kind: 'app', event: { type: 'brain-changed', area: 'clients' } }),
+          }),
+        );
+        await waitFor(() =>
+          expect(card('Pinned tasks').queryByText('Pin a task to keep it here.')).toBeNull(),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        expect(n).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('asks again when the library changes', async () => {
+      await renderHome();
+      await waitFor(() => expect(askedFor(undefined).length).toBe(1));
+      act(() =>
+        FakeEventSource.last?.onmessage?.({
+          data: JSON.stringify({ kind: 'app', event: { type: 'brain-changed', area: 'library' } }),
+        }),
+      );
+      await waitFor(() => expect(askedFor(undefined).length).toBe(2));
+    });
+
+    it('a star press keeps the row where it was on screen', async () => {
+      api.libraryRecent.mockImplementation(async (k: string) => ({
+        files: k === kind ? [rfile('f1', 'Keeps place', kind)] : [],
+        partial: false,
+      }));
+      api.updatePrefs.mockImplementation(async (p: object) => ({ ...boot.prefs, ...p }));
+      await renderHome();
+      const star = await card(name).findByRole('button', { name: 'Pin: Keeps place' });
+      const scroller = document.querySelector('.home-scroll') as HTMLElement;
+      scroller.scrollTop = 100;
+      // The first reading is the press; every later one is after the row's twin grew above it.
+      let reads = 0;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (!this.matches('[data-star-id="f1"]')) return { top: 0 } as DOMRect;
+        reads += 1;
+        return { top: reads === 1 ? 300 : 340 } as DOMRect;
+      });
+      try {
+        fireEvent.click(star);
+        await waitFor(() =>
+          expect(
+            card(name).getByRole('button', { name: 'Pin: Keeps place' }).getAttribute('aria-pressed'),
+          ).toBe('true'),
+        );
+        expect(scroller.scrollTop).toBe(140);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('a star press keeps the row in place once the Pinned files lookup returns', async () => {
+      api.libraryRecent.mockImplementation(async (k: string) => ({
+        files: k === kind ? [rfile('f1', 'Keeps place', kind)] : [],
+        partial: false,
+      }));
+      api.updatePrefs.mockImplementation(async (p: object) => ({ ...boot.prefs, ...p }));
+      let finish: (v: { files: unknown[] }) => void = () => {};
+      api.libraryItems.mockImplementation(
+        () =>
+          new Promise((done) => {
+            finish = done;
+          }),
+      );
+      await renderHome();
+      const star = await card(name).findByRole('button', { name: 'Pin: Keeps place' });
+      const scroller = document.querySelector('.home-scroll') as HTMLElement;
+      scroller.scrollTop = 100;
+      // The row only moves once Pinned files has its new row, after the lookup returns.
+      let moved = false;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (!this.matches('[data-star-id="f1"]')) return { top: 0 } as DOMRect;
+        return { top: moved ? 340 : 300 } as DOMRect;
+      });
+      try {
+        fireEvent.click(star);
+        await waitFor(() =>
+          expect(
+            card(name).getByRole('button', { name: 'Pin: Keeps place' }).getAttribute('aria-pressed'),
+          ).toBe('true'),
+        );
+        await waitFor(() => expect(api.libraryItems).toHaveBeenCalledWith(['f1']));
+        expect(scroller.scrollTop).toBe(100);
+        moved = true;
+        await act(async () => {
+          finish({ files: [rfile('f1', 'Keeps place', kind)] });
+        });
+        expect(scroller.scrollTop).toBe(140);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('a star press flips the star and the row stays', async () => {
+      api.libraryRecent.mockImplementation(async (k: string) => ({
+        files: k === kind ? [rfile('f1', 'Starred later', kind)] : [],
+        partial: false,
+      }));
+      api.updatePrefs.mockImplementation(async (p: object) => ({ ...boot.prefs, ...p }));
+      await renderHome();
+      const star = await card(name).findByRole('button', { name: 'Pin: Starred later' });
+      expect(star.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(star);
+      await waitFor(() =>
+        expect(
+          card(name).getByRole('button', { name: 'Pin: Starred later' }).getAttribute('aria-pressed'),
+        ).toBe('true'),
+      );
+      expect(card(name).getAllByRole('listitem')).toHaveLength(1);
+    });
   });
 });

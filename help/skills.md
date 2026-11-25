@@ -5,10 +5,10 @@ area: skills
 order: 1
 summary: Run saved sets of steps, and keep your pinned ones close.
 benefit: Do common jobs the same good way every time, in a couple of clicks.
-roles: all
+roles: [owner, scout]
 related: [home, talking-to-claude, todos]
 since: 0.36.0
-reviewed: 2026-11-22
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -35,8 +35,7 @@ The list has three parts. **Pinned** holds the ones you pinned. **Used often** h
 
 ## Good to know
 
-- Only owners and scouts have **Skills** on the rail. Everyone else starts a skill from [Home](help:home) or from **Search or jump to**.
-- Your pinned skills also show on [Home](help:home).
+- Only owners and scouts have **Skills** on the rail, the **Pinned skills** card on [Home](help:home) and skills in **Search or jump to**. Everyone else types a slash and the skill's name in a chat. Buttons made for one skill, such as **Start my day**, work for everyone.
 - Some skills are only for certain roles. If yours isn't one of them, TDS Cortex will not run the skill.
 - Skills belong to the Brain, so the whole team gets the same ones.
 

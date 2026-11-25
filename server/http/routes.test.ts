@@ -12,6 +12,7 @@ import {
   type AskedTodoList,
   type DoneTodoList,
   type LibraryListing,
+  type LibraryRecentResponse,
   type LibrarySearchResponse,
   MAX_ATTACHMENTS,
   ROUTES,
@@ -1185,6 +1186,43 @@ describe('library routes', () => {
     expect(docs.hits.every((h) => h.item.kind === 'document')).toBe(true);
   });
 
+  it('lists the recent files of one kind', async () => {
+    const { ctx } = setup();
+    const ok = await call(ctx, `${ROUTES.libraryRecent}?kind=image`);
+    expect(ok.status).toBe(200);
+    const body = json(ok) as LibraryRecentResponse;
+    expect(body.partial).toBe(false);
+    expect(body.files.length).toBeGreaterThan(0);
+    expect(body.files.every((f) => f.item.kind === 'image' && f.scope.kind !== 'personal')).toBe(true);
+    const docs = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc`)) as LibraryRecentResponse;
+    expect(docs.files.every((f) => f.item.kind === 'document')).toBe(true);
+    const none = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=acme/nothing`));
+    expect(none.files).toEqual([]);
+  });
+
+  it('refuses a bad recent kind or project, and any method but GET', async () => {
+    const { ctx } = setup();
+    for (const qs of ['', 'kind=video', 'kind=document', 'kind=doc&project=..%2Fx', 'kind=doc&project=']) {
+      const sent = await call(ctx, `${ROUTES.libraryRecent}?${qs}`);
+      expect(sent.status, qs).toBe(400);
+      expect(json(sent).error.code).toBe('bad-request');
+    }
+    expect(json(await call(ctx, `${ROUTES.libraryRecent}?kind=x`)).error.message).toBe(
+      'Choose whether to show images or documents.',
+    );
+    expect(json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=%20`)).error.message).toBe(
+      'That project was not understood.',
+    );
+    expect((await call(ctx, `${ROUTES.libraryRecent}?kind=image`, 'POST')).status).toBe(405);
+  });
+
+  it('answers an empty list when the brain has no recent method', async () => {
+    const ctx = { brain: {}, log: () => {} } as unknown as RouteContext;
+    const sent = await call(ctx, `${ROUTES.libraryRecent}?kind=doc`);
+    expect(sent.status).toBe(200);
+    expect(json(sent)).toEqual({ files: [], partial: false });
+  });
+
   it('refuses a bad search query or kind, and any method but GET', async () => {
     const { ctx } = setup();
     for (const qs of [
@@ -1833,7 +1871,7 @@ describe('validatePrefsPatch: todoSeen', () => {
 
 describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
   const brain = { clients: async () => [] };
-  const skill = { kind: 'skill', name: 'meeting-notes' };
+  const place = { kind: 'place', place: 'projects' };
   const tool = { kind: 'tool', section: 'workbench', tool: 'ads' };
 
   it('accepts valid lists and removes repeats, first wins', async () => {
@@ -1845,10 +1883,16 @@ describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
       homeShortcuts: [],
     });
     expect(
-      await validatePrefsPatch({ homeShortcuts: [skill, tool, { ...skill }, { ...tool }] }, brain),
+      await validatePrefsPatch({ homeShortcuts: [place, tool, { ...place }, { ...tool }] }, brain),
     ).toEqual({
-      homeShortcuts: [skill, tool],
+      homeShortcuts: [place, tool],
     });
+  });
+
+  it('refuses a skill shortcut: Home shortcuts never hold a skill', async () => {
+    await expect(
+      validatePrefsPatch({ homeShortcuts: [{ kind: 'skill', name: 'seo-audit' }] }, brain),
+    ).rejects.toThrow('The Home shortcuts were not understood.');
   });
 
   it('accepts place and drawer shortcuts from the fixed lists, and refuses any other', async () => {
@@ -1893,7 +1937,11 @@ describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
   });
 
   it('refuses each bad shortcut list with a clear message', async () => {
-    const seven = Array.from({ length: 7 }, (_, i) => ({ kind: 'skill', name: `skill-${i}` }));
+    const seven = Array.from({ length: 7 }, (_, i) => ({
+      kind: 'tool',
+      section: 'workbench',
+      tool: `tool-${i}`,
+    }));
     const bad: unknown[] = [
       'nope',
       [null],

@@ -158,33 +158,53 @@ describe('app store', () => {
       'files',
       'due-this-week',
     ]);
-    const skill = { kind: 'skill', name: 'gm' } as const;
+    const place = { kind: 'place', place: 'projects' } as const;
     const tool = { kind: 'tool', section: 'workbench', tool: 'ads' } as const;
     const saved = await store.update({
       homeShortcuts: [
-        skill,
+        place,
         null,
-        'skill:gm',
+        'place:projects',
         { kind: 'file', name: 'x' },
-        { kind: 'skill', name: '-bad' },
+        { kind: 'skill', name: 'gm' },
         { kind: 'tool', section: 'Bad', tool: 'ads' },
         { kind: 'tool', section: 'workbench' },
         tool,
-        { kind: 'skill', name: 'gm' },
+        { kind: 'place', place: 'projects' },
         { kind: 'tool', section: 'workbench', tool: 'ads' },
       ] as never,
     });
-    expect(saved.homeShortcuts).toEqual([skill, tool]);
-    expect((await store.update({ homeShortcuts: 'nope' as never })).homeShortcuts).toEqual([skill, tool]);
-    expect((await createAppStore(dir).get()).homeShortcuts).toEqual([skill, tool]);
+    expect(saved.homeShortcuts).toEqual([place, tool]);
+    expect((await store.update({ homeShortcuts: 'nope' as never })).homeShortcuts).toEqual([place, tool]);
+    expect((await createAppStore(dir).get()).homeShortcuts).toEqual([place, tool]);
     const many = Array.from({ length: 50 }, (_, i) => `item-${i}`);
     expect((await store.update({ homeHidden: many })).homeHidden).toEqual(many.slice(0, 40));
-    const skills = Array.from({ length: 9 }, (_, i) => ({ kind: 'skill', name: `s${i}` }) as const);
-    expect((await store.update({ homeShortcuts: skills })).homeShortcuts).toEqual(skills.slice(0, 6));
+    const tools = Array.from(
+      { length: 9 },
+      (_, i) => ({ kind: 'tool', section: 'workbench', tool: `t${i}` }) as const,
+    );
+    expect((await store.update({ homeShortcuts: tools })).homeShortcuts).toEqual(tools.slice(0, 6));
     // A chat star save leaves both alone.
     const after = await store.update({ favouriteChats: [] });
     expect(after.homeHidden).toEqual(many.slice(0, 40));
-    expect(after.homeShortcuts).toEqual(skills.slice(0, 6));
+    expect(after.homeShortcuts).toEqual(tools.slice(0, 6));
+  });
+
+  it('drops skill shortcuts saved by v0.85-0.87 when it reads the file, keeping the rest in order', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    const tool = { kind: 'tool', section: 'workbench', tool: 'ads' };
+    const drawer = { kind: 'drawer', drawer: 'todos' };
+    writeFileSync(
+      join(dir, 'prefs.json'),
+      JSON.stringify({
+        pins: ['seo-audit'],
+        homeShortcuts: [{ kind: 'skill', name: 'seo-audit' }, tool, drawer],
+      }),
+    );
+    const prefs = await createAppStore(dir).get();
+    expect(prefs.homeShortcuts).toEqual([tool, drawer]);
+    expect(prefs.pins).toEqual(['seo-audit']);
   });
 
   it('keeps place and drawer shortcuts from the fixed lists only, rebuilt from known fields', async () => {

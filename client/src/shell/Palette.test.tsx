@@ -204,7 +204,7 @@ describe('Palette', () => {
     await waitFor(() => expect(document.activeElement).toBe(input()));
     expect(input().getAttribute('aria-expanded')).toBe('true');
     expect(input().getAttribute('aria-label')).toBe('Search or jump to');
-    expect(input().getAttribute('placeholder')).toBe('Search tasks, chats, skills, files and more');
+    expect(input().getAttribute('placeholder')).toBe('Search tasks, chats, files and more');
     expect(input().getAttribute('aria-controls')).toBe(screen.getByRole('listbox').id);
     expect(desk().hasAttribute('inert')).toBe(true);
     expect(
@@ -255,6 +255,7 @@ describe('Palette', () => {
   });
 
   it('moves with the arrows, wrapping, and Enter runs the option (opens a drawer)', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     await openPalette();
     expect(selectedLabel()).toBe('Home');
@@ -360,13 +361,24 @@ describe('Palette', () => {
   });
 
   it('starts a skill and puts focus in the message box', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     await openPalette();
+    expect(input().getAttribute('placeholder')).toBe('Search tasks, chats, skills, files and more');
     fireEvent.click(screen.getByRole('option', { name: 'Meeting notes' }));
     await screen.findByText('Meeting notes', { selector: 'strong' });
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Message to Claude' })),
     );
+  });
+
+  it('offers no skills to the team, typed or not, and does not promise them', async () => {
+    await renderHome();
+    await openPalette();
+    expect(input().getAttribute('placeholder')).toBe('Search tasks, chats, files and more');
+    expect(screen.queryByRole('option', { name: 'Meeting notes' })).toBeNull();
+    fireEvent.change(input(), { target: { value: 'meeting' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Meeting notes' })).toBeNull());
   });
 
   it('filters as you type, resets to the first option, and says when nothing matches', async () => {

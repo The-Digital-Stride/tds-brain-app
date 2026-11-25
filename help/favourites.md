@@ -8,7 +8,7 @@ benefit: Your most-used things stay at the top, and on Home.
 roles: all
 related: [pinned, skills, todos, chats-drawer]
 since: 0.38.0
-reviewed: 2026-11-24
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -36,7 +36,7 @@ For a file, open it in the viewer. The pin sits beside the **Download** button. 
 
 - Pins are yours alone. They are kept in Cortex on your computer, so teammates don't see them.
 - Starring a task doesn't change the task. It works even when **Let the app change tasks** is off.
-- Pinned skills show on Home under **Pinned skills**.
+- For owners and scouts, pinned skills show on Home under **Pinned skills**.
 
 ## Try this
 

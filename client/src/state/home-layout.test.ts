@@ -8,13 +8,8 @@ import {
   shortcutChoices,
 } from './home-layout.ts';
 
-const actions = { startSkill: vi.fn(), openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() };
+const actions = { openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() };
 const src = (over: Partial<ShortcutSources> = {}): ShortcutSources => ({
-  skills: [
-    { name: 'gm', title: 'Good morning' },
-    { name: 'standup', title: 'Standup' },
-    { name: 'meeting-notes', title: 'Meeting notes' },
-  ],
   tools: [{ section: 'workbench', tool: 'ad-manager', title: 'Ads Manager' }],
   places: [
     { id: 'projects', title: 'Projects' },
@@ -40,22 +35,6 @@ describe('isShown', () => {
 });
 
 describe('resolveShortcut', () => {
-  it('a skill in the Brain is ready and starts the skill', () => {
-    const r = resolveShortcut({ kind: 'skill', name: 'standup' }, src());
-    expect(r.state).toBe('ready');
-    if (r.state !== 'ready') return;
-    expect(r.label).toBe('Standup');
-    expect(r.key).toBe('skill:standup');
-    r.run();
-    expect(actions.startSkill).toHaveBeenCalledWith('standup');
-  });
-  it('a skill that is not in the Brain is gone, keeping its name as the label', () => {
-    expect(resolveShortcut({ kind: 'skill', name: 'old' }, src())).toEqual({
-      state: 'gone',
-      key: 'skill:old',
-      label: 'old',
-    });
-  });
   it('a tool is ready and opens the tool', () => {
     const r = resolveShortcut({ kind: 'tool', section: 'workbench', tool: 'ad-manager' }, src());
     expect(r.state).toBe('ready');
@@ -75,6 +54,13 @@ describe('resolveShortcut', () => {
   it('a tool missing from a loaded list is gone', () => {
     const r = resolveShortcut({ kind: 'tool', section: 'workbench', tool: 'nope' }, src());
     expect(r.state).toBe('gone');
+  });
+});
+
+describe('resolveShortcut for a retired kind', () => {
+  it('a skill shortcut that slipped through is gone, never ready', () => {
+    const r = resolveShortcut({ kind: 'skill', name: 'standup' } as never, src());
+    expect(r).toEqual({ state: 'gone', key: 'skill', label: 'Old shortcut' });
   });
 });
 
@@ -120,7 +106,7 @@ describe('resolveShortcut with a static tool title', () => {
 });
 
 describe('shortcutChoices', () => {
-  it('lists Places, Drawers, Tools then Skills, without gm', () => {
+  it('lists Places, Drawers then Tools, and never a skill', () => {
     const c = shortcutChoices([], src());
     expect(c.map((x) => [x.group, x.label])).toEqual([
       ['Places', 'Projects'],
@@ -128,40 +114,34 @@ describe('shortcutChoices', () => {
       ['Drawers', 'Tasks'],
       ['Drawers', 'Chats'],
       ['Tools', 'Ads Manager'],
-      ['Skills', 'Standup'],
-      ['Skills', 'Meeting notes'],
     ]);
+    expect(c.some((x) => (x.shortcut.kind as string) === 'skill')).toBe(false);
   });
   it('leaves out what is already added', () => {
     const c = shortcutChoices(
       [
-        { kind: 'skill', name: 'standup' },
         { kind: 'tool', section: 'workbench', tool: 'ad-manager' },
         { kind: 'place', place: 'projects' },
         { kind: 'drawer', drawer: 'chats' },
       ],
       src(),
     );
-    expect(c.map((x) => x.label)).toEqual(['Documents', 'Tasks', 'Meeting notes']);
+    expect(c.map((x) => x.label)).toEqual(['Documents', 'Tasks']);
   });
   it('has no tools while the tool list loads', () => {
     expect(shortcutChoices([], src({ tools: null })).some((x) => x.group === 'Tools')).toBe(false);
   });
-  it('marks a pinned skill "Also in Pinned skills"', () => {
-    const c = shortcutChoices([], src(), ['meeting-notes']);
-    expect(c.find((x) => x.label === 'Meeting notes')?.meta).toBe('Also in Pinned skills');
-    expect(c.find((x) => x.label === 'Standup')?.meta).toBeUndefined();
-  });
 });
 
 describe('panelItems', () => {
-  const ids = (ctx: { hasGm: boolean; hasAds: boolean }) => panelItems(ctx).map((i) => i.id);
-  it('drops start-my-day without gm and ads without access', () => {
-    expect(ids({ hasGm: false, hasAds: false })).toEqual(
-      HOME_ITEMS.map((i) => i.id).filter((i) => i !== 'start-my-day' && i !== 'ads'),
+  const ids = (ctx: { hasGm: boolean; hasAds: boolean; hasSkills: boolean }) =>
+    panelItems(ctx).map((i) => i.id);
+  it('drops start-my-day without gm, ads without access and Pinned skills for the team', () => {
+    expect(ids({ hasGm: false, hasAds: false, hasSkills: false })).toEqual(
+      HOME_ITEMS.map((i) => i.id).filter((i) => i !== 'start-my-day' && i !== 'ads' && i !== 'skills'),
     );
   });
-  it('keeps both when allowed, in Home order', () => {
-    expect(ids({ hasGm: true, hasAds: true })).toEqual(HOME_ITEMS.map((i) => i.id));
+  it('keeps them all when allowed, in Home order', () => {
+    expect(ids({ hasGm: true, hasAds: true, hasSkills: true })).toEqual(HOME_ITEMS.map((i) => i.id));
   });
 });

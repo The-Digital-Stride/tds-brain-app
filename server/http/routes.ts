@@ -64,6 +64,7 @@ import {
   LIBRARY_SEARCH_QUERY,
   type LibraryFile,
   type LibraryItemsResponse,
+  type LibraryRecentResponse,
   type LibrarySearchResponse,
   type LibraryText,
   MAX_ATTACHMENTS,
@@ -2264,6 +2265,34 @@ async function libraryRoute(
       res,
       200,
       search ? await safe(search.call(ctx.brain, q, kind === 'doc' ? 'document' : 'image'), empty) : empty,
+    );
+    return true;
+  }
+  if (path === '/api/library/recent') {
+    if (method !== 'GET') throw methodNotAllowed();
+    const kind = url.searchParams.get('kind');
+    if (kind !== 'image' && kind !== 'doc') {
+      throw new HttpError(400, 'bad-request', 'Choose whether to show images or documents.');
+    }
+    const project = url.searchParams.get('project');
+    if (project !== null && !isProjectKey(project)) {
+      throw new HttpError(400, 'bad-request', 'That project was not understood.');
+    }
+    const recent = ctx.brain.libraryRecent;
+    const empty: LibraryRecentResponse = { files: [], partial: false };
+    sendJson(
+      res,
+      200,
+      recent
+        ? await safe(
+            recent.call(
+              ctx.brain,
+              kind === 'doc' ? 'document' : 'image',
+              (project ?? undefined) as ProjectKey | undefined,
+            ),
+            empty,
+          )
+        : empty,
     );
     return true;
   }

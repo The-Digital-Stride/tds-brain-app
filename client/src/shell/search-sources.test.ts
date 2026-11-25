@@ -411,6 +411,25 @@ describe('Go to: Skills', () => {
   });
 });
 
+describe('Skills in search', () => {
+  const c = (over: Partial<SearchContext> = {}) =>
+    ctx({
+      skills: [skill('seo-audit', 'SEO audit'), skill('report', 'Monthly report')],
+      pins: ['report'],
+      ...over,
+    });
+
+  it('finds and lists pinned skills for an owner or scout', () => {
+    expect(labels(hits('skills', 'seo', c()))).toEqual(['SEO audit']);
+    expect(labels(source('skills').idle?.(c()) ?? [])).toEqual(['Monthly report']);
+  });
+  it('finds nothing, and lists no pinned skills, for someone the Skills drawer is not for', () => {
+    expect(hits('skills', 'seo', c({ skillsHidden: true }))).toEqual([]);
+    expect(source('skills').search?.('seo', c({ skillsHidden: true })).total).toBe(0);
+    expect(source('skills').idle?.(c({ skillsHidden: true })) ?? []).toEqual([]);
+  });
+});
+
 describe('Go to: Cortex Guide', () => {
   const goLabels = (c: SearchContext) => labels(source('go').idle?.(c) ?? []);
 

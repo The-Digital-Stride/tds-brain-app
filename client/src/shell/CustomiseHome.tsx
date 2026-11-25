@@ -17,7 +17,6 @@ import { useHomeShortcuts } from './useHomeShortcuts.ts';
  */
 /** What each kind of shortcut is called under its name in the list. */
 const KIND_META: Record<HomeShortcut['kind'], string> = {
-  skill: 'Skill',
   tool: 'Tool',
   place: 'Place',
   drawer: 'Drawer',
@@ -32,9 +31,7 @@ export function CustomiseHome() {
     removeHomeShortcut,
     showAllHomeItems,
   } = useStore();
-  const { boot } = useStore();
-  const pins = boot?.prefs.pins ?? [];
-  const { sources, hasGm, hasAds } = useHomeShortcuts();
+  const { sources, hasGm, hasAds, hasSkills } = useHomeShortcuts();
   const hidden = homeHidden ?? [];
   const shortcuts: readonly HomeShortcut[] = homeShortcuts ?? [];
   const full = shortcuts.length >= HOME_SHORTCUTS_MAX;
@@ -73,8 +70,8 @@ export function CustomiseHome() {
     return () => document.removeEventListener('pointerdown', away);
   }, [open]);
 
-  const items = panelItems({ hasGm, hasAds });
-  const choices = shortcutChoices(shortcuts, sources, pins);
+  const items = panelItems({ hasGm, hasAds, hasSkills });
+  const choices = shortcutChoices(shortcuts, sources);
   const label = (s: HomeShortcut): string => {
     const r = resolveShortcut(s, sources);
     if (r.state !== 'waiting') return r.label;
@@ -126,7 +123,7 @@ export function CustomiseHome() {
     : nothingToAdd
       ? 'Everything is already on your Home.'
       : shortcuts.length === 0
-        ? 'Add a shortcut to start a skill, or open a tool, place or drawer, in one click.'
+        ? 'Add a shortcut to open a tool, place or drawer in one click.'
         : '';
 
   return (
@@ -210,7 +207,6 @@ export function CustomiseHome() {
                       onClick={() => add(c)}
                     >
                       <span>{c.label}</span>
-                      {c.meta ? <span className="meta">{c.meta}</span> : null}
                     </button>
                   ))}
                 </div>

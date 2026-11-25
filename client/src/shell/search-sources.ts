@@ -170,7 +170,9 @@ const DRAWERS: Record<
     source: {
       id: 'skills',
       title: 'Skills',
+      // Owners and scouts only (`skillsHidden`): the team doesn't start skills from Cortex's own buttons (Ian, 2026-11-25).
       search: (query, ctx) => {
+        if (ctx.skillsHidden) return { hits: [], total: 0 };
         const pinRank = (s: SkillInfo) => {
           const i = ctx.pins.indexOf(s.name);
           return i === -1 ? Number.POSITIVE_INFINITY : i;
@@ -185,7 +187,7 @@ const DRAWERS: Record<
       },
       // Favourite skills, in the order they were starred (kept as the prefs' `pins`).
       idle: (ctx) =>
-        ctx.pins.flatMap((name) => {
+        (ctx.skillsHidden ? [] : ctx.pins).flatMap((name) => {
           const skill = ctx.skills.find((s) => s.name === name);
           return skill ? [skillHit(skill)] : [];
         }),

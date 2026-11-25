@@ -7,7 +7,7 @@ summary: Choose which cards and buttons show on Home, and add your own shortcuts
 benefit: Keep Home as busy or as quiet as you like.
 roles: all
 related: [home, pinned, skills]
-since: 0.84.0
+since: 0.85.0
 reviewed: 2026-11-25
 ---
 

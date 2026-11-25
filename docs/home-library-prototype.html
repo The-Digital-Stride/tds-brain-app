@@ -1,0 +1,2889 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customise Home mock-up</title>
+<style>
+/* ===== App CSS, copied from client/src/styles (tokens, base, primitives, patterns, home, drawers, composer) ===== */
+/*
+ * The cascade layers, weakest first (docs/design-system.md, "CSS layers"). Declared here because this is the first
+ * sheet the app imports; every other sheet wraps its rules in one of these. A rule in a later layer beats an earlier
+ * one whatever its specificity.
+ */
+@layer tokens, primitives, patterns, features, tools;
+
+@layer tokens {
+  /*
+ * Design tokens. Light only for now (dark mode is a follow-up).
+ * Brand and layer values come from the approved shell prototype (docs/shell-prototype.html).
+ */
+  :root {
+    color-scheme: light;
+
+    /* Brand */
+    --navy: #021b43;
+    --blue: #1889ff;
+    /* The blue for text and focus rings: 6.5:1 on white, where --blue is only 3.3:1. */
+    --blue-ink: #0b5cb5;
+    --paper: #faf8f4;
+    --iron: #525252;
+    --wash: #e7f1fe;
+    /* Wash under the pointer: a switched-on or open button. Blue-ink on it is 5.26:1. */
+    --wash-strong: #d9e8fc;
+    /* Primary under the pointer: 1.63:1 against navy, where paper text stays 9.79:1. */
+    --navy-hover: #213f73;
+    /* Icon, seg and rail text: a step softer than navy. */
+    --ink-soft: #33456a;
+    /* Ink tints for flat buttons and rows: rest (quiet button, seg track), hover, pressed. */
+    --tint-1: rgba(2, 27, 67, 0.07);
+    --tint-2: rgba(2, 27, 67, 0.11);
+    --tint-3: rgba(2, 27, 67, 0.15);
+    /* A switch that is off and an idle status dot. */
+    --grey-dot: #8a94a6;
+
+    /* The one left/right edge of every main sheet (docs/design-system.md, "Alignment"). */
+    --sheet-gutter: 16px;
+
+    /* Layers, back to front: desk, tray, glass, sheet */
+    --desk: #e9e5dd;
+    --tray: #f3f0ea;
+    --line: rgba(2, 27, 67, 0.09);
+    --line-strong: rgba(2, 27, 67, 0.16);
+    --glass: rgba(255, 255, 255, 0.46);
+    /* Glass that carries text: keeps text at 4.5:1 or better over the darkest desk tint. */
+    --glass-strong: rgba(255, 255, 255, 0.78);
+    --glass-edge: rgba(255, 255, 255, 0.8);
+    /* Used instead of glass where blur is missing or less transparency is asked for. */
+    --glass-solid: #f6f4f0;
+    /*
+   * Height. One light, one formula, even steps: each step up is 6px higher, so its shadow drops 6px
+   * further, spreads 16px wider and is a little darker. Anything one step above the surface it sits
+   * on casts --lift-1, whatever it is: the sheet on the desk, a card in the tray, a row you hover.
+   */
+    /* Touching the surface: a switch's knob, a chosen segment, a plain button under the pointer. */
+    --lift-0: 0 1px 2px rgba(2, 27, 67, 0.1);
+    /* One step up: the sheet, rail and drawers; cards; a hovered or current row, tile or rail item. */
+    --lift-1: 0 1px 2px rgba(2, 27, 67, 0.06), 0 6px 16px rgba(2, 27, 67, 0.06);
+    /* Two steps up: things that float over the sheet: menus, the selection bar, a floating composer. */
+    --lift-2: 0 1px 2px rgba(2, 27, 67, 0.06), 0 12px 32px rgba(2, 27, 67, 0.1);
+    /* Three steps up: what sits over everything: the palette, the answer box, a floating drawer. */
+    --lift-3: 0 1px 2px rgba(2, 27, 67, 0.06), 0 18px 48px rgba(2, 27, 67, 0.14);
+    /* The shadow a fixed header or filter band casts on the list scrolled under it: --lift-1's
+     two layers, drawn as a band 8px deep (see the scroll edge in shell.css). */
+    --edge-lift: linear-gradient(
+      to bottom,
+      rgba(2, 27, 67, 0.1),
+      rgba(2, 27, 67, 0.04) 2px,
+      rgba(2, 27, 67, 0) 8px
+    );
+    /* One step down: the tray, pressed into the sheet. */
+    --recess: inset 0 1px 2px rgba(2, 27, 67, 0.06);
+    /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */
+    --tick-edge: #7c8aa5;
+
+    /* Type */
+    --head: "Poppins", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter Variable", "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    /* Motion */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --t: 240ms;
+
+    /*
+     * Scales (docs/design-system.md): defined here, used sheet by sheet. A token holds a value the screens
+     * already showed, so swapping a typed value for it changes nothing; the few deliberate exceptions (the tour's
+     * 240ms and 15px title) are listed in the design system's tokens note.
+     */
+    /* Spacing */
+    --sp-2: 2px;
+    --sp-4: 4px;
+    --sp-6: 6px;
+    --sp-8: 8px;
+    --sp-10: 10px;
+    --sp-12: 12px;
+    --sp-16: 16px;
+    --sp-24: 24px;
+    --sp-32: 32px;
+    /* Radii (5 ticks, 6 and 8 small pieces, 9 buttons and fields, 10 cards, 12 pop-ups, 14 big cards, 16 glass, 18 largest) */
+    --r-5: 5px;
+    --r-6: 6px;
+    --r-8: 8px;
+    --r-9: 9px;
+    --r-10: 10px;
+    --r-12: 12px;
+    --r-14: 14px;
+    --r-16: 16px;
+    --r-18: 18px;
+    /* Type sizes: the seven sizes, plus the mono size */
+    --fs-caption: 11.5px;
+    --fs-small: 12px;
+    --fs-mono: 12.5px;
+    --fs-control: 13px;
+    --fs-body: 14px;
+    --fs-reading: 15px;
+    --fs-title: 18px;
+    --fs-display: 26px;
+    /* Layers (z-index), top first. Values from -1 to 3 only order things inside one component. */
+    --z-tour: 200;
+    --z-tooltip: 80;
+    --z-palette: 70;
+    --z-skip: 60;
+    --z-viewer: 50;
+    --z-popover: 45;
+    --z-floating-panel: 45;
+    --z-dock: 41;
+    --z-veil: 40;
+    --z-hover-rail: 39;
+    --z-docked-panel: 8;
+    --z-rail: 5;
+    /* Motion: the two common durations (120ms is typed 32 times, 160ms ten) */
+    --t-fast: 120ms;
+    --t-mid: 160ms;
+    /* A white surface (the sheet, a card, a field) and the dim over the sheet behind a panel or the palette */
+    --surface: #fff;
+    --veil: rgba(2, 27, 67, 0.16);
+    /* The heavier dim behind the tour spotlight. */
+    --veil-heavy: rgba(2, 27, 67, 0.45);
+    /* White at 70% (a tick's fill and centre) and at 92% (a bar or overlay that mostly hides what is behind). */
+    --glass-70: rgba(255, 255, 255, 0.7);
+    --glass-92: rgba(255, 255, 255, 0.92);
+    /* The in-between whites some surfaces had before the token sweep: 85 (a code box, a palette hover), 80 (a rail hover), 75 (a field on the approval card). */
+    --glass-85: rgba(255, 255, 255, 0.85);
+    --glass-80: rgba(255, 255, 255, 0.8);
+    --glass-75: rgba(255, 255, 255, 0.75);
+    /* Ink at 4% (a gap in a diff) and a pale grey (the record dot). */
+    --tint-04: rgba(2, 27, 67, 0.04);
+    --grey-record: #b9c0ce;
+
+    /* Text, fields, focus */
+    --text: var(--navy);
+    /* Field borders must reach 3:1 on white. */
+    --field-edge: #857d70;
+    --on-accent: #ffffff;
+    --focus: var(--blue-ink);
+    --shadow: var(--lift-1);
+
+    /* Amber, for "needs you" surfaces */
+    --amber-bg: #fff4db;
+    --amber-glass: rgba(255, 248, 232, 0.72); /* the answer box's see-through amber */
+    --amber-edge: #d99a00;
+    --amber-text: #3d2a00;
+
+    /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
+    --attn-ready: #22c55e;
+    --attn-working: var(--state-working);
+    --attn-asking: #f59e0b;
+    /* Deeper shades for dots, edges and the message box border, which must reach 3:1 on white. */
+    --attn-ready-edge: #16a34a;
+    --attn-asking-edge: #d97706;
+    --attn-working-edge: var(--state-working);
+    --attn-asking-pulse: #b45309;
+
+    --danger: #a4261b;
+    --danger-hover: #861e15;
+    --danger-wash: #fdeceb;
+    /* Danger wash when pressed. */
+    --danger-wash-strong: #f9d9d6;
+    --ok: #17673a;
+    --ok-wash: #e6f4ea;
+
+    /*
+   * State colours for the `.dot` pattern (patterns.css): each 3:1 or better on white, used beside a visible word.
+   * Red is `bad` only; `working` is blue, and --attn-working and --attn-working-edge point here so every working surface is blue.
+   * ok 5.02:1, warn 5.02:1, bad 7.31:1, idle 3.48:1, working 4.24:1, asking 3.19:1.
+   */
+    --state-ok: #15803d;
+    --state-warn: #b45309;
+    --state-bad: #a4261b;
+    --state-idle: #7c8aa5;
+    --state-working: #1a7be0;
+    --state-asking: #d97706;
+
+    /*
+   * Category colours: soft fills for "kind of thing", never "state" (status keeps green, amber, red and blue).
+   * Navy, #525252 and #33456a text pass WCAG AA on every one. Named by hue; tools alias them by meaning.
+   */
+    --cat-rose: #fecbd8;
+    --cat-yellow: #fef08a;
+    --cat-aqua: #bef9f1;
+    --cat-sky: #bceefe;
+    --cat-iris: #d2d3ff;
+    --cat-mauve: #e3d2e8;
+    /* Ads task types */
+    --type-report: var(--cat-aqua);
+    --type-insight: var(--cat-yellow);
+    --type-action: var(--cat-rose);
+    --type-standup: var(--cat-iris);
+  }
+}
+
+
+@layer primitives {
+  /*
+ * base.css: type, buttons, fields and the shared pieces every layer composes.
+ * Owned by the shell (wave 1). Drawers, Home, the palette and the chat use these classes rather
+ * than restyling them; see docs/plans/2026-11-11-shell-layers.md, decision 15.
+ */
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  /* Scrollbars: a thumb and no track, so a scroller shows no patch on glass or on white. */
+  :root {
+    scrollbar-color: var(--tick-edge) transparent;
+  }
+
+  /* Layer 0, the desk: a tinted surface so the glass above has something to pick up. */
+  body {
+    margin: 0;
+    color: var(--text);
+    font: var(--fs-body) / 1.5 var(--body);
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(620px 760px at 0% 0%, rgba(24, 137, 255, 0.42), transparent 66%),
+      radial-gradient(520px 620px at 8% 100%, rgba(2, 27, 67, 0.3), transparent 64%),
+      radial-gradient(760px 560px at 104% 108%, rgba(2, 27, 67, 0.24), transparent 60%),
+      radial-gradient(560px 420px at 100% -6%, rgba(24, 137, 255, 0.2), transparent 62%), var(--desk);
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-family: var(--head);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 {
+    font-size: var(--fs-title);
+  }
+  h2 {
+    font-size: var(--fs-reading);
+  }
+  h3 {
+    font-size: var(--fs-body);
+  }
+  p {
+    margin: 0;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  a {
+    color: var(--blue-ink);
+    text-underline-offset: 2px;
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  kbd {
+    font: 500 var(--fs-caption) / 1.5 var(--body);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--r-5);
+    padding: 0 5px;
+    color: var(--iron);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -100px;
+    z-index: var(--z-skip);
+    background: var(--surface);
+    color: var(--text);
+    padding: var(--sp-8) var(--sp-12);
+    border-radius: var(--r-10);
+    box-shadow: var(--lift-2);
+  }
+  .skip-link:focus {
+    top: 8px;
+  }
+
+  .lede {
+    color: var(--iron);
+  }
+  .meta {
+    color: var(--iron);
+    font-size: var(--fs-small);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-4) var(--sp-12);
+  }
+  .meta .overdue {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  /* A page of settings or app content inside a sheet. */
+  .page {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--sp-24) 28px var(--sp-32);
+    display: grid;
+    gap: var(--sp-16);
+  }
+
+  /*
+ * Interaction states (docs/design-system.md): hover lifts towards you, pressed settles, current is
+ * always distinct from hover. Under reduced motion nothing moves; surfaces and shadows still change.
+ */
+  .btn,
+  .icon-btn,
+  .jump,
+  .seg > button,
+  .fold-head > button,
+  .line,
+  .todo {
+    transition:
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
+  }
+
+  /*
+ * Buttons: one language (docs/plans/2026-11-13-button-language.md).
+ * `.btn` is standard (white, raised) by default; `data-variant` primary (navy), quiet (flat tint) or danger
+ * (red text), and the message box's stop (filled red); `data-size` small. Raised kinds lift on hover, flat kinds darken. Hover and press never apply
+ * to a disabled or aria-disabled button. -------------------------------------------------------- */
+  .btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-6);
+    font: inherit;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    height: 32px;
+    padding: 0 var(--sp-12);
+    border-radius: var(--r-9);
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    box-shadow: var(--lift-0);
+    color: var(--navy);
+    text-align: center;
+    white-space: nowrap;
+  }
+  a.btn,
+  a.btn:hover {
+    text-decoration: none;
+  }
+  .btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+    box-shadow: var(--lift-1);
+  }
+  .btn:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tray);
+    box-shadow: none;
+  }
+  .btn[data-variant="primary"] {
+    background: var(--navy);
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--paper);
+  }
+  .btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--navy-hover);
+    box-shadow: var(--lift-1);
+  }
+  .btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--navy);
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"] {
+    background: var(--tint-1);
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--tint-2);
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tint-3);
+  }
+  .btn[data-variant="danger"] {
+    color: var(--danger);
+  }
+  .btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--danger-wash);
+  }
+  .btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--danger-wash-strong);
+  }
+  /* The message box's Stop (Ian, 2026-11-14): filled red, in Send's place while Claude works. White on it is 7.3:1. */
+  .btn[data-variant="stop"] {
+    border-color: transparent;
+    box-shadow: none;
+    background: var(--danger);
+    color: var(--on-accent);
+  }
+  .btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--danger-hover);
+    box-shadow: var(--lift-1);
+  }
+  .btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    box-shadow: none;
+  }
+  .btn[data-size="small"] {
+    height: 28px;
+    padding: 0 var(--sp-10);
+    font-size: var(--fs-small);
+  }
+
+  /*
+ * A square icon button. Give it an aria-label. Bare by default, for utilities (close, toggle, star, attach,
+ * edit, more); `data-variant="primary"` fills it navy for the one icon button that creates or starts the
+ * main thing in its area (the To-dos +).
+ */
+  .icon-btn {
+    appearance: none;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-9);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  /* Small (data-size="small"), and inside a row: a step smaller, 28px. */
+  .icon-btn[data-size="small"],
+  .line .icon-btn,
+  .todo .icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+  .icon-btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--tint-2);
+    color: var(--navy);
+  }
+  .icon-btn:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tint-3);
+  }
+  .icon-btn[data-variant="primary"] {
+    background: var(--navy);
+    color: var(--paper);
+  }
+  .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--navy-hover);
+    color: var(--paper);
+    box-shadow: var(--lift-1);
+  }
+  .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--navy);
+    box-shadow: none;
+  }
+
+  /* Disabled, by the attribute or by aria: one look, and no reaction. */
+  .btn:is(:disabled, [aria-disabled="true"]),
+  .icon-btn:is(:disabled, [aria-disabled="true"]) {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* Raised kinds rise 1px on hover and settle flat when pressed. Under reduced motion they only change shadow. */
+  @media (prefers-reduced-motion: no-preference) {
+    .btn:where(:not([data-variant="quiet"])):where(:not(:disabled, [aria-disabled="true"])):hover,
+    .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+      transform: translateY(-1px);
+    }
+    .btn:where(:not(:disabled, [aria-disabled="true"])):active,
+    .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+      transform: none;
+    }
+  }
+  /* With no movement, a white button's hover is only a shadow swap: a fill step keeps it visible. */
+  @media (prefers-reduced-motion: reduce) {
+    .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):hover {
+      background: var(--glass-solid);
+    }
+    .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):active {
+      background: var(--tray);
+    }
+  }
+
+  /*
+ * Toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash with blue ink, on primary and icon
+ * buttons only. A quiet button would vanish (a grey tint on wash is about 1.01:1), so a button that shows
+ * open by a chevron (`data-chevron`) opts out and turns the chevron instead. After hover, so order wins.
+ */
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ),
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]) {
+    background: var(--wash);
+    color: var(--blue-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ):where(:not(:disabled, [aria-disabled="true"])):hover,
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+    :not(:disabled, [aria-disabled="true"])
+  ):hover {
+    background: var(--wash-strong);
+    color: var(--blue-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  /* Pressing an "on" button steps back from the hover shade, so the click still shows. */
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ):where(:not(:disabled, [aria-disabled="true"])):active,
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+    :not(:disabled, [aria-disabled="true"])
+  ):active {
+    background: var(--wash);
+  }
+
+  .field {
+    font: inherit;
+    font-size: var(--fs-control);
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--field-edge);
+    border-radius: var(--r-9);
+    height: 32px;
+    padding: 0 var(--sp-10);
+    width: 100%;
+  }
+  /* A native select keeps a short fixed list: our chevron (the `chevron` icon path) in place of the browser's. */
+  select.field {
+    appearance: none;
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2333456a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px;
+  }
+  .field::placeholder {
+    color: var(--iron);
+  }
+
+  /* Tick: a checkbox or radio, 18px. Wrap a lone one in `label.tick-hit` for a 24px target. ------ */
+  .tick {
+    appearance: none;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: 1.5px solid var(--tick-edge);
+    border-radius: var(--r-5);
+    background: var(--glass-70) center / 14px 14px no-repeat;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .tick[type="radio"] {
+    border-radius: 50%;
+  }
+  .tick[type="checkbox"]:checked {
+    border-color: var(--navy);
+    background-color: var(--navy);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.6 2.6L11 4.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .tick[type="radio"]:checked {
+    border-color: var(--navy);
+    background: radial-gradient(circle, var(--navy) 0 4px, var(--glass-70) 4.5px);
+  }
+  .tick:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tick-hit {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin: -3px;
+    cursor: pointer;
+  }
+
+  /* Switch: an on/off setting that applies at once (`input[type=checkbox][role=switch]`). */
+  .switch {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 30px;
+    height: 18px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--grey-dot);
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+  .switch::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--lift-0);
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .switch:checked {
+    background: var(--navy);
+  }
+  .switch:checked::before {
+    transform: translateX(12px);
+  }
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Small pieces ---------------------------------------------------------------------------- */
+
+  /* A label pill, e.g. the client on a chat. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    font-size: var(--fs-small);
+    font-weight: 500;
+    padding: var(--sp-2) 9px;
+    border-radius: 999px;
+    background: var(--tray);
+    color: var(--navy);
+    white-space: nowrap;
+  }
+
+  /* A number pill: open chats, to-dos in a group. */
+  .count {
+    display: inline-block;
+    min-width: 18px;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    padding: 0 var(--sp-6);
+    border-radius: 999px;
+    background: rgba(2, 27, 67, 0.08);
+    color: var(--navy);
+  }
+
+  /* A status dot. `data-attention` ready, working or asking; none is grey. Always beside words. */
+  .dot {
+    display: inline-block;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--grey-dot);
+  }
+  .dot[data-attention="ready"] {
+    background: var(--attn-ready-edge);
+  }
+  .dot[data-attention="working"] {
+    background: var(--attn-working-edge);
+  }
+  .dot[data-attention="asking"] {
+    background: var(--attn-asking-edge);
+  }
+  /* Status dots that stand for urgency (Needs you, Worth a look): amber for watch, red for act. */
+  .dot[data-tone] {
+    /* The deeper amber: --amber-edge is under 3:1 on white. */
+    background: var(--attn-asking-edge);
+  }
+  .dot[data-tone="bad"] {
+    background: var(--danger);
+  }
+  /* The word beside the dot, so urgency isn't shown by colour alone. Both colours are AA on a card. */
+  .status-tag {
+    flex: none;
+    min-width: 44px;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--amber-text);
+  }
+  .status-tag[data-tone="bad"] {
+    color: var(--danger);
+  }
+
+  /* A word badge, e.g. "Still being tested". `data-tone` waiting or draft for amber. */
+  .badge {
+    display: inline-block;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    padding: 1px var(--sp-8);
+    border-radius: 999px;
+    background: var(--wash);
+    color: var(--blue-ink);
+    vertical-align: middle;
+  }
+  .badge[data-tone="waiting"],
+  .badge[data-tone="draft"],
+  .badge[data-tone="warn"] {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    border: 1px solid var(--amber-edge);
+  }
+  .badge[data-tone="ok"] {
+    background: var(--ok-wash);
+    color: var(--ok);
+  }
+  .badge[data-tone="bad"] {
+    background: var(--danger-wash);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .badge[data-tone="muted"] {
+    background: var(--surface);
+    color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* Segmented choice (the Seg component). */
+  .seg {
+    display: flex;
+    gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
+    padding: 3px;
+    border-radius: var(--r-10);
+    background: var(--tint-1);
+  }
+  .seg > button {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    font-size: var(--fs-control);
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .seg > button:hover {
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .seg > button[aria-checked="true"],
+  .seg > button[aria-current="page"] {
+    background: var(--surface);
+    color: var(--navy);
+    font-weight: 600;
+    box-shadow: var(--lift-0);
+  }
+  .seg > button:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* Expanding section (the Fold component). */
+  .fold {
+    margin-bottom: var(--sp-4);
+  }
+  .fold-head {
+    font: inherit;
+  }
+  .fold-head > button {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    width: 100%;
+    min-height: 30px;
+    padding: 0 var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .fold-head > button:hover {
+    background: var(--tint-2);
+  }
+  .fold-head > button:active {
+    background: var(--tint-3);
+  }
+  /* A button that shows open or closed by a chevron inside it (`data-chevron`) turns it the same way. */
+  .fold-head .icon,
+  .btn[data-chevron] .icon,
+  .icon-btn[data-chevron] .icon {
+    transition: transform var(--t-mid);
+  }
+  .fold-head > button[aria-expanded="false"] .icon,
+  .btn[data-chevron][aria-expanded="false"] .icon,
+  .icon-btn[data-chevron][aria-expanded="false"] .icon {
+    transform: rotate(-90deg);
+  }
+  .fold-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .fold-rows {
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .fold-rows[hidden] {
+    display: none;
+  }
+
+  /*
+ * List rows. `.line` is a plain row (a chat, a skill); `.todo` has a tick column. Either can be the
+ * button itself or a container holding buttons. Inside: `.line-text` > `.line-title` + `.line-meta`.
+ * `aria-current="true"` or `data-current` marks the one on the sheet.
+ */
+  .line,
+  .todo {
+    width: 100%;
+    min-width: 0;
+    padding: 7px var(--sp-8);
+    border-radius: var(--r-10);
+    text-align: left;
+    color: inherit;
+  }
+  .line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+  }
+  .todo {
+    display: grid;
+    /* No tick box: a to-do is finished from inside it, so the title gets the whole width. */
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--sp-10);
+    align-items: start;
+  }
+  button.line,
+  button.todo {
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .line:hover {
+    background: var(--glass-92);
+    box-shadow: var(--lift-1);
+    transform: translateY(-1px);
+  }
+  .line:active {
+    transform: none;
+  }
+  /* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
+  .todo:hover,
+  .line.proj-todo:hover {
+    background: var(--glass-92);
+  }
+  /* A project to-do row isn't a button either (its title is, when the to-do is mine): no lift. */
+  .line.proj-todo:hover {
+    box-shadow: none;
+    transform: none;
+  }
+  .line[aria-current="true"],
+  .line[data-current="true"],
+  .todo[aria-current="true"],
+  .todo[data-current="true"] {
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+  }
+  .line-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .line-title {
+    display: block;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  /* The current row is told apart by weight as well as by its surface. */
+  .line[aria-current="true"] .line-title,
+  .line[data-current="true"] .line-title,
+  .todo[aria-current="true"] .line-title,
+  .todo[data-current="true"] .line-title {
+    font-weight: 600;
+  }
+  .line-meta {
+    display: block;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .line-meta::first-letter {
+    text-transform: uppercase;
+  }
+  .todo .late {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  /* Surfaces ----------------------------------------------------------------------------------- */
+
+  /* Frosted glass: the rail, docks and overlays. Text-bearing, so it uses the strong tint. */
+  .glass {
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--lift-1);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: var(--glass-solid);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background: var(--glass-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* A raised white card. */
+  .card {
+    background: var(--surface);
+    border-radius: var(--r-14);
+    box-shadow: var(--lift-1);
+    padding: var(--sp-12) var(--sp-6) var(--sp-6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fold-head .icon,
+    .btn[data-chevron] .icon,
+    .icon-btn[data-chevron] .icon,
+    .switch,
+    .switch::before {
+      transition: none;
+    }
+    .line:hover {
+      transform: none;
+    }
+  }
+}
+
+/*
+ * Primitives, second half: small pieces every layer uses, moved out of the feature sheets so a feature never has to
+ * load first (docs/design-system.md, "CSS layers"). base.css holds the type, buttons and fields.
+ */
+@layer primitives {
+  /* The tray: recessed, holding raised cards. */
+  .tray {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-6);
+    margin-top: 20px;
+    padding: var(--sp-6);
+    border-radius: var(--r-18);
+    background: var(--tray);
+    box-shadow: var(--recess);
+  }
+  @container (max-width: 460px) {
+    .tray {
+      grid-template-columns: 1fr;
+    }
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .card-head h2 {
+    font-size: var(--fs-body);
+  }
+  .card-head .btn {
+    margin-left: auto;
+  }
+  /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
+  .kv {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    margin: 0;
+    font-size: var(--fs-control);
+  }
+  .kv dt,
+  .kv dd {
+    margin: 0;
+    padding: var(--sp-6) 0;
+    border-top: 1px solid var(--line);
+  }
+  .kv > :nth-child(-n + 2) {
+    border-top: 0;
+  }
+  .kv dt {
+    padding-right: var(--sp-12);
+    color: var(--iron);
+  }
+  .kv dd {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .kv .kv-wide {
+    grid-column: 1 / -1;
+  }
+  .kv dd.kv-wide {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .kv-note {
+    display: block;
+    margin-top: var(--sp-2);
+    font-size: var(--fs-small);
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  /* The spinner on whole-app states and busy attachments. */
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--line-strong);
+    border-top-color: var(--navy);
+    animation: spin 0.9s linear infinite;
+  }
+  .link-btn {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--blue-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  /* Only for text inside a sentence, so it behaves like a link. */
+  .link-btn:hover {
+    text-decoration-thickness: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+@layer patterns {
+  /*
+ * Shared patterns (docs/design-system.md, "Shared pieces"). Each one exists once; tools compose them and never
+ * restyle them. Built in Release 3 of the UX consistency programme.
+ *
+ * `.notice` and `.dot` already have bare rules in chat.css and base.css, so their new rules all carry an
+ * attribute (`data-shape`, `data-state`). That keeps today's markup looking exactly as it does, and the old
+ * rules go when their callers are swapped.
+ */
+
+  /* Notice: a box or a strip with a level. Text reaches 4.5:1 on its fill; the words carry the meaning. ------------ */
+  .notice[data-shape] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-12);
+    margin: 0;
+    padding: var(--sp-8) var(--sp-12);
+    border: 1px solid var(--line);
+    border-radius: var(--r-10);
+    background: var(--wash);
+    color: var(--navy);
+    font-size: var(--fs-control);
+    overflow-wrap: anywhere;
+  }
+  .notice[data-shape="strip"] {
+    flex: none;
+    padding: var(--sp-6) var(--sheet-gutter);
+    border-width: 0 0 1px;
+    border-radius: 0;
+  }
+  .notice[data-shape][data-level="warn"] {
+    border-color: var(--amber-edge);
+    background: var(--amber-bg);
+    color: var(--amber-text);
+  }
+  .notice[data-shape][data-level="error"] {
+    border-color: var(--danger);
+    background: var(--danger-wash);
+    color: var(--danger);
+  }
+  .notice[data-shape][data-level="ok"] {
+    border-color: var(--ok);
+    background: var(--ok-wash);
+    color: var(--ok);
+  }
+  .notice-actions {
+    display: inline-flex;
+    gap: var(--sp-8);
+  }
+  /* Buttons and button groups sit at the end of the line. */
+  .notice[data-shape] > .btn,
+  .notice[data-shape] > .notice-actions {
+    margin-left: auto;
+  }
+
+  /* Dot: state as colour AND a visible word beside it (never colour alone). Red is `bad` only. ------------- */
+  .dot[data-state] {
+    display: inline-block;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--state-idle);
+  }
+  .dot[data-state="ok"] {
+    background: var(--state-ok);
+  }
+  .dot[data-state="warn"] {
+    background: var(--state-warn);
+  }
+  .dot[data-state="bad"] {
+    background: var(--state-bad);
+  }
+  .dot[data-state="idle"] {
+    background: var(--state-idle);
+  }
+  .dot[data-state="working"] {
+    background: var(--state-working);
+  }
+  .dot[data-state="asking"] {
+    background: var(--state-asking);
+  }
+  /* High contrast modes drop background colours: draw the dot's edge so it still shows. */
+  @media (forced-colors: active) {
+    .dot[data-state] {
+      border: 1px solid CanvasText;
+    }
+  }
+
+  /* Form field: label above the control, 4px apart. `.field` itself is in base.css. ---------------------- */
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .label,
+  .form-field > label,
+  .form-field > legend {
+    padding: 0;
+    font: 600 var(--fs-small) / 1.4 var(--body);
+    color: var(--iron);
+  }
+  .hint {
+    margin: 0;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .error {
+    margin: 0;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--danger);
+  }
+  .note {
+    margin: 0;
+    font-size: var(--fs-control);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .field[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+  .field:disabled {
+    background: var(--tray);
+    color: var(--iron);
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  /* A disabled select is dimmer than other fields (it moved here from base.css so it still wins by specificity). */
+  select.field:disabled {
+    opacity: 0.5;
+  }
+  textarea.field {
+    height: auto;
+    min-height: 64px;
+    padding: var(--sp-8) var(--sp-10);
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  /* Popover and its rows: a menu or pick list that floats over the sheet (layer 45, radius 12, --lift-2). --- */
+  .popover {
+    z-index: var(--z-popover);
+    box-sizing: border-box;
+    max-height: min(420px, 70vh);
+    overflow: auto;
+    padding: var(--sp-6);
+    border: 1px solid var(--line);
+    border-radius: var(--r-12);
+    /* White, as the pop-ups it replaces (.ss-pop, .cc-triage). */
+    background: var(--on-accent);
+    box-shadow: var(--lift-2);
+  }
+  @media (forced-colors: active) {
+    .popover {
+      border-color: CanvasText;
+    }
+  }
+  /* StateNote: an error line is in the error colour, like every error. */
+  .hint[data-kind="error"] {
+    color: var(--danger);
+  }
+  .menu-row {
+    display: grid;
+    gap: 1px;
+    width: 100%;
+    padding: var(--sp-6) var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu-row:hover {
+    background: var(--tint-1);
+  }
+  .menu-row[aria-current="true"] {
+    background: var(--tint-1);
+    box-shadow: inset 0 0 0 1.5px var(--blue-ink);
+  }
+  .menu-row:focus-visible {
+    /* Inside the pop-up's scrolling box, so the ring sits inside the row and is never clipped. */
+    outline-offset: -2px;
+  }
+  /* High contrast modes drop shadows and recolour borders: mark the current row and a bad field another way. */
+  @media (forced-colors: active) {
+    .menu-row[aria-current="true"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    .field[aria-invalid="true"] {
+      border-width: 2px;
+    }
+  }
+  .menu-row[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Stat: a headline figure with its label and change. Put it in a `.card`. ------------------------------ */
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    min-width: 0;
+    margin: 0;
+    padding: var(--sp-8) var(--sp-10);
+    border-radius: var(--r-10);
+    background: var(--tint-1);
+    text-align: left;
+  }
+  .stat-label {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .stat-value {
+    margin: 0;
+    font: 600 var(--fs-title) / 1.25 var(--head);
+    color: var(--navy);
+  }
+  .stat-change {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .stat-change[data-tone="good"] {
+    color: var(--ok);
+  }
+  .stat-change[data-tone="bad"] {
+    color: var(--danger);
+  }
+
+  /* Panel head: one header band (47px, the dock's), one inset (16px left, as the sheet gutter and the viewer), -
+   centred on one line. A wrapped title pins the controls to the top with `align-items: flex-start`. */
+  .panel-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-height: 47px;
+    padding: 0 var(--sp-10) 1px var(--sheet-gutter);
+  }
+  .panel-head > h2 {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font: 600 var(--fs-body) / 1.3 var(--head);
+    overflow-wrap: anywhere;
+  }
+  .panel-head > h2:focus {
+    outline: none;
+  }
+
+  /* Confirm (shell/Confirm.tsx): the inline "are you sure" strip, as Ad Manager's look. ------------------- */
+  .confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+    min-width: 0;
+    margin: 0;
+    border: 0;
+    font-size: var(--fs-control);
+    font-weight: 500;
+    padding: var(--sp-8) var(--sp-10);
+    border-radius: var(--r-10);
+    background: var(--tint-1);
+  }
+
+  /* Setting: a label and its control on one hairline row (Settings). ----------------------------------------- */
+  .setting {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--sp-16);
+    align-items: center;
+    padding: var(--sp-10) 0;
+  }
+  .setting .field {
+    width: 220px;
+    max-width: 100%;
+  }
+  .setting + .setting {
+    border-top: 1px solid var(--line);
+  }
+  .setting-label {
+    display: block;
+    font-size: var(--fs-body);
+    font-weight: 500;
+  }
+  .setting-help {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+
+  /*
+ * The Undo line (shell/UndoLine.tsx; design system, Actions rule 4): a held to-do, earlier chat or file. Nothing is
+ * sent yet. A row sits in a drawer list in place of the row it holds; a strip sits at the top of the sheet.
+ */
+  .undo-line {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+    min-width: 0;
+    color: var(--navy);
+  }
+  .undo-line[data-as="row"] {
+    padding: 7px var(--sp-8);
+    border-radius: var(--r-10);
+  }
+  .undo-line[data-as="strip"] {
+    flex: none;
+    padding: var(--sp-6) var(--sheet-gutter);
+    background: var(--wash);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-control);
+  }
+  .undo-line-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .undo-line-sending {
+    flex: none;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  /* A thin line along the bottom that runs down while Undo is still possible; it stops while the line is held. */
+  .undo-line-bar {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 2px;
+    height: 2px;
+    border-radius: var(--r-5);
+    background: var(--blue-ink);
+    opacity: 0.35;
+    transform-origin: left;
+    animation-name: undo-countdown;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    pointer-events: none;
+  }
+  .undo-line-bar[data-paused] {
+    animation-play-state: paused;
+  }
+  @keyframes undo-countdown {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+  /* Without motion a still bar would look stuck; the status line already says how long is left. */
+  @media (prefers-reduced-motion: reduce) {
+    .undo-line-bar {
+      display: none;
+    }
+  }
+}
+
+@layer features {
+  /* home.css: the Home dashboard. Owned by Builder C. Sizes: docs/design-system.md. */
+
+  .home-view {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .home-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-32) 28px var(--sp-24);
+    --edge-pt: var(--sp-32);
+    --edge-px: 28px;
+  }
+  .home-in {
+    max-width: 880px;
+    width: 100%;
+    margin: 0 auto;
+    container-type: inline-size;
+  }
+
+  .home-greeting {
+    margin: 0 0 var(--sp-4);
+    font: 600 var(--fs-display) / 1.15 var(--head);
+    letter-spacing: -0.01em;
+    color: var(--navy);
+  }
+  .home-sub {
+    min-height: 1.5em;
+    margin: 0 0 18px;
+    font-size: var(--fs-body);
+    color: var(--iron);
+  }
+
+  .home-gm {
+    margin: 0 0 var(--sp-16);
+  }
+  .home-sub:has(+ .home-gm) {
+    margin-bottom: var(--sp-8);
+  }
+
+  .home-composer {
+    display: grid;
+    gap: var(--sp-8);
+  }
+  .home-status {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .home-status:empty {
+    /* Stays in the tree so the live region is announced when text arrives, but takes no room. */
+    height: 0;
+    overflow: hidden;
+  }
+  .client-label {
+    flex: none;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+    white-space: nowrap;
+  }
+  /* One labelled picker in the message box's scope row (Working on, Chat for). */
+  .scope-field {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    flex: 1 1 200px;
+    min-width: 0;
+    max-width: 300px;
+  }
+  .scope-field .client-select,
+  .scope-field .project-select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 120px;
+  }
+  /* Home without a message box (a chat is open elsewhere): Working on sits on its own line. */
+  .home-scope {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+  .client-ask {
+    display: grid;
+    gap: var(--sp-10);
+    padding: var(--sp-12) 14px;
+  }
+  .client-ask h2 {
+    margin: 0;
+    font-size: var(--fs-body);
+  }
+  .client-ask-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .client-ask-pick {
+    width: 240px;
+    max-width: 100%;
+  }
+  /* The chosen skill's name and blurb, stacked inside a notice. */
+  .notice[data-shape].home-skill {
+    flex-direction: column;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: var(--sp-2);
+  }
+  .home-skill .meta {
+    font-size: var(--fs-small);
+  }
+  .tray .card {
+    min-width: 0;
+    padding: var(--sp-12) var(--sp-6) var(--sp-6);
+  }
+  /* An empty line sits under the card heading, not under the card's edge: the heading has 8px of its own. */
+  .tray .card > .hint {
+    padding: 0 var(--sp-8);
+  }
+  /*
+ * A row in a card rises one step off it on hover, like every other hover in the app: it stays
+ * white and casts the one-step shadow (`--lift-1`), with no edge of its own.
+ */
+  .tray .line:hover {
+    position: relative;
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+    transform: translateY(-1px);
+  }
+  .tray .line:active {
+    background: var(--tray);
+    box-shadow: none;
+    transform: none;
+  }
+  /* Meetings card: one column like the other cards; rows are static (not buttons) so they don't lift. */
+  .home-meeting {
+    --meet-when: 48px;
+    align-items: flex-start;
+  }
+  .tray .line.home-meeting:hover,
+  .tray .line.home-meeting:active {
+    background: var(--glass-92);
+    box-shadow: none;
+    transform: none;
+  }
+  .meet-when {
+    flex: none;
+    width: var(--meet-when);
+    display: flex;
+    flex-direction: column;
+    font-variant-numeric: tabular-nums;
+  }
+  .meet-start {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-size: var(--fs-body);
+    font-weight: 500;
+    color: var(--navy);
+  }
+  /* The title is one line, cut with an ellipsis. The meta wraps instead, so the project link in it is never cut
+     off (a focusable link must stay visible). */
+  .home-meeting .line-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
+  .home-meeting .line-meta .link-btn {
+    display: inline;
+    text-align: start;
+  }
+  /* The card measures itself, so the narrow rules below follow the card's width, not Home's. */
+  .home-meetings {
+    container-type: inline-size;
+  }
+  .tray .card.home-meetings > .hint {
+    margin-bottom: var(--sp-4);
+  }
+  /* A narrow card (phone, side panel): the title may take two lines so Join never squeezes it to a word, and the
+     meta wraps so the project link is never cut off (it must stay visible when it has focus). */
+  @container (max-width: 360px) {
+    .home-meeting .line-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    /* Join moves under the text so it never squeezes it; the invite icon stays at the right of the first line. */
+    .home-meeting {
+      display: grid;
+      grid-template-columns: var(--meet-when) minmax(0, 1fr) auto;
+      column-gap: var(--sp-10);
+      row-gap: var(--sp-4);
+    }
+    .home-meeting > .meet-when {
+      grid-row: 1 / span 2;
+    }
+    .home-meeting > .meet-actions {
+      display: contents;
+    }
+    .home-meeting > .meet-actions > .btn {
+      grid-column: 2;
+      grid-row: 2;
+      justify-self: start;
+    }
+    .home-meeting > .meet-actions > .icon-btn {
+      grid-column: 3;
+      grid-row: 1;
+    }
+    .home-meetings .card-head {
+      flex-wrap: wrap;
+      row-gap: var(--sp-4);
+    }
+  }
+  .meet-end {
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .meet-all {
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  /* A day heading: the name set like a fold header (13/600 navy) so it never reads as row meta, the date as meta
+     beside it. Days sit further apart than rows; weeks further still, on the card's only hairline. */
+  h4.meet-day {
+    margin: 0;
+    /* The browser's h4 is bold (700): the date is meta weight, and only the name below takes 600. */
+    font-weight: 400;
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-6);
+    padding: var(--sp-2) var(--sp-8);
+  }
+  .meet-day-name {
+    font-size: var(--fs-control);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .meet-day-date {
+    font-size: var(--fs-small);
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
+  .meet-group + .meet-group {
+    margin-top: var(--sp-12);
+  }
+  h3.meet-week {
+    margin: 0 0 var(--sp-4);
+    padding: 0 var(--sp-8);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .meet-week-group + .meet-week-group {
+    margin-top: var(--sp-16);
+    padding-top: var(--sp-8);
+    border-top: 1px solid var(--line);
+  }
+  @container (max-width: 360px) {
+    .meet-group + .meet-group {
+      margin-top: var(--sp-10);
+    }
+    .meet-week-group + .meet-week-group {
+      margin-top: var(--sp-12);
+    }
+  }
+  .meet-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    margin-left: auto;
+    align-self: center;
+  }
+  .tray .line-meta .late {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .card-note {
+    padding: 7px var(--sp-8);
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  @media (max-width: 480px) {
+    .home-scroll {
+      padding: var(--sp-24) var(--sp-16) 20px;
+      --edge-pt: var(--sp-24);
+      --edge-px: var(--sp-16);
+    }
+    .home-greeting {
+      font-size: var(--fs-title);
+    }
+  }
+
+  /* Moving Home's cards (as the Ad Manager deep dive, design-system "Reorder"): a grip left of each heading, always
+     shown on Home so people can see the cards move; the card in the air hides and a dashed placeholder shows where
+     it would land. */
+  .home-tray .card-grip {
+    flex: none;
+    cursor: grab;
+    margin-left: calc(-1 * var(--sp-4));
+  }
+  .home-tray .card[draggable="true"] {
+    cursor: grabbing;
+  }
+  .home-tray .card[data-dragging="true"] {
+    display: none;
+  }
+  .card-drop {
+    box-sizing: border-box;
+    border-radius: var(--r-14);
+    background: var(--tint-1);
+    border: 1.5px dashed var(--line-strong);
+  }
+  .home-tray-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--sp-6);
+  }
+}
+
+@layer features {
+  /* Drawer bodies: To-dos, Chats and Skills. Rows use the shared .line and .todo classes. */
+  .drawer-body {
+    display: grid;
+    gap: var(--sp-8);
+    align-content: start;
+  }
+  .drawer-list {
+    display: grid;
+    gap: var(--sp-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .line-main {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    flex: 1;
+  }
+  /* A to-do row's text: not a button (its buttons sit beside it). The new dot hangs from it. */
+  .todo-main {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+    min-width: 0;
+  }
+  /* A drawer with tools above its list (the Skills search, the To-dos switch). The tools sit on the drawer's own glass
+   and only the list scrolls, so nothing needs a backing of its own. */
+  .dock-body:has(> .drawer-split) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+  }
+  /* Not a scroller here: the list below its tools scrolls and draws the edge. */
+  .dock-body:has(> .drawer-split)::before {
+    content: none;
+  }
+  .drawer-split {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .drawer-tools {
+    flex: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-10) var(--sp-8);
+  }
+  .drawer-tools > .icon {
+    position: absolute;
+    left: 20px;
+    pointer-events: none;
+    color: var(--iron);
+  }
+  .drawer-tools .field {
+    padding-left: var(--sp-32);
+  }
+  .drawer-tools > .seg {
+    flex: 1;
+  }
+  .drawer-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--sp-10) var(--sp-12);
+    --edge-px: var(--sp-10);
+  }
+  /* A skill row: one line of its description until the chevron opens it. */
+  .skill-row {
+    gap: var(--sp-4);
+  }
+  .skill-row[data-open="false"] .line-meta {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .skill-row[data-open="true"] {
+    align-items: flex-start;
+  }
+  .skill-more {
+    color: var(--iron);
+  }
+  /* A feature rule beats the primitive's hover colour, so say it again here. */
+  .skill-more:where(:not(:disabled, [aria-disabled="true"])):hover {
+    color: var(--navy);
+  }
+  /* The skill star and the chat and to-do stars show on the row under the pointer or the keyboard; one that is on
+   stays. */
+  @media (hover: hover) {
+    .skill-row .icon-btn[aria-pressed="false"],
+    .line .star-btn[aria-pressed="false"],
+    .todo .star-btn[aria-pressed="false"] {
+      opacity: 0;
+      transition: opacity var(--t-fast);
+    }
+    .skill-row:is(:hover, :focus-within) .icon-btn[aria-pressed="false"],
+    .line:is(:hover, :focus-within) .star-btn[aria-pressed="false"],
+    .todo:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
+      opacity: 1;
+    }
+  }
+  /* A pinned item's pin is filled. */
+  .star-btn[aria-pressed="true"] .icon-pin {
+    fill: currentColor;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skill-row .icon-btn,
+    .line .star-btn,
+    .todo .star-btn {
+      transition: none;
+    }
+  }
+
+  /* Changing to-dos: the add button, the add form and the inline editor. ------------------------- */
+  /* A to-do row: its title across the whole row, then a line below with its details on the left and its buttons on
+   the right: the star, Edit (when changes are on) and the chat button, which is the row's main action. The row itself
+   is not a button. */
+  .todo:has(> .todo-foot) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--sp-2);
+  }
+  .todo-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2) var(--sp-8);
+    min-width: 0;
+  }
+  .todo-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .todo-meta-item {
+    white-space: nowrap;
+  }
+  .todo-meta-item .dot {
+    width: 6px;
+    height: 6px;
+    margin-right: var(--sp-4);
+    vertical-align: 1px;
+  }
+  .todo-end {
+    flex: 1 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .todo-end:has(> .todo-where) {
+    flex-basis: 100%;
+  }
+  .todo-where {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .todo-where-text {
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The buttons (28px) don't set the line's height; they reach into the row's padding. Always bottom right. */
+  .todo-btns {
+    display: flex;
+    gap: var(--sp-2);
+    margin: -5px 0 -5px auto;
+    flex: none;
+  }
+  .todo-title-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  @media (pointer: coarse) {
+    .todo-btns {
+      margin-block: 0;
+    }
+    .todo-btns .icon-btn {
+      width: 40px;
+      height: 40px;
+    }
+  }
+  .todo-go {
+    color: var(--blue-ink);
+  }
+  .todo-go:where(:not(:disabled, [aria-disabled="true"])):hover {
+    color: var(--navy);
+  }
+
+  .todo-add-btn {
+    flex: none;
+    margin-left: auto;
+  }
+  /* Why the project select is locked: a hint under the filters, not body text. */
+  .todo-project-why {
+    flex: 1 1 100%;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  /* The filter row: the kind switch, the client select and the add button, which sits at the right end. */
+  .todo-filters {
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+  /* With no filter beside it, the add button is a labelled quiet button, right-aligned like the +. */
+  .todo-add-label {
+    flex: none;
+    margin-left: auto;
+  }
+  .drawer-tools .seg > button {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The To-dos tabs size to their words, so "Asked, N" keeps its count beside a short "Done". */
+  .drawer-tools.todo-tabs .seg > button {
+    flex: 1 1 auto;
+  }
+  .drawer-tools.todo-filters .field {
+    padding-left: var(--sp-10);
+  }
+  .drawer-tools.todo-filters .todo-client-pick {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .todo-nomatch {
+    display: grid;
+    gap: var(--sp-8);
+    justify-items: start;
+  }
+  .todo-nomatch p {
+    margin: 0;
+  }
+  /* The add form's title line: the field, then the personal lock. */
+  .todo-quick {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  /* Both filters: the kind switch takes the first line; the client select and + share the second, never wrapping. */
+  .drawer-tools.todo-filters[data-stacked] > .seg {
+    flex: 1 1 100%;
+  }
+  /* "New to you": a red dot before the row (Ian, 2026-11-13), and a quiet line to clear them all. */
+  .todo-new,
+  .rail-pip[data-new="true"] {
+    background: var(--danger);
+  }
+  /* The dot hangs in the row's left padding, so every title lines up whether new or not. */
+  .todo-new {
+    position: absolute;
+    left: -13px; /* 7px clear of the title */
+    top: 7px;
+    width: 6px;
+    height: 6px;
+  }
+  .todo-lock {
+    display: inline-flex;
+    vertical-align: -1px;
+    margin-right: 3px;
+  }
+
+  .todo-form {
+    display: grid;
+    gap: var(--sp-10);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .todo-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-6);
+  }
+  /* biome-ignore lint/style/noDescendingSpecificity: the quick add (TodoPanel) is never inside the to-do filters (TodosDrawer). */
+  .todo-inline .field {
+    flex: 1;
+    min-width: 0;
+  }
+  .todo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+
+  /* The file strips at the top of any sheet (FileDeleteNotice): eager here, as they show before any library loads. */
+  .undo-strips {
+    flex: none;
+    display: grid;
+    gap: var(--sp-6);
+    margin-bottom: var(--sp-8);
+  }
+  /* The Chats drawer's band: the Open/Earlier switch over the kind switch, the same width, fixed above the list. */
+  .drawer-tools.chats-tools {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-8);
+  }
+  /* The Chats drawer's Open/Earlier switch, with New chat (a 32px primary +) at its right end, like the To-dos +. */
+  .chats-switch {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  /* biome-ignore lint/style/noDescendingSpecificity: the Chats switch row is never a to-do filter row. */
+  .chats-switch > .seg {
+    flex: 1;
+    min-width: 0;
+  }
+  .chats-switch > .icon-btn {
+    flex: none;
+  }
+  .todo-note {
+    margin: 0;
+    padding: 0 14px var(--sp-8);
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+
+  .todo-status {
+    flex: none;
+    margin: 0;
+    padding: 0 14px var(--sp-8);
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--navy);
+  }
+  .todo-status:empty {
+    padding: 0;
+  }
+
+  .todo-status[data-tone="error"] {
+    color: var(--danger);
+    /* Not by colour alone (WCAG 1.4.1). */
+    font-weight: 600;
+  }
+  .drawer-scroll:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* Drawer sections: a heading, and a hairline between groups. */
+  .drawer-body > .fold {
+    margin: 0;
+  }
+  .drawer-body > .fold + .fold {
+    margin-top: var(--sp-4); /* plus the body's var(--sp-8) gap: var(--sp-12) */
+    padding-top: var(--sp-8);
+    border-top: 1px solid var(--line);
+  }
+  .drawer-body > .fold > .fold-head > button {
+    min-height: 32px;
+    font-family: var(--head);
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .drawer-body > .fold > .fold-head .icon {
+    color: var(--iron);
+  }
+  .drawer-body > .fold > .fold-rows {
+    padding-top: var(--sp-2);
+  }
+  .drawer-body .drawer-list {
+    gap: var(--sp-6);
+  }
+  /* A section's action (e.g. "Mark all as seen") sits on the heading line, to the right of the toggle. */
+  .drawer-body > .fold[data-action] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .drawer-body > .fold[data-action] > .fold-rows {
+    grid-column: 1 / -1;
+  }
+
+  /* A skill's team level (or "Set by skill") beside its title in the Skills drawer. */
+  .skill-level-chip {
+    font-weight: 500;
+  }
+  .skill-level-chip[data-kind="own"] {
+    background: var(--tint-1);
+    color: var(--ink-soft);
+  }
+
+  /* A chat's helpers: one nested list under its row, indented to sit beneath the chat's title. */
+  .helpers {
+    margin: 0 0 var(--sp-4) 18px;
+    padding-left: var(--sp-8);
+    border-left: 2px solid var(--line-strong);
+    list-style: none;
+  }
+  .helpers .line {
+    padding: var(--sp-4) var(--sp-6);
+    gap: var(--sp-8);
+  }
+  .helpers .line-title {
+    font-size: var(--fs-control);
+  }
+
+  /* The Asked tab's lead line and notes sit level with the rows. */
+  .asked-intro,
+  .asked-partial,
+  .asked-retry {
+    margin: 0 0 var(--sp-8);
+  }
+
+  /* A to-do row's project, as a chip that filters the drawer by it (ProjectChip). It follows the details on the
+   same line and gives up its width first, ending in an ellipsis. 24px tall (WCAG 2.5.8) without pushing the
+   line taller: it reaches into the row's padding as the icon buttons do. */
+  .todo-place {
+    min-height: 24px;
+    max-width: 100%;
+    margin-block: -3px;
+    margin-left: 0;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+  .todo-place-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .todo-place:hover {
+    background: var(--tint-1);
+  }
+  /* The drawer's title: 14px, medium weight (Home and the palette keep their own). */
+  .todo .todo-open {
+    font-size: var(--fs-body);
+    font-weight: 500;
+  }
+  /* The current row's title is bolder (base.css, .line-title). Said again for the title button, which a feature rule
+     (this one, and todo-panel.css) would otherwise hold at 500. */
+  .line[aria-current="true"] .todo-open,
+  .line[data-current="true"] .todo-open,
+  .todo[aria-current="true"] .todo-open,
+  .todo[data-current="true"] .todo-open {
+    font-weight: 600;
+  }
+
+  /* The pill reaches into the row's padding so its words start on the same edge as the title and details. */
+  .todo-where > .todo-place {
+    margin-left: -7px;
+    padding-inline: 7px;
+    /* The negative margin takes 7px from the box it sits in: give them back, or its words cut short. */
+    max-width: calc(100% + 7px);
+  }
+}
+
+@layer features {
+  .composer {
+    display: grid;
+    gap: var(--sp-6);
+    padding: var(--sp-10) var(--sp-10) var(--sp-8) 14px;
+    /* --field-edge reaches 3:1 on white (WCAG 1.4.11); --line-strong did not. */
+    border: 1.5px solid var(--field-edge);
+    border-radius: var(--r-14);
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+  }
+  .floater .composer {
+    box-shadow: var(--lift-2);
+  }
+  /* The box's border carries the chat's state. Same width in every state, no fill. */
+  .composer[data-attention="ready"] {
+    border-color: var(--attn-ready-edge);
+  }
+  .composer[data-attention="working"] {
+    border-color: var(--attn-working-edge);
+  }
+  .composer[data-attention="asking"] {
+    border-color: var(--attn-asking-edge);
+    animation: attn-pulse 2s ease-in-out infinite;
+  }
+  @keyframes attn-pulse {
+    0%,
+    100% {
+      border-color: var(--attn-asking-edge);
+    }
+    50% {
+      border-color: var(--attn-asking-pulse);
+    }
+  }
+  .composer-input {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    max-height: 200px;
+    padding: var(--sp-2) 0;
+    border: 0;
+    background: transparent;
+    color: var(--navy);
+    font: inherit;
+    font-size: var(--fs-body);
+    line-height: 1.5;
+    resize: none;
+    field-sizing: content;
+  }
+  .floater .composer-input {
+    min-height: 22px;
+  }
+  .composer-input::placeholder {
+    color: var(--iron);
+  }
+  .composer-input[aria-disabled="true"] {
+    color: var(--iron);
+  }
+  /* Where :has() works the ring goes round the whole box; elsewhere it stays on the text area. */
+  @supports selector(:has(*)) {
+    .composer-input:focus-visible {
+      outline: none;
+    }
+    .composer:has(> .composer-input:focus-visible) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+  }
+  .composer-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .composer-hint {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .composer-foot .btn {
+    margin-left: auto;
+  }
+  /* Home's Working on and Chat for: their own row inside the box, under a hairline, above the attach and Send row.
+   Side by side when there is room, stacked on a narrow sheet. */
+  .composer-scope {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-16);
+    padding-top: var(--sp-8);
+    border-top: 1px solid var(--line);
+  }
+  /* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
+  .engine-line {
+    margin: -4px 0 0;
+    padding: 0 var(--sp-16);
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+    display: flex;
+}
+@layer tools {
+/* ===== Mock-only chrome (outside the app frame) ===== */
+body { background-attachment: scroll; }
+.mockbar { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: #1b1b1f; color: #fff; font: 500 13px/1.4 var(--body); }
+.mockbar strong { font-weight: 700; letter-spacing: .02em; }
+.mockbar .grp-m { display: inline-flex; gap: 6px; align-items: center; }
+.mockbar button { font: inherit; font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 8px; border: 1px solid #5a5a63; background: #2a2a30; color: #fff; cursor: pointer; }
+.mockbar button[aria-pressed="true"] { background: #fff; color: #111; border-color: #fff; }
+.mockbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.mockbar :focus-visible { outline: 2px solid #8ec5ff; outline-offset: 2px; }
+.mocknote { max-width: 1240px; margin: 12px auto 0; padding: 0 16px; font-size: 12.5px; color: var(--iron); }
+.stage { padding: 16px; display: flex; justify-content: center; }
+
+/* ===== App frame: desk, rail, sheet, dock (shape from shell.css) ===== */
+.frame { position: relative; container: frame / inline-size; width: 100%; max-width: 1240px; height: 800px; border-radius: 20px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(2,27,67,.12), var(--lift-3);
+  background: radial-gradient(620px 760px at 0% 0%, rgba(24,137,255,.42), transparent 66%), radial-gradient(520px 620px at 8% 100%, rgba(2,27,67,.3), transparent 64%), radial-gradient(760px 560px at 104% 108%, rgba(2,27,67,.24), transparent 60%), var(--desk); }
+.frame[data-narrow="true"] { width: 390px; }
+.frame[data-narrow="true"] .rail { display: none; }
+.desk { display: flex; height: 100%; padding: 12px; gap: 10px; }
+.rail { flex: none; width: 60px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-radius: var(--r-16); }
+.rail .icon-btn { width: 40px; height: 40px; }
+.rail .icon-btn[aria-current="page"] { background: var(--surface); color: var(--navy); box-shadow: var(--lift-1); }
+.sheet { position: relative; z-index: 1; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border-radius: var(--r-18); box-shadow: var(--lift-1); container: sheet / inline-size; }
+.sheet-bar { flex: none; display: flex; align-items: center; gap: var(--sp-10); min-height: 48px; padding: 0 var(--sheet-gutter); font-size: var(--fs-body); }
+.sheet-bar h1 { font-size: var(--fs-body); flex: 1; }
+.sheet-bar .search-pill { font-size: var(--fs-small); color: var(--iron); padding: 4px 12px; border-radius: 999px; background: var(--tint-1); }
+.dock { flex: none; width: 332px; display: block; }
+.dock[hidden] { display: none; }
+.dock-panel { height: 100%; display: flex; flex-direction: column; border-radius: var(--r-16); overflow: hidden; }
+.dock-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-10) var(--sp-12); }
+@media (prefers-reduced-motion: no-preference) {
+  .dock:not([hidden]) { animation: dock-in var(--t) var(--ease); }
+  @keyframes dock-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+}
+
+/* Home scroller (home.css, shortened to what the mock needs) */
+.home-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.home-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-32) 28px var(--sp-24); }
+.home-in { max-width: 880px; width: 100%; margin: 0 auto; container-type: inline-size; }
+.home-in > .composer, .home-composer { margin-bottom: 0; }
+.home-composer { display: grid; gap: var(--sp-8); }
+.composer-input { display: block; width: 100%; min-height: 40px; padding: 2px 0; border: 0; background: transparent; color: var(--navy); font: inherit; font-size: var(--fs-body); line-height: 1.5; resize: none; }
+.composer-input::placeholder { color: var(--iron); }
+.composer-input:focus-visible { outline: none; }
+.composer:has(> .composer-input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.whatsnew { margin: 0 0 var(--sp-16); padding: var(--sp-12) var(--sp-16); }
+.whatsnew h2 { font-size: var(--fs-body); }
+.tray .card .line { cursor: pointer; }
+.tray .card .line-title { font-size: var(--fs-body); }
+.tray-empty { grid-column: 1 / -1; padding: var(--sp-24) var(--sp-16); text-align: center; }
+/* NEW: a lone last card spans the whole tray. Home only (.home-tray), set from the shown-card count, not :last-child:
+   the drag placeholder is also a child and .tray is shared with Ad Manager and Projects. */
+.home-tray[data-odd="true"] > .card:last-child { grid-column: 1 / -1; }
+.card-head .icon-btn.card-grip { margin-left: calc(-1 * var(--sp-4)); cursor: grab; }
+
+/* NEW: the shortcut row (replaces .home-gm's single button) */
+.home-shortcuts { display: flex; flex-wrap: wrap; gap: var(--sp-8); margin: 0 0 var(--sp-16); }
+.home-sub:has(+ .home-shortcuts) { margin-bottom: var(--sp-8); }
+.home-shortcuts:empty { display: none; }
+
+/* NEW: tray foot with the hidden-cards line on the left */
+.home-tray-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-8); margin-top: var(--sp-6); }
+.tray-hidden { margin-right: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
+.tray-hidden .hint { color: var(--iron); }
+
+/* NEW: Customise Home panel contents */
+.panel-head .icon-btn { margin-left: auto; }
+.lib-intro { margin: 0 var(--sp-6) var(--sp-8); }
+.lib-sec { margin: var(--sp-16) var(--sp-6) 0; }
+.lib-sec-head { display: flex; align-items: center; gap: var(--sp-8); min-height: 32px; }
+.lib-sec-head h3 { flex: 1; font-size: var(--fs-body); }
+.lib-list { margin: 0; padding: 0; list-style: none; }
+.lib-list .setting { cursor: pointer; }
+.lib-list .setting + .setting { border-top: 1px solid var(--line); }
+.lib-list .setting:has(.switch:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-8); }
+.lib-list .setting .switch:focus-visible { outline: none; }
+.lib-shortcuts { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.lib-shortcut { display: flex; align-items: center; gap: var(--sp-10); padding: var(--sp-6) var(--sp-8); border-radius: var(--r-10); background: var(--tint-04); }
+.lib-shortcut .line-text { flex: 1; min-width: 0; }
+.lib-shortcut .line-title { font-size: var(--fs-control); }
+.lib-sec .hint { margin-top: var(--sp-6); }
+.lib-foot { margin: var(--sp-24) var(--sp-6) 0; display: grid; gap: var(--sp-8); padding-top: var(--sp-12); border-top: 1px solid var(--line); }
+.lib-foot .btn { justify-self: start; }
+.lib-shortcut[data-gone="true"] .line-title { color: var(--iron); }
+.lib-status { min-height: 1.45em; margin: var(--sp-8) var(--sp-6) 0; }
+.lib-pop { position: absolute; width: 268px; }
+.lib-pop[hidden] { display: none; }
+.lib-pop .grp { padding: var(--sp-8) var(--sp-8) var(--sp-2); font-size: var(--fs-small); font-weight: 600; color: var(--iron); }
+.lib-pop .grp:first-child { padding-top: var(--sp-2); }
+.lib-pop .menu-row { font-size: var(--fs-control); }
+.lib-pop .menu-row .meta { font-size: var(--fs-small); }
+.lib-pop .none { padding: var(--sp-8); }
+
+/* Narrow rail step-back (mock only: the real rail has its own rules) */
+@container frame (max-width: 720px) {
+  .rail { display: none; }
+  .home-scroll { padding: var(--sp-24) var(--sp-16) 20px; }
+  .home-greeting { font-size: var(--fs-title); }
+}
+/* Under 1100px the dock floats over Home with a veil (shell.css:523-554, :562-574). */
+.veil { position: absolute; inset: 0; z-index: var(--z-veil); background: var(--veil); opacity: 0; pointer-events: none; transition: opacity var(--t-mid); }
+.veil[data-open="true"] { opacity: 1; pointer-events: auto; }
+.frame[data-narrow="true"] .dock { position: absolute; top: 0; right: 0; bottom: 0; width: 0; z-index: var(--z-dock); }
+.frame[data-narrow="true"] .dock-panel { position: absolute; top: 12px; bottom: 12px; right: 12px; width: 332px; max-width: calc(100% - 24px); height: auto; box-shadow: var(--lift-3); }
+@media (prefers-reduced-motion: reduce) { .veil, .dock { transition: none; animation: none; } }
+
+/* Mock notes */
+.newpieces { max-width: 1240px; margin: 24px auto 48px; padding: 0 16px; }
+.newpieces .card { padding: var(--sp-16) var(--sp-24); }
+.newpieces h2 { font-size: var(--fs-title); margin-bottom: var(--sp-8); }
+.newpieces ol { margin: 0; padding-left: 20px; display: grid; gap: var(--sp-6); font-size: var(--fs-control); }
+.newpieces code { font-family: var(--mono); font-size: var(--fs-mono); }
+
+}
+</style>
+</head>
+<body>
+<div class="mockbar" role="group" aria-label="Mock controls">
+  <strong>Mock controls</strong>
+  <span class="grp-m" role="group" aria-label="Wide / Under 1100px">
+    <button type="button" id="mc-wide" aria-pressed="true">Wide</button>
+    <button type="button" id="mc-narrow" aria-pressed="false">Under 1100px</button>
+  </span>
+  <label><input type="checkbox" class="tick" id="mc-empty"> Empty state: no cards</label>
+  <label><input type="checkbox" class="tick" id="mc-noads"> No Ads access</label>
+  <span style="opacity:.7">Not part of the app. Customise Home design mock-up, 25 Nov 2026.</span>
+</div>
+<p class="mocknote">Click the panel icon at the top right of Home, flip switches, add and remove shortcuts, and try <kbd>Esc</kbd> (it closes the panel only when it floats over Home). Everything is fake data.</p>
+
+<div class="stage">
+<div class="frame" id="frame" data-narrow="false">
+  <div class="desk">
+    <nav class="rail glass" aria-label="Mock rail">
+      <button type="button" class="icon-btn" aria-label="Home" aria-current="page"><i data-ic="home"></i></button>
+      <button type="button" class="icon-btn" aria-label="Chats"><i data-ic="chat"></i></button>
+      <button type="button" class="icon-btn" aria-label="Tasks"><i data-ic="todos"></i></button>
+      <button type="button" class="icon-btn" aria-label="Skills"><i data-ic="skills"></i></button>
+      <button type="button" class="icon-btn" aria-label="Projects"><i data-ic="folder"></i></button>
+      <button type="button" class="icon-btn" aria-label="Settings" style="margin-top:auto"><i data-ic="settings"></i></button>
+    </nav>
+
+    <main class="sheet" id="sheet">
+      <div class="sheet-bar"><h1>Home</h1><span class="search-pill">Search or jump to</span>
+        <button type="button" class="icon-btn" id="open-btn" aria-label="Customise Home" title="Customise Home" aria-pressed="false" aria-controls="dock"><i data-ic="panel"></i></button></div>
+      <div class="home-view"><div class="home-scroll"><div class="home-in">
+        <p class="home-greeting">Good morning, Ian</p>
+        <p class="home-sub">3 meetings today, 2 tasks due this week.</p>
+        <div class="home-shortcuts" id="shortcuts" role="group" aria-label="Shortcuts"></div>
+        <section class="card whatsnew" id="c-news" hidden></section>
+
+        <div class="home-composer">
+          <p class="home-status" role="status" aria-live="polite"></p>
+          <div class="composer">
+            <textarea class="composer-input" rows="2" aria-label="Message" placeholder="What would you like to do?"></textarea>
+            <div class="composer-scope">
+              <span class="scope-field"><label class="client-label" for="m-work">Working on</label>
+                <select class="field" id="m-work"><option>Nothing in particular</option><option>Lantern Co · Atlas</option></select></span>
+              <span class="scope-field"><label class="client-label" for="m-chat">Chat for</label>
+                <select class="field" id="m-chat"><option>Auto</option><option>No client</option><option>Lantern Co</option></select></span>
+            </div>
+            <div class="composer-foot">
+              <button type="button" class="icon-btn" aria-label="Attach a file"><i data-ic="paperclip"></i></button>
+              <button type="button" class="btn" data-variant="primary"><i data-ic="send" data-s="16"></i>Send</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tray home-tray" id="tray"></div>
+        <div class="home-tray-foot" id="trayfoot"></div>
+      </div></div></div>
+    </main>
+
+    <div class="veil" id="veil" data-open="false" aria-hidden="true"></div>
+    <aside class="dock" id="dock" hidden aria-label="Customise Home">
+      <div class="dock-panel glass">
+        <div class="panel-head">
+          <h2 id="dock-title" tabindex="-1">Customise Home</h2>
+          <button type="button" class="icon-btn" id="dock-close" aria-label="Close Customise Home"><i data-ic="close"></i></button>
+        </div>
+        <div class="dock-body" id="dock-body">
+          <p class="hint lib-intro">Choose what shows on your Home. Only you see this.</p>
+
+          <section class="lib-sec" aria-labelledby="h-cards" style="margin-top:var(--sp-8)">
+            <div class="lib-sec-head"><h3 id="h-cards">Cards and buttons</h3></div>
+            <div class="lib-list" id="switches"></div>
+          </section>
+
+          <section class="lib-sec" aria-labelledby="h-short">
+            <div class="lib-sec-head">
+              <h3 id="h-short">Shortcuts</h3>
+              <button type="button" class="icon-btn" data-variant="primary" id="add-btn" aria-label="Add a shortcut" aria-haspopup="menu" aria-expanded="false" aria-describedby="add-hint"><i data-ic="plus"></i></button>
+            </div>
+            <ul class="lib-shortcuts" id="shortlist"></ul>
+            <p class="hint" id="add-hint"></p>
+          </section>
+
+          <div class="lib-foot">
+            <button type="button" class="btn" data-variant="quiet" data-size="small" id="reset-btn">Show everything again</button>
+          </div>
+          <p class="hint lib-status" id="status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div class="popover lib-pop" id="pop" role="menu" aria-label="Add a shortcut" hidden></div>
+</div>
+</div>
+
+<section class="newpieces" aria-labelledby="np-h">
+  <div class="card">
+    <h2 id="np-h">New pieces (for the design-system doc)</h2>
+    <p class="note" style="margin-bottom:8px">Everything else is an existing class or token.</p>
+    <ol>
+      <li><b>Side panel, <code>.dock-panel</code> hosting a settings list.</b> Reuses the dock look (glass, radius 16, <code>.panel-head</code>, 332px, pushes Home), opened by the existing panel toggle (<code>PanelToggle</code>, icon only, top right of Home's sheet bar). New: it holds Home's own controls and keeps Home visible and live. Under 1100px it floats over Home with the veil, as This chat's dock does; the veil or <kbd>Esc</kbd> closes it. Docked, only Close does. No new sheet, no Confirm.</li>
+      <li><b>Switch row list, <code>.lib-list</code>.</b> The existing <code>.setting</code> row with a <code>.switch</code> (whole row is the label), hairlines between rows, a <code>.hint</code> under the title for conditional cards.</li>
+      <li><b>Shortcut row, <code>.home-shortcuts</code>.</b> A wrapping flex row (gap 8) of quiet small buttons that replaces the single <code>.home-gm</code> line.</li>
+      <li><b>Panel shortcut item, <code>.lib-shortcut</code>.</b> Name and kind (<code>.line-title</code>, <code>.line-meta</code>) on a <code>--tint-04</code> row with a trailing X icon button (Actions rule 3).</li>
+      <li><b>Section head with an action, <code>.lib-sec-head</code>.</b> An <code>h3</code> with the primary <code>+</code> at the right end (Actions rule 7).</li>
+      <li><b>Grouped add list.</b> The <code>.popover</code> with <code>.menu-row</code>s plus small iron group headings (Skills, Tools) as in the palette's <code>.grp</code>, and a <code>.meta</code> line ("Also in Pinned skills").</li>
+      <li><b>Tray foot with a status line, <code>.tray-hidden</code>.</b> "N cards hidden." (<code>.hint</code>) with a quiet small "Show hidden cards" (opens the panel) on the left; "Reset card order" stays at the right.</li>
+      <li><b>Lone last card spans the tray, Home only.</b> <code>.home-tray[data-odd="true"] &gt; .card:last-child { grid-column: 1 / -1 }</code>, with <code>data-odd</code> set from the count of shown cards.</li>
+      <li><b>Panel foot, "Show everything again".</b> A quiet small button that clears hidden items at once (no Confirm), keeps shortcuts, and says "Every card is back on Home".</li>
+      <li><b>Empty tray line.</b> A centred <code>.hint</code> inside <code>.tray</code>: "Your Home has no cards. Customise Home to add some."</li>
+    </ol>
+  </div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var ICONS = {
+    plus: '<path d="M10 4v12M4 10h12"/>', close: '<path d="M5 5l10 10M15 5L5 15"/>',
+    chevron: '<path d="M5 8l5 5 5-5"/>', send: '<path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8"/>',
+    grip: '<path d="M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01" stroke-width="2.6"/>',
+    home: '<path d="M3 9.5 10 3l7 6.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1z"/>',
+    chat: '<path d="M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>',
+    todos: '<path d="M3 6l1.5 1.5L7 5M3 13l1.5 1.5L7 12M10 6h7M10 13h7"/>',
+    skills: '<path d="M3 3h6v6H3zM11 3h6v6h-6zM3 11h6v6H3zM11 11h6v6h-6z"/>',
+    folder: '<path d="M3 6a1 1 0 0 1 1-1h3.8l1.7 2H16a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 9.5h14"/>',
+    settings: '<path d="M3 6h8M16 6h1M3 14h1M9 14h8"/><circle cx="13.5" cy="6" r="2"/><circle cx="6.5" cy="14" r="2"/>',
+    panel: '<path d="M3 4h14v12H3zM12 4v12"/>',
+    paperclip: '<path d="M16 9.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3l-6 6a1.1 1.1 0 0 1-1.6-1.6L12 6.6"/>'
+  };
+  function svg(n, s) {
+    return '<svg class="icon" width="' + s + '" height="' + s + '" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[n] + '</svg>';
+  }
+  function hydrate(root) {
+    root.querySelectorAll('i[data-ic]').forEach(function (el) {
+      var t = document.createElement('span'); t.innerHTML = svg(el.getAttribute('data-ic'), +(el.getAttribute('data-s') || 20));
+      el.replaceWith(t.firstChild);
+    });
+  }
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/'/g, '&#39;'); }
+
+  var MAX = 6;
+  var LS_HINT = 'Shows only while an Ads change waits for you. You’ll still find it in Ads Manager.';
+  var PR_HINT = 'Shows once a project has been worked on.';
+  var CARDS = [
+    { id: 'news', title: 'What’s new', on: false },
+    { id: 'meetings', title: 'Meetings', on: true, link: 'Open Google Calendar', rows: [['Weekly ads review', '10:00 · Lantern Co · Atlas'], ['Site audit catch-up', '14:30 · Fernhill Dental'], ['Kickoff: spring campaign', 'Tomorrow 09:30 · Oakridge']] },
+    { id: 'ads', title: 'Ads approvals', on: false, hint: LS_HINT, rows: [['Raise Search budget by £20 a day', 'Waiting for you · Lantern Co']] },
+    { id: 'tasks', title: 'Pinned tasks', on: true, rows: [['Send the June report to Fernhill', 'Due Friday'], ['Review new landing page copy', 'Oakridge · Atlas'], ['Approve ad budget changes', 'Due today']] },
+    { id: 'projects', title: 'Recent projects', on: true, hint: PR_HINT, rows: [['Atlas relaunch', 'Lantern Co · 2 hours ago'], ['Spring campaign', 'Oakridge · yesterday'], ['Local SEO clean-up', 'Fernhill Dental · Mon']] },
+    { id: 'chats', title: 'Pinned chats', on: true, rows: [['Budget pacing questions', 'Lantern Co'], ['Meeting notes: Oakridge kickoff', 'Yesterday']] },
+    { id: 'files', title: 'Pinned files', on: true, rows: [['Atlas brand guide.pdf', 'Documents'], ['Spring keywords.csv', 'Documents']] },
+    { id: 'skills', title: 'Pinned skills', on: true, rows: [['Meeting notes', 'Skill'], ['Weekly report', 'Skill']] }
+  ];
+  var SWITCH_ORDER = ['gm', 'news', 'meetings', 'ads', 'tasks', 'projects', 'chats', 'files', 'skills'];
+  var startMyDay = true;
+
+  var CATALOG = [
+    { grp: 'Skills', id: 'sk-notes', label: 'Meeting notes', kind: 'Skill', pinned: true },
+    { grp: 'Skills', id: 'sk-client', label: 'Client update', kind: 'Skill' },
+    { grp: 'Skills', id: 'sk-seo', label: 'SEO check', kind: 'Skill' },
+    { grp: 'Tools', id: 't-ads', label: 'Ads Manager', kind: 'Tool' },
+    { grp: 'Tools', id: 't-cc', label: 'Command Centre', kind: 'Tool' },
+    { grp: 'Tools', id: 't-sum', label: 'Account Summary', kind: 'Tool' }
+  ];
+  var shortcuts = ['t-ads', 'sk-seo', 'gone-1'];
+  var GONE = { 'gone-1': { label: 'Old campaign checker', kind: 'Skill', gone: true } };
+  var noAds = false;
+  var stash = null;
+
+  var frame = $('frame'), dock = $('dock'), pop = $('pop'), status = $('status');
+  var openBtn = $('open-btn'); // the panel toggle in the sheet bar
+  var lastOpener = null;
+
+  function byId(id) { return CATALOG.filter(function (c) { return c.id === id; })[0] || GONE[id]; }
+  function card(id) { return CARDS.filter(function (c) { return c.id === id; })[0]; }
+  function say(t) { status.textContent = ''; setTimeout(function () { status.textContent = t; }, 30); }
+  function isNarrow() { return frame.getAttribute('data-narrow') === 'true'; }
+  function isOpen() { return !dock.hidden; }
+  function visibleCards() { return CARDS.filter(function (c) { return !(noAds && c.id === 'ads'); }); }
+
+  /* ---------- Home ---------- */
+  function renderShortcuts() {
+    var h = '';
+    if (startMyDay) h += '<button type="button" class="btn" data-variant="quiet" data-size="small">Start my day</button>';
+    shortcuts.forEach(function (id) { if (byId(id).gone) return; h += '<button type="button" class="btn" data-variant="quiet" data-size="small">' + esc(byId(id).label) + '</button>'; });
+    $('shortcuts').innerHTML = h;
+  }
+  function cardHtml(c, at, total) {
+    var rows = c.rows.map(function (r) {
+      return '<li class="line"><button type="button" class="line-main"><span class="line-text"><span class="line-title">' + esc(r[0]) + '</span><span class="line-meta">' + esc(r[1]) + '</span></span></button></li>';
+    }).join('');
+    var link = c.link ? '<button type="button" class="btn" data-variant="quiet" data-size="small">' + esc(c.link) + '</button>' : '';
+    return '<section class="card" aria-labelledby="ch-' + c.id + '"><div class="card-head">' +
+      '<button type="button" class="icon-btn card-grip" data-size="small" aria-label="Move ' + esc(c.title) + ', ' + (at + 1) + ' of ' + total + '"><i data-ic="grip"></i></button>' +
+      '<h2 id="ch-' + c.id + '">' + esc(c.title) + '</h2>' + link + '</div>' +
+      '<ul class="drawer-list" style="margin:0;padding:0;list-style:none;display:grid;gap:2px">' + rows + '</ul></section>';
+  }
+  function renderHome() {
+    var tray = visibleCards().filter(function (c) { return c.id !== 'news' && c.on; });
+    var shown = visibleCards().filter(function (c) { return c.on; });
+    var hiddenN = visibleCards().length - shown.length;
+    // What's new strip
+    var news = $('c-news'), n = card('news');
+    news.hidden = !n.on;
+    news.innerHTML = '<h2>What’s new</h2><p class="note" style="margin-top:4px">v0.83.0: the app is now open to the whole team. <a href="#" onclick="return false">Read the notes</a></p>';
+    var t = $('tray');
+    if (!shown.length) {
+      t.innerHTML = '<p class="hint tray-empty" role="note">Your Home has no cards. Customise Home to add some.</p>';
+    } else {
+      t.innerHTML = tray.map(function (c, i) { return cardHtml(c, i, tray.length); }).join('');
+    }
+    t.setAttribute('data-odd', String(tray.length % 2 === 1));
+    var foot = '';
+    if (hiddenN > 0) foot += '<span class="tray-hidden"><span class="hint">' + hiddenN + ' card' + (hiddenN === 1 ? '' : 's') + ' hidden.</span><button type="button" class="btn" data-variant="quiet" data-size="small" id="show-hidden">Show hidden cards</button></span>';
+    foot += '<button type="button" class="btn" data-variant="quiet" data-size="small">Reset card order</button>';
+    $('trayfoot').innerHTML = foot;
+    hydrate($('tray'));
+    var sh = $('show-hidden');
+    if (sh) sh.addEventListener('click', function () {
+      openPanel(sh);
+    });
+    renderShortcuts();
+  }
+
+  /* ---------- Panel: switches ---------- */
+  function buildSwitches() {
+    var h = '';
+    SWITCH_ORDER.forEach(function (id) {
+      if (noAds && id === 'ads') return;
+      var title = id === 'gm' ? 'Start my day' : card(id).title;
+      var hint = id === 'gm' ? '' : (card(id).hint || '');
+      h += '<label class="setting"><span><span class="setting-label">' + esc(title) + '</span>' +
+        (hint ? '<span class="hint" id="sh-' + id + '" style="display:block;margin-top:2px">' + esc(hint) + '</span>' : '') +
+        '</span><input type="checkbox" role="switch" class="switch" data-id="' + id + '"' + (hint ? ' aria-describedby="sh-' + id + '"' : '') + '></label>';
+    });
+    $('switches').innerHTML = h;
+    syncSwitches();
+  }
+  $('switches').addEventListener('change', function (e) {
+    var inp = e.target; if (!inp.matches('.switch')) return;
+    var id = inp.getAttribute('data-id'), title;
+    if (id === 'gm') { startMyDay = inp.checked; title = 'Start my day'; }
+    else { var c = card(id); c.on = inp.checked; title = c.title; }
+    renderHome(); syncEmpty();
+    say(title + (inp.checked ? ' shown on Home' : ' hidden from Home'));
+  });
+
+  function syncSwitches() {
+    $('switches').querySelectorAll('.switch').forEach(function (i) {
+      var id = i.getAttribute('data-id');
+      i.checked = id === 'gm' ? startMyDay : card(id).on;
+    });
+  }
+  function syncEmpty() { $('mc-empty').checked = visibleCards().every(function (c) { return !c.on; }); }
+
+  /* ---------- Panel: shortcuts ---------- */
+  function renderShortlist(focusAfter) {
+    var full = shortcuts.length >= MAX;
+    var h = shortcuts.map(function (id) {
+      var s = byId(id);
+      return '<li class="lib-shortcut" data-id="' + id + '"' + (s.gone ? ' data-gone="true"' : '') + '><span class="line-text"><span class="line-title">' + esc(s.label) + '</span><span class="line-meta">' + (s.gone ? 'No longer in your Brain' : s.kind) + '</span></span>' +
+        '<button type="button" class="icon-btn" aria-label="Remove ' + esc(s.label) + ' from Home"><i data-ic="close"></i></button></li>';
+    }).join('');
+    $('shortlist').innerHTML = h;
+    hydrate($('shortlist'));
+    var add = $('add-btn');
+    if (full) add.setAttribute('aria-disabled', 'true'); else add.removeAttribute('aria-disabled');
+    $('add-hint').textContent = full ? 'You have 6 shortcuts. Remove one to add another.' : (shortcuts.length ? '' : 'Add a shortcut to start a skill or open a tool in one click.');
+    $('add-hint').style.display = $('add-hint').textContent ? '' : 'none';
+    renderHome();
+  }
+  $('shortlist').addEventListener('click', function (e) {
+    var b = e.target.closest('.icon-btn'); if (!b) return;
+    var li = b.closest('.lib-shortcut'), id = li.getAttribute('data-id');
+    var next = li.nextElementSibling || li.previousElementSibling;
+    var nextId = next ? next.getAttribute('data-id') : null;
+    shortcuts = shortcuts.filter(function (x) { return x !== id; });
+    var label = byId(id).label;
+    renderShortlist();
+    say(label + ' removed from Home');
+    var target = nextId ? $('shortlist').querySelector('[data-id="' + nextId + '"] .icon-btn') : $('add-btn');
+    (target || $('add-btn')).focus();
+  });
+
+  /* ---------- Add popover ---------- */
+  function popItems() { return Array.prototype.slice.call(pop.querySelectorAll('.menu-row')); }
+  function openPop() {
+    var add = $('add-btn');
+    if (add.getAttribute('aria-disabled') === 'true') return;
+    var groups = {}, order = ['Skills', 'Tools'];
+    CATALOG.forEach(function (c) { if (shortcuts.indexOf(c.id) < 0) (groups[c.grp] = groups[c.grp] || []).push(c); });
+    var h = '';
+    order.forEach(function (g) {
+      if (!groups[g]) return;
+      h += '<div class="grp" role="presentation" id="g-' + g + '">' + g + '</div>';
+      groups[g].forEach(function (c) {
+        h += '<button type="button" class="menu-row" role="menuitem" data-id="' + c.id + '"><span>' + esc(c.label) + '</span>' + (c.pinned ? '<span class="meta">Also in Pinned skills</span>' : '') + '</button>';
+      });
+    });
+    pop.innerHTML = h || '<p class="hint none">Everything is already on your Home.</p>';
+    pop.hidden = false; add.setAttribute('aria-expanded', 'true');
+    var fr = frame.getBoundingClientRect(), ar = add.getBoundingClientRect();
+    var w = 268, left = ar.right - fr.left - w; left = Math.max(8, Math.min(left, fr.width - w - 8));
+    var top = ar.bottom - fr.top + 6;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    pop.style.maxHeight = Math.max(160, fr.height - top - 12) + 'px';
+    var it = popItems(); if (it[0]) it[0].focus();
+  }
+  function closePop(restore) {
+    if (pop.hidden) return;
+    pop.hidden = true; $('add-btn').setAttribute('aria-expanded', 'false');
+    if (restore) $('add-btn').focus();
+  }
+  $('add-btn').addEventListener('click', function () { pop.hidden ? openPop() : closePop(true); });
+  pop.addEventListener('click', function (e) {
+    var r = e.target.closest('.menu-row'); if (!r) return;
+    var id = r.getAttribute('data-id'); shortcuts.push(id);
+    closePop(false); renderShortlist();
+    say(byId(id).label + ' added to Home');
+    var row = $('shortlist').querySelector('[data-id="' + id + '"] .icon-btn'); if (row) row.focus();
+  });
+  pop.addEventListener('keydown', function (e) {
+    var it = popItems(), i = it.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); it[(i + 1) % it.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); it[(i - 1 + it.length) % it.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); it[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); it[it.length - 1].focus(); }
+    else if (e.key === 'Tab') { closePop(false); }
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (!pop.hidden && !pop.contains(e.target) && !$('add-btn').contains(e.target)) closePop(false);
+  });
+
+  /* ---------- Show everything again: clears hidden items only, at once, no confirm ---------- */
+  $('reset-btn').addEventListener('click', function () {
+    CARDS.forEach(function (c) { c.on = true; });
+    startMyDay = true;
+    syncSwitches(); syncEmpty(); renderHome();
+    say('Every card is back on Home');
+  });
+
+  /* ---------- Open / close ---------- */
+  function openPanel() {
+    dock.hidden = false; openBtn.setAttribute('aria-pressed', 'true');
+    syncInert();
+    $('dock-title').focus();
+  }
+  function closePanel() {
+    closePop(false);
+    dock.hidden = true; openBtn.setAttribute('aria-pressed', 'false'); syncInert();
+    openBtn.focus();
+  }
+  function syncInert() {
+    var floating = isOpen() && isNarrow();
+    var s = $('sheet'); if (floating) s.setAttribute('inert', ''); else s.removeAttribute('inert');
+    $('veil').setAttribute('data-open', String(floating));
+  }
+  openBtn.addEventListener('click', function () { if (isOpen()) closePanel(); else openPanel(); });
+  $('dock-close').addEventListener('click', closePanel);
+  $('veil').addEventListener('click', closePanel);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !isOpen()) return;
+    if (!pop.hidden) { e.preventDefault(); closePop(true); return; }
+    if (!isNarrow()) return; // docked: only Close closes it (as This chat)
+    e.preventDefault(); closePanel();
+  });
+
+  /* ---------- Mock controls ---------- */
+  function setWidth(narrow) {
+    frame.setAttribute('data-narrow', narrow);
+    $('mc-wide').setAttribute('aria-pressed', !narrow); $('mc-narrow').setAttribute('aria-pressed', narrow);
+    closePop(false); syncInert();
+  }
+  $('mc-wide').addEventListener('click', function () { setWidth(false); });
+  $('mc-narrow').addEventListener('click', function () { setWidth(true); });
+  window.addEventListener('resize', function () { closePop(false); syncInert(); });
+  $('mc-noads').addEventListener('change', function (e) {
+    noAds = e.target.checked; buildSwitches(); renderHome(); syncEmpty();
+  });
+  $('mc-empty').addEventListener('change', function (e) {
+    if (e.target.checked) { stash = CARDS.map(function (c) { return c.on; }); CARDS.forEach(function (c) { c.on = false; }); }
+    else { CARDS.forEach(function (c, i) { c.on = stash ? stash[i] : true; }); }
+    syncSwitches(); renderHome();
+    say(e.target.checked ? 'All cards hidden from Home' : 'Cards restored');
+  });
+
+  hydrate(document);
+  buildSwitches(); renderShortlist(); syncEmpty();
+})();
+
+</script>
+</body>
+</html>

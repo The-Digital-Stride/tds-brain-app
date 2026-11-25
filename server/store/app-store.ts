@@ -13,11 +13,17 @@ import {
   FAVOURITE_FILES_MAX,
   FAVOURITE_TODOS_MAX,
   FILE_ID_MAX,
+  HOME_HIDDEN_MAX,
+  HOME_ITEM_ID_PATTERN,
+  HOME_SHORTCUTS_MAX,
+  type HomeShortcut,
+  homeShortcutKey,
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
   SECTION_ID_PATTERN,
   SECTIONS_MAX,
   SESSION_UUID_PATTERN,
+  SKILL_NAME_PATTERN,
   TODO_KEY_MAX,
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
@@ -66,6 +72,46 @@ function cleanFavouriteFiles(v: unknown): string[] | undefined {
     if (typeof x === 'string' && x !== '' && x.length <= FILE_ID_MAX) seen.add(x);
   }
   return [...seen].slice(-FAVOURITE_FILES_MAX);
+}
+
+/** Hidden Home item ids once each, first wins, kept by pattern only so an id from a newer app survives. */
+function cleanHomeHidden(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const seen = new Set<string>();
+  for (const x of v) {
+    if (typeof x === 'string' && HOME_ITEM_ID_PATTERN.test(x)) seen.add(x);
+  }
+  return [...seen].slice(0, HOME_HIDDEN_MAX);
+}
+
+/** One shortcut, rebuilt from known fields only; undefined for an unknown kind or a field outside its pattern. */
+function cleanHomeShortcut(v: unknown): HomeShortcut | undefined {
+  if (!isRecord(v)) return undefined;
+  if (v.kind === 'skill') {
+    return typeof v.name === 'string' && SKILL_NAME_PATTERN.test(v.name)
+      ? { kind: 'skill', name: v.name }
+      : undefined;
+  }
+  if (v.kind === 'tool') {
+    return typeof v.section === 'string' &&
+      SECTION_ID_PATTERN.test(v.section) &&
+      typeof v.tool === 'string' &&
+      SECTION_ID_PATTERN.test(v.tool)
+      ? { kind: 'tool', section: v.section, tool: v.tool }
+      : undefined;
+  }
+  return undefined;
+}
+
+/** Home shortcuts once each by key, first wins, in order, at most HOME_SHORTCUTS_MAX. */
+function cleanHomeShortcuts(v: unknown): HomeShortcut[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const byKey = new Map<string, HomeShortcut>();
+  for (const x of v) {
+    const s = cleanHomeShortcut(x);
+    if (s && !byKey.has(homeShortcutKey(s))) byKey.set(homeShortcutKey(s), s);
+  }
+  return [...byKey.values()].slice(0, HOME_SHORTCUTS_MAX);
 }
 
 const SEEN_KEY_MAX = TODO_KEY_MAX;
@@ -202,6 +248,8 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     favouriteChats: cleanFavouriteChats(o.favouriteChats) ?? [...(base.favouriteChats ?? [])],
     favouriteTodos: cleanFavouriteTodos(o.favouriteTodos) ?? [...(base.favouriteTodos ?? [])],
     favouriteFiles: cleanFavouriteFiles(o.favouriteFiles) ?? [...(base.favouriteFiles ?? [])],
+    homeHidden: cleanHomeHidden(o.homeHidden) ?? [...(base.homeHidden ?? [])],
+    homeShortcuts: cleanHomeShortcuts(o.homeShortcuts) ?? (base.homeShortcuts ?? []).map((s) => ({ ...s })),
     tourSeen:
       o.tourSeen === null ||
       (Number.isInteger(o.tourSeen) && (o.tourSeen as number) >= 1 && (o.tourSeen as number) <= 1000)

@@ -941,3 +941,109 @@ describe('Home: moving the cards', () => {
     });
   });
 });
+
+describe('Home: choosing what shows', () => {
+  const order = () =>
+    [...document.querySelectorAll('.home-tray > section h2')].map((h) => h.textContent?.trim());
+  const KEY = 'tds.home.cardOrder.v1:sam-example';
+  const withPrefs = (extra: Record<string, unknown>, more: Record<string, unknown> = {}) =>
+    api.bootstrap.mockResolvedValue({ ...boot, ...more, prefs: { ...boot.prefs, ...extra } });
+
+  it('a hidden card disappears, and the grip counts only the cards shown', async () => {
+    withPrefs({ homeHidden: ['chats', 'files'], homeShortcuts: [] });
+    await renderHome();
+    await card('Pinned tasks').findByText('Write the call tracking case');
+    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned skills']);
+    expect(screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 3' })).toBeTruthy();
+  });
+
+  it('hiding a card keeps the saved order for when it comes back', async () => {
+    localStorage.setItem(KEY, JSON.stringify(['skills', 'files', 'chats']));
+    withPrefs({ homeHidden: ['files'], homeShortcuts: [] });
+    await renderHome();
+    await waitFor(() =>
+      expect(order()).toEqual(['Pinned skills', 'Pinned chats', 'Meetings', 'Pinned tasks']),
+    );
+    expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual(['skills', 'files', 'chats']);
+  });
+
+  it('does not look up pinned files while that card is hidden', async () => {
+    withPrefs({ homeHidden: ['files'], homeShortcuts: [], favouriteFiles: ['a'] });
+    await renderHome();
+    await card('Pinned tasks').findByText('Write the call tracking case');
+    expect(api.libraryItems).not.toHaveBeenCalled();
+  });
+
+  it('keeps Start my day hidden when it is hidden', async () => {
+    withPrefs(
+      { homeHidden: ['start-my-day'], homeShortcuts: [] },
+      { skills: [...boot.skills, skill('gm', 'Good morning')] },
+    );
+    await renderHome();
+    expect(screen.queryByRole('button', { name: 'Start my day' })).toBeNull();
+  });
+
+  it('has no Customise Home toggle when the server is older (no homeHidden)', async () => {
+    await renderHome();
+    expect(screen.queryByRole('button', { name: 'Customise Home' })).toBeNull();
+  });
+
+  it('has the Customise Home toggle when the server sends homeHidden', async () => {
+    withPrefs({ homeHidden: [], homeShortcuts: [] });
+    await renderHome();
+    expect(screen.getByRole('button', { name: 'Customise Home' })).toBeTruthy();
+  });
+
+  it('says how many cards are hidden, with a button that opens the panel', async () => {
+    withPrefs({ homeHidden: ['chats', 'files'], homeShortcuts: [] });
+    await renderHome();
+    expect(await screen.findByText('2 cards hidden.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show hidden cards' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
+  });
+
+  it('says "1 card hidden." in the singular, and does not count Ads without access', async () => {
+    withPrefs({ homeHidden: ['chats', 'ads'], homeShortcuts: [] });
+    await renderHome();
+    expect(await screen.findByText('1 card hidden.')).toBeTruthy();
+  });
+
+  it('says so when every card is hidden', async () => {
+    withPrefs({ homeHidden: ['meetings', 'todos', 'chats', 'files', 'skills'], homeShortcuts: [] });
+    await renderHome();
+    expect(await screen.findByText('Your Home has no cards. Customise Home to add some.')).toBeTruthy();
+  });
+
+  it('shows a ready skill shortcut, which opens the skill without running it, and hides a gone one', async () => {
+    withPrefs({
+      homeHidden: [],
+      homeShortcuts: [
+        { kind: 'skill', name: 'standup' },
+        { kind: 'skill', name: 'removed-skill' },
+      ],
+    });
+    await renderHome();
+    await screen.findByRole('button', { name: 'Standup' });
+    const row = within(document.querySelector('.home-shortcuts') as HTMLElement);
+    expect(row.getByRole('button', { name: 'Standup' })).toBeTruthy();
+    expect(row.queryByRole('button', { name: /removed-skill/ })).toBeNull();
+    fireEvent.click(row.getByRole('button', { name: 'Standup' }));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('has no shortcut row when there is nothing to show', async () => {
+    withPrefs({ homeHidden: [], homeShortcuts: [] });
+    await renderHome();
+    expect(document.querySelector('.home-shortcuts')).toBeNull();
+  });
+
+  it('lets a lone last card fill the row only with an odd count of shown cards', async () => {
+    await renderHome();
+    const tray = () => document.querySelector('.home-tray');
+    expect(tray()?.getAttribute('data-odd')).toBe('true');
+    cleanup();
+    withPrefs({ homeHidden: ['files'], homeShortcuts: [] });
+    await renderHome();
+    expect(tray()?.getAttribute('data-odd')).toBe('false');
+  });
+});

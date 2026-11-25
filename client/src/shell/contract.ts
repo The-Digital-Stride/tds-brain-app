@@ -77,6 +77,12 @@ export interface ShellState {
   viewerWidth: number | null;
   /** The width the person dragged the chat drawer to, in px, or null for its default. Saved, like `viewerWidth`. */
   chatDrawerWidth: number | null;
+  /**
+   * The Customise Home panel is open in the right dock (plan 2026-11-25-home-card-library, decision 15). Never saved,
+   * and separate from `panelOpen` (This chat's), which opening it leaves alone. It shows only while Home is on the
+   * sheet; whatever closes the right panel (`set-panel` false, the docks giving way, a resize, leaving Home) shuts it.
+   */
+  homeCustomiseOpen: boolean;
 }
 
 /**
@@ -145,7 +151,10 @@ export type ShellAction =
   /** Closes Help and reopens the drawer it replaced, if any. Does nothing when Help is not open. */
   | { type: 'close-help' }
   | { type: 'toggle-panel' }
+  /** `open: false` also shuts Customise Home. */
   | { type: 'set-panel'; open: boolean }
+  /** Opens or shuts Customise Home (`homeCustomiseOpen`); `panelOpen` is left as it is. */
+  | { type: 'set-customise-home'; open: boolean }
   | { type: 'set-panel-tab'; tab: PanelTab }
   /**
    * Opens the panel on the Files tab showing `key` of chat `chat` (null: the Files list). Used by
@@ -209,7 +218,7 @@ export type ShellAction =
 export type ShellReducer = (state: ShellState, action: ShellAction) => ShellState;
 /** Reads what was saved. Anything missing, malformed or of the wrong type falls back to the default. */
 export type LoadShell = (raw: string | null) => ShellState;
-/** The saved part of the state as JSON: everything except `paletteOpen`, `panelFile` and `viewer`. */
+/** The saved part of the state as JSON: everything except `paletteOpen`, `panelFile`, `viewer` and `homeCustomiseOpen`. */
 export type SaveShell = (state: ShellState) => string;
 export const SHELL_STORAGE_KEY = 'tds-brain-shell';
 
@@ -250,6 +259,17 @@ export interface ShellApi {
    * first, through its own hold), then the right panel, then the sheet form.
    */
   guardLeave: (go: () => void) => void;
+  /**
+   * Home is on the sheet (a new chat with nothing live, or a page that falls back to Home). There the sheet bar's panel
+   * toggle opens Customise Home, never This chat.
+   */
+  onHome: boolean;
+  /** `state.homeCustomiseOpen`: the Customise Home panel is open (plan 2026-11-25-home-card-library, decision 15). */
+  homeCustomiseOpen: boolean;
+  /** Opens Customise Home in the right dock, on Home only. `panelOpen` is left alone. */
+  openCustomiseHome: () => void;
+  /** Shuts it; the dock hands focus back to the button that opened it. */
+  closeCustomiseHome: () => void;
 }
 
 /** An unsaved-work hold (the right panel's or the sheet form's). */
@@ -290,7 +310,8 @@ export interface KeyContext {
  * `client/src/state/keys.ts`. The shell action a key press means, or null to leave it alone.
  * - Cmd+K or Ctrl+K: toggle the palette, even while typing.
  * - While the file viewer shows: Esc closes it, and no other key does anything to the desk behind it.
- * - Esc: shut the palette; else close a floating panel; else hide the chat drawer (nothing at all while its
+ * - Esc: shut the palette; else close a floating panel (Customise Home with `set-customise-home`, so This chat's
+ *   `panelOpen` is kept); else hide the chat drawer (nothing at all while its
  *   message box holds text); else close the open drawer; else null.
  *   One thing per press. A pushing panel never closes on Esc.
  *

@@ -46,6 +46,8 @@ const prefs = {
   favouriteTodos: [],
   favouriteChats: [],
   favouriteFiles: [],
+  homeHidden: [],
+  homeShortcuts: [],
   tourSeen: null as number | null,
 };
 const boot = {

@@ -1831,6 +1831,79 @@ describe('validatePrefsPatch: todoSeen', () => {
   });
 });
 
+describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
+  const brain = { clients: async () => [] };
+  const skill = { kind: 'skill', name: 'meeting-notes' };
+  const tool = { kind: 'tool', section: 'workbench', tool: 'ads' };
+
+  it('accepts valid lists and removes repeats, first wins', async () => {
+    expect(await validatePrefsPatch({ homeHidden: ['files', 'due-this-week', 'files'] }, brain)).toEqual({
+      homeHidden: ['files', 'due-this-week'],
+    });
+    expect(await validatePrefsPatch({ homeHidden: [], homeShortcuts: [] }, brain)).toEqual({
+      homeHidden: [],
+      homeShortcuts: [],
+    });
+    expect(
+      await validatePrefsPatch({ homeShortcuts: [skill, tool, { ...skill }, { ...tool }] }, brain),
+    ).toEqual({
+      homeShortcuts: [skill, tool],
+    });
+  });
+
+  it('refuses each bad hidden list with a clear message', async () => {
+    const bad: unknown[] = [
+      'files',
+      { 0: 'files' },
+      [3],
+      [''],
+      ['Files'],
+      ['has space'],
+      ['x'.repeat(41)],
+      Array.from({ length: 41 }, (_, i) => `item-${i}`),
+    ];
+    for (const homeHidden of bad) {
+      await expect(
+        validatePrefsPatch({ homeHidden }, brain),
+        JSON.stringify(homeHidden).slice(0, 40),
+      ).rejects.toThrow('The hidden Home items were not understood.');
+    }
+    const max = Array.from({ length: 40 }, (_, i) => `item-${i}`);
+    expect(await validatePrefsPatch({ homeHidden: max }, brain)).toEqual({ homeHidden: max });
+  });
+
+  it('refuses each bad shortcut list with a clear message', async () => {
+    const seven = Array.from({ length: 7 }, (_, i) => ({ kind: 'skill', name: `skill-${i}` }));
+    const bad: unknown[] = [
+      'nope',
+      [null],
+      ['skill:gm'],
+      [{ kind: 'file', name: 'x' }],
+      [{ name: 'gm' }],
+      [{ kind: 'skill' }],
+      [{ kind: 'skill', name: '' }],
+      [{ kind: 'skill', name: '-bad' }],
+      [{ kind: 'skill', name: 'x'.repeat(129) }],
+      [{ kind: 'skill', name: 3 }],
+      [{ kind: 'tool', section: 'workbench' }],
+      [{ kind: 'tool', tool: 'ads' }],
+      [{ kind: 'tool', section: 'Work Bench', tool: 'ads' }],
+      [{ kind: 'tool', section: 'workbench', tool: 'ads!' }],
+      [{ kind: 'tool', section: 'workbench', tool: 3 }],
+      seven,
+    ];
+    for (const homeShortcuts of bad) {
+      await expect(
+        validatePrefsPatch({ homeShortcuts }, brain),
+        JSON.stringify(homeShortcuts).slice(0, 60),
+      ).rejects.toThrow('The Home shortcuts were not understood.');
+    }
+    expect(await validatePrefsPatch({ homeShortcuts: seven.slice(0, 6) }, brain)).toEqual({
+      homeShortcuts: seven.slice(0, 6),
+    });
+  });
+});
+
 describe('validatePrefsPatch: model and effort', () => {
   const brain = { clients: async () => [] };
 

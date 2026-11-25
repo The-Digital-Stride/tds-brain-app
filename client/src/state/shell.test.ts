@@ -5,6 +5,7 @@ import {
   DEFAULT_SHELL,
   dockModes,
   fitToWidth,
+  followHome,
   giveWay,
   layoutOf,
   loadShell,
@@ -164,6 +165,7 @@ describe('saveShell', () => {
       section: null,
       helpPage: null,
       helpOpened: 0,
+      homeCustomiseOpen: false,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
@@ -578,5 +580,98 @@ describe('section drawer', () => {
     );
     expect(back.drawer).toBeNull();
     expect(back.section).toBeNull();
+  });
+});
+
+describe('Customise Home (plan 2026-11-25-home-card-library, decision 15)', () => {
+  const closed = { ...base, railWide: false };
+  const open = { ...closed, homeCustomiseOpen: true };
+  const show = { type: 'set-customise-home', open: true } as const;
+
+  it('starts shut, and opening it leaves panelOpen untouched', () => {
+    expect(DEFAULT_SHELL.homeCustomiseOpen).toBe(false);
+    expect(shellReducer(closed, show)).toMatchObject({ homeCustomiseOpen: true, panelOpen: false });
+    expect(shellReducer({ ...closed, panelOpen: true }, show)).toMatchObject({
+      homeCustomiseOpen: true,
+      panelOpen: true,
+    });
+    expect(shellReducer(open, { type: 'set-customise-home', open: false })).toMatchObject({
+      homeCustomiseOpen: false,
+      panelOpen: false,
+    });
+  });
+
+  it('set-panel false shuts it too', () => {
+    expect(shellReducer(open, { type: 'set-panel', open: false }).homeCustomiseOpen).toBe(false);
+    expect(shellReducer({ ...open, panelOpen: true }, { type: 'set-panel', open: false })).toMatchObject({
+      homeCustomiseOpen: false,
+      panelOpen: false,
+    });
+  });
+
+  it('is never saved, and always loads shut', () => {
+    const saved = JSON.parse(saveShell(open)) as Record<string, unknown>;
+    expect(saved).not.toHaveProperty('homeCustomiseOpen');
+    expect(loadShell(JSON.stringify({ ...saved, homeCustomiseOpen: true })).homeCustomiseOpen).toBe(false);
+  });
+
+  it('give-way: opening a drawer shuts it when it would then float', () => {
+    const drawer = { type: 'toggle-drawer', drawer: 'chats' } as const;
+    expect(giveWay(open, drawer, 1399)).toMatchObject({ drawer: 'chats', homeCustomiseOpen: false });
+    expect(giveWay(open, drawer, 1400)).toMatchObject({ drawer: 'chats', homeCustomiseOpen: true });
+  });
+
+  it('give-way: opening it closes the drawer when it could push without it, and floats under 1100px', () => {
+    const drawerOpen = { ...closed, drawer: 'todos' as const };
+    expect(giveWay(drawerOpen, show, 1200)).toMatchObject({
+      drawer: null,
+      homeCustomiseOpen: true,
+      panelOpen: false,
+    });
+    expect(giveWay(drawerOpen, show, 1099)).toMatchObject({ drawer: 'todos', homeCustomiseOpen: true });
+    expect(giveWay(drawerOpen, show, 1400)).toMatchObject({ drawer: 'todos', homeCustomiseOpen: true });
+  });
+
+  it('fit-to-width: a resize that makes a dock float shuts it', () => {
+    const both = { ...open, drawer: 'todos' as const };
+    expect(fitToWidth(both, 1399)).toMatchObject({
+      drawer: 'todos',
+      homeCustomiseOpen: false,
+      panelOpen: false,
+    });
+    expect(fitToWidth(both, 1400)).toBe(both);
+    expect(fitToWidth(open, 800)).toBe(open);
+  });
+
+  it('leaving Home shuts it; staying on Home leaves it alone', () => {
+    expect(followHome(open, false).homeCustomiseOpen).toBe(false);
+    expect(followHome(open, true)).toBe(open);
+    expect(followHome(closed, false)).toBe(closed);
+  });
+
+  it('layout: on Home it is a panel wanted, with the same rules as This chat', () => {
+    const home = { liveOnSheet: false, railOverride: false, onHome: true };
+    const wide = { ...open, railWide: true };
+    const l = layoutOf(wide, 1500, home);
+    expect(l.panelShowing).toBe(true);
+    expect(l.railHeld).toBe(true);
+    expect(l.panelModal).toBe(false);
+    // Under 1100px it floats over Home instead of squeezing it.
+    expect(layoutOf(open, 1099, home)).toMatchObject({ panelShowing: true, panelModal: true });
+    // Behind a floating drawer it is not showing.
+    expect(layoutOf({ ...open, drawer: 'todos' }, 800, home).panelShowing).toBe(false);
+  });
+
+  it('layout: off Home it never shows, and panelOpen alone never shows it on Home', () => {
+    expect(
+      layoutOf(open, 1500, { liveOnSheet: false, railOverride: false, onHome: false }).panelShowing,
+    ).toBe(false);
+    expect(
+      layoutOf({ ...closed, panelOpen: true }, 1500, {
+        liveOnSheet: false,
+        railOverride: false,
+        onHome: true,
+      }).panelShowing,
+    ).toBe(false);
   });
 });

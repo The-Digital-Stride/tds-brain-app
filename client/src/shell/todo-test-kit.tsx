@@ -51,6 +51,10 @@ export function useFakeShell(): ShellApi {
     guardPanel: (run) => run(),
     sheetHold: noHold,
     guardLeave: (go) => go(),
+    onHome: false,
+    homeCustomiseOpen: false,
+    openCustomiseHome() {},
+    closeCustomiseHome() {},
   };
 }
 

@@ -14,6 +14,8 @@ import type {
   AppPrefs,
   Bootstrap,
   ChatKind,
+  HomeItemId,
+  HomeShortcut,
   LibraryItem,
   PastSession,
   SequencedEvent,
@@ -30,6 +32,8 @@ import {
   FAVOURITE_CHATS_MAX,
   FAVOURITE_FILES_MAX,
   FAVOURITE_TODOS_MAX,
+  HOME_SHORTCUTS_MAX,
+  homeShortcutKey,
   STREAM_PING_EVENT,
   STREAM_STALL_MS,
 } from '../../shared/contract.ts';
@@ -44,8 +48,9 @@ import { type SettingsTab, settingsTabForFocus } from './shell/settings-tabs.ts'
 import { UNDO_MS } from './shell/UndoLine.tsx';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
-import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
+import { useFavouriteList } from './state/favourite-list.ts';
 import type { ListState } from './state/health.ts';
+import { type PrefListField, prefStamp, usePrefList } from './state/pref-list.ts';
 import { projectsStore } from './state/projects.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
@@ -454,6 +459,24 @@ export interface Store {
    * `toggleFavouriteChat`. Starred files are "Favourite files" on Home.
    */
   toggleFavouriteFile: (id: string) => Promise<void>;
+  /**
+   * The Home items this person hid (plan 2026-11-25-home-card-library). Always an array once booted; undefined means an
+   * older server that keeps no Home layout, so "Customise Home" is hidden.
+   */
+  homeHidden: readonly string[] | undefined;
+  /** The shortcut buttons this person added to Home, in order. Undefined on an older server, as `homeHidden`. */
+  homeShortcuts: readonly HomeShortcut[] | undefined;
+  /**
+   * Shows or hides one Home item. Home changes at once and the save follows; the newest choice wins a quick double
+   * toggle, and a failed save puts back the saved list and shows in `actionError`. The same for the three below.
+   */
+  setHomeItemShown: (id: HomeItemId, shown: boolean) => void;
+  /** Adds a shortcut at the end. Ignored when one with the same `homeShortcutKey` is there, or at HOME_SHORTCUTS_MAX. */
+  addHomeShortcut: (shortcut: HomeShortcut) => void;
+  /** Removes the shortcut with this `homeShortcutKey`. */
+  removeHomeShortcut: (key: string) => void;
+  /** "Show everything again" (decision 14): no Home item hidden. Shortcuts and card order are left alone. */
+  showAllHomeItems: () => void;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
   /** The part of `notice` that says a library file was deleted: the always-mounted status line speaks it. */
@@ -655,10 +678,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     else setGate((g) => (g === 'ready' ? g : 'unreachable'));
   }, []);
 
+  // Each saved list (favourites, Home layout) is kept as shown when this bootstrap began before its newest save, so a
+  // reload that crossed a save never undoes it (plan 2026-11-25-home-card-library, decision 7). The lists are made
+  // below, so they are reached through a ref.
+  const keepListsRef = useRef<(prefs: AppPrefs, begun: number) => AppPrefs>((prefs) => prefs);
   const loadBootstrap = useCallback(async () => {
     try {
+      const begun = prefStamp();
       const b = await api.bootstrap();
-      setBoot(b);
+      setBoot({ ...b, prefs: keepListsRef.current(b.prefs, begun) });
       setGate('ready');
     } catch (err) {
       failGate(err);
@@ -925,8 +953,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions, requestFocus, showNotice],
   );
 
-  // Favourites (chats and to-dos): one save engine per list, in `state/favourite-list.ts`.
-  const showFavourites = useCallback((field: FavouriteField, list: string[]) => {
+  // Favourites (chats, to-dos, files) and the Home layout: one save engine per list, in `state/pref-list.ts`.
+  const showFavourites = useCallback((field: PrefListField, list: readonly unknown[]) => {
     setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, [field]: list } } : b));
   }, []);
   const favouriteError = useCallback((err: unknown) => setActionError(messageOf(err)), []);
@@ -954,13 +982,69 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     show: showFavourites,
     onError: favouriteError,
   });
+  const hiddenList = usePrefList({
+    field: 'homeHidden',
+    current: boot?.prefs.homeHidden,
+    save: api.updatePrefs,
+    show: showFavourites,
+    onError: favouriteError,
+  });
+  const shortcutList = usePrefList({
+    field: 'homeShortcuts',
+    current: boot?.prefs.homeShortcuts,
+    save: api.updatePrefs,
+    show: showFavourites,
+    onError: favouriteError,
+  });
   const keepChatStars = chatFavourites.keep;
   const keepTodoStars = todoFavourites.keep;
   const keepFileStars = fileFavourites.keep;
-  /** A prefs reply for another setting, with each star list kept as shown while one of its saves is waiting. */
+  const keepHidden = hiddenList.keep;
+  const keepShortcuts = shortcutList.keep;
+  /**
+   * A prefs reply for another setting, with each saved list (the stars and the Home layout) kept as shown while one of
+   * its saves is waiting.
+   */
   const keepStars = useCallback(
-    (prefs: AppPrefs): AppPrefs => keepFileStars(keepTodoStars(keepChatStars(prefs))),
-    [keepChatStars, keepTodoStars, keepFileStars],
+    (prefs: AppPrefs): AppPrefs =>
+      keepShortcuts(keepHidden(keepFileStars(keepTodoStars(keepChatStars(prefs))))),
+    [keepChatStars, keepTodoStars, keepFileStars, keepHidden, keepShortcuts],
+  );
+  const bootLists = [chatFavourites, todoFavourites, fileFavourites, hiddenList, shortcutList];
+  keepListsRef.current = (prefs, begun) => bootLists.reduce((p, list) => list.keepBoot(p, begun), prefs);
+
+  const setHiddenList = hiddenList.set;
+  const setShortcutList = shortcutList.set;
+  const setHomeItemShown = useCallback(
+    (id: HomeItemId, shown: boolean) => {
+      void setHiddenList((hidden) => {
+        if (hidden.includes(id) !== shown) return null;
+        return shown ? hidden.filter((h) => h !== id) : [...hidden, id];
+      });
+    },
+    [setHiddenList],
+  );
+  const showAllHomeItems = useCallback(() => {
+    void setHiddenList((hidden) => (hidden.length === 0 ? null : []));
+  }, [setHiddenList]);
+  const addHomeShortcut = useCallback(
+    (shortcut: HomeShortcut) => {
+      const key = homeShortcutKey(shortcut);
+      void setShortcutList((list) =>
+        list.length >= HOME_SHORTCUTS_MAX || list.some((s) => homeShortcutKey(s) === key)
+          ? null
+          : [...list, shortcut],
+      );
+    },
+    [setShortcutList],
+  );
+  const removeHomeShortcut = useCallback(
+    (key: string) => {
+      void setShortcutList((list) =>
+        list.some((s) => homeShortcutKey(s) === key) ? list.filter((s) => homeShortcutKey(s) !== key) : null,
+      );
+    },
+    [setShortcutList],
   );
   const toggleFavouriteChat = chatFavourites.toggle;
   const toggleFavouriteTodo = todoFavourites.toggle;
@@ -1727,6 +1811,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleFavouriteChat,
       toggleFavouriteTodo,
       toggleFavouriteFile,
+      homeHidden: shownBoot?.prefs.homeHidden,
+      homeShortcuts: shownBoot?.prefs.homeShortcuts,
+      setHomeItemShown,
+      addHomeShortcut,
+      removeHomeShortcut,
+      showAllHomeItems,
       notice,
       fileNotice,
       run,
@@ -1812,6 +1902,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleFavouriteChat,
       toggleFavouriteTodo,
       toggleFavouriteFile,
+      setHomeItemShown,
+      addHomeShortcut,
+      removeHomeShortcut,
+      showAllHomeItems,
       notice,
       fileNotice,
       run,

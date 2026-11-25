@@ -234,21 +234,17 @@ describe('update routes', () => {
     expect(calls.start).toBe(0);
   });
 
-  it('sends notes to owners and scouts only; every role gets the rest', async () => {
-    for (const r of ['owner', 'scout']) {
-      role = r;
-      expect((await get(ROUTES.updateStatus)).json().notes).toEqual(NOTES);
-    }
-    for (const r of ['team', 'unknown']) {
+  it('sends notes to every role', async () => {
+    for (const r of ['owner', 'scout', 'team', 'unknown']) {
       role = r;
       for (const reply of [await get(ROUTES.updateStatus), await post(ROUTES.updateCheck, {})]) {
         expect(reply.status).toBe(200);
-        expect(reply.json().notes).toEqual([]);
+        expect(reply.json().notes).toEqual(NOTES);
         expect(reply.json().latest).toBe('0.9.0');
       }
       const started = await post(ROUTES.updateStart, { confirm: true });
       expect(started.status).toBe(202);
-      expect(started.json().notes).toEqual([]);
+      expect(started.json().notes).toEqual(NOTES);
     }
   });
 

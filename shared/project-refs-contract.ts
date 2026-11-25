@@ -70,7 +70,7 @@ export const MEETING_REFS_MAX = 20;
  *
  * Added to ProjectList:
  *   canRef?: boolean     canChange && the script answers PROJECTS_REFS_CAPABILITY. False/absent → no code buttons.
- *   canRefAll?: boolean  canRef && this person is the brain's Owner (identity.role 'owner'). The page shows
+ *   canRefAll?: boolean  canRef && this person is an owner or a scout. The page shows
  *                        "Give projects codes" only when this is true AND some live card has refState 'missing'.
  */
 export type ProjectRefState =

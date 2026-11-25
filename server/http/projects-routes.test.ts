@@ -713,8 +713,8 @@ describe('POST /api/projects/change', () => {
     expect(seen.changes).toEqual([]);
   });
 
-  it("refuses 'all' from anyone but the brain Owner before the brain runs it", async () => {
-    for (const role of ['scout', 'team'] as const) {
+  it("refuses 'all' from anyone but an owner or a scout before the brain runs it", async () => {
+    for (const role of ['team', 'unknown'] as const) {
       who = { ...sam, role };
       const r = await post(ROUTES.projectsChange, { kind: 'ref', all: true });
       expect(r.status, role).toBe(403);

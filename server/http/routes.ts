@@ -1477,8 +1477,12 @@ async function projectsRoute(
     if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
       throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
     // Project codes: a backfill of every card is the brain Owner's alone, refused before the script runs.
-    if (action.kind === 'ref' && action.all === true && who.role !== 'owner')
-      throw new HttpError(403, 'not-allowed', 'Only the brain Owner can give every project a code at once.');
+    if (action.kind === 'ref' && action.all === true && who.role !== 'owner' && who.role !== 'scout')
+      throw new HttpError(
+        403,
+        'not-allowed',
+        'Only an owner or a scout can give every project a code at once.',
+      );
     const chatEntry = action.kind === 'update' && action.entry.kind === 'chat' ? action.entry : null;
     const savedKey =
       chatEntry && action.kind === 'update' ? await checkChatSummarySave(ctx, action.key, chatEntry) : null;
@@ -2526,12 +2530,6 @@ async function updateRoute(
 ): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
   const updater = ctx.updater;
-  // Notes are the version history, so they follow the changelog's rule: owners and scouts only.
-  const shape = async (status: UpdateStatus): Promise<UpdateStatus> => {
-    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
-    const allowed = identity.role === 'owner' || identity.role === 'scout';
-    return allowed ? status : { ...status, notes: [] };
-  };
   try {
     if (path === ROUTES.updateStatus) {
       if (method !== 'GET') throw methodNotAllowed();
@@ -2545,12 +2543,12 @@ async function updateRoute(
       if (stale && !status.blocked) {
         updater.check().catch(() => {});
       }
-      sendJson(res, 200, await shape(status));
+      sendJson(res, 200, status);
       return;
     }
     if (path === ROUTES.updateCheck) {
       if (method !== 'POST') throw methodNotAllowed();
-      sendJson(res, 200, await shape(updater ? await updater.check() : noUpdaterStatus(ctx)));
+      sendJson(res, 200, updater ? await updater.check() : noUpdaterStatus(ctx));
       return;
     }
     if (method !== 'POST') throw methodNotAllowed();
@@ -2563,7 +2561,7 @@ async function updateRoute(
       throw new HttpError(400, 'bad-request', 'That request was not understood.');
     }
     if (!updater) throw new HttpError(403, 'not-allowed', "This copy of TDS Cortex can't update itself.");
-    sendJson(res, 202, await shape(await updater.start()));
+    sendJson(res, 202, await updater.start());
   } catch (err) {
     if (err instanceof UpdateRefused) {
       if (err.reason === 'busy') throw new HttpError(409, 'busy', 'An update is already running.');
@@ -2882,10 +2880,6 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
 
   if (path === ROUTES.changelog) {
     if (method !== 'GET') throw methodNotAllowed();
-    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
-    if (identity.role !== 'owner' && identity.role !== 'scout') {
-      throw new HttpError(403, 'not-allowed', 'The version history is for owners and scouts.');
-    }
     const body: ChangelogResponse = { versions: await safe(ctx.changelog(), []) };
     sendJson(res, 200, body);
     return;

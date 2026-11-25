@@ -239,7 +239,7 @@ export interface ProjectList {
   canAddArtifact?: boolean;
   /** R2 phase 4b: canChange && the script answers PROJECTS_REFS_CAPABILITY. False/absent → no code buttons. */
   canRef?: boolean;
-  /** R2 phase 4b: canRef && identity.role 'owner' (the brain's Owner). Gates "Give projects codes". */
+  /** R2 phase 4b: canRef && identity.role 'owner' or 'scout'. Gates "Give projects codes". */
   canRefAll?: boolean;
   /**
    * Chat summaries: canChange && the script answers PROJECTS_CHAT_SUMMARY_CAPABILITY (shared/chat-summary-contract.ts).

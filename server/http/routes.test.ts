@@ -1833,7 +1833,7 @@ describe('validatePrefsPatch: todoSeen', () => {
 
 describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
   const brain = { clients: async () => [] };
-  const skill = { kind: 'skill', name: 'meeting-notes' };
+  const place = { kind: 'place', place: 'projects' };
   const tool = { kind: 'tool', section: 'workbench', tool: 'ads' };
 
   it('accepts valid lists and removes repeats, first wins', async () => {
@@ -1845,10 +1845,16 @@ describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
       homeShortcuts: [],
     });
     expect(
-      await validatePrefsPatch({ homeShortcuts: [skill, tool, { ...skill }, { ...tool }] }, brain),
+      await validatePrefsPatch({ homeShortcuts: [place, tool, { ...place }, { ...tool }] }, brain),
     ).toEqual({
-      homeShortcuts: [skill, tool],
+      homeShortcuts: [place, tool],
     });
+  });
+
+  it('refuses a skill shortcut: Home shortcuts never hold a skill', async () => {
+    await expect(
+      validatePrefsPatch({ homeShortcuts: [{ kind: 'skill', name: 'seo-audit' }] }, brain),
+    ).rejects.toThrow('The Home shortcuts were not understood.');
   });
 
   it('accepts place and drawer shortcuts from the fixed lists, and refuses any other', async () => {
@@ -1893,7 +1899,11 @@ describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
   });
 
   it('refuses each bad shortcut list with a clear message', async () => {
-    const seven = Array.from({ length: 7 }, (_, i) => ({ kind: 'skill', name: `skill-${i}` }));
+    const seven = Array.from({ length: 7 }, (_, i) => ({
+      kind: 'tool',
+      section: 'workbench',
+      tool: `tool-${i}`,
+    }));
     const bad: unknown[] = [
       'nope',
       [null],

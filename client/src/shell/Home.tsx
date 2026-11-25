@@ -10,7 +10,6 @@ import {
 import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
-import { skillsMenuVisible } from '../help/visibility.ts';
 import { homeOrderKey } from '../state/card-order.ts';
 import { projectIfClientMatches } from '../state/chat-project.ts';
 import {
@@ -146,7 +145,7 @@ export function Home() {
     togglePin,
   } = useStore();
   const { dispatch, openCustomiseHome } = useShell();
-  const { sources: shortcutSources, hasGm, hasAds } = useHomeShortcuts();
+  const { sources: shortcutSources, hasGm, hasAds, hasSkills } = useHomeShortcuts();
   const clients = boot?.clients ?? [];
   const project = useProjectChoice();
   const { list: projectList } = useProjects();
@@ -268,7 +267,8 @@ export function Home() {
     { id: 'projects', title: 'Recent projects', shown: isShown('projects', homeHidden, projectsShown) },
     { id: 'chats', title: 'Pinned chats', shown: isShown('chats', homeHidden) },
     { id: 'files', title: 'Pinned files', shown: !filesHidden },
-    { id: 'skills', title: 'Pinned skills', shown: isShown('skills', homeHidden) },
+    // Owners and scouts only: the team doesn't start skills from Cortex's own buttons (Ian, 2026-11-25).
+    { id: 'skills', title: 'Pinned skills', shown: isShown('skills', homeHidden, hasSkills) },
   ];
   const shownCards = cardList.filter((c) => c.shown);
   const order = useCardOrder(
@@ -348,13 +348,15 @@ export function Home() {
       return r.state === 'ready' ? [{ key: r.key, label: r.label, run: r.run }] : [];
     }),
   ];
-  // Cards a person could see if shown: Ads only with access, Recent projects only once there are some.
+  // Cards a person could see if shown: Ads only with access, Recent projects only once there are some, Pinned
+  // skills only for owners and scouts.
   const hiddenCount = cardList.filter(
     (c) =>
       !c.shown &&
       (homeHidden ?? []).includes(c.id) &&
       (c.id !== 'ads' || hasAds) &&
-      (c.id !== 'projects' || projectsShown),
+      (c.id !== 'projects' || projectsShown) &&
+      (c.id !== 'skills' || hasSkills),
   ).length;
 
   const loaded = todos !== null && sessions !== null;
@@ -899,17 +901,16 @@ export function Home() {
                     <div className="card-head">
                       {order.grip('skills', skillsTitle)}
                       <h2 id="home-skills">{skillsTitle}</h2>
-                      {skillsMenuVisible(boot?.identity.role ?? 'unknown') ? (
-                        <button
-                          type="button"
-                          className="btn"
-                          data-variant="quiet"
-                          data-size="small"
-                          onClick={() => openDrawer('skills')}
-                        >
-                          All skills
-                        </button>
-                      ) : null}
+                      {/* The card is only drawn for owners and scouts, who have the Skills drawer. */}
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        onClick={() => openDrawer('skills')}
+                      >
+                        All skills
+                      </button>
                     </div>
                     {skillRows.length === 0 ? (
                       <StateNote kind="empty">Pin a skill to keep it here.</StateNote>

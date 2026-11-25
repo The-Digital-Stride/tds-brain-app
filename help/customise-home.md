@@ -13,7 +13,7 @@ reviewed: 2026-11-25
 
 ## What it does
 
-**Customise Home** lets you choose what shows on your Home. You can hide cards and buttons you don't use. You can also add shortcut buttons that start a skill, or open a tool, a place or a drawer, in one click. Only you see your choices.
+**Customise Home** lets you choose what shows on your Home. You can hide cards and buttons you don't use. You can also add shortcut buttons that open a tool, a place or a drawer in one click. Only you see your choices.
 
 ## Why it helps
 
@@ -25,7 +25,7 @@ reviewed: 2026-11-25
 
 1. On Home, press the panel icon at the top right. Its name is **Customise Home**.
 2. Under **Cards and buttons**, switch a card off to hide it. Switch it on to bring it back. Home changes as you go.
-3. Under **Shortcuts**, press **Add a shortcut**. Pick a skill, a tool, a place such as **Projects**, or a drawer such as **Tasks**. You can have 6.
+3. Under **Shortcuts**, press **Add a shortcut**. Pick a place such as **Projects**, a drawer such as **Tasks**, or a tool. You can have 6.
 4. Press the cross beside a shortcut to remove it.
 5. Press **Show everything again** to bring back every hidden card. Your shortcuts stay.
 
@@ -33,9 +33,10 @@ reviewed: 2026-11-25
 
 - When cards are hidden, the foot of Home says how many. Press **Show hidden cards** to open the panel.
 - Some cards only show when they have something in them, such as **Ads approvals**. The panel says when each one shows.
-- If a shortcut's skill or tool is no longer in your Brain, Home hides it. The panel says "No longer in your Brain".
+- Shortcuts never start a skill. To use a skill, ask Claude in a chat.
+- If a shortcut's tool is no longer in your Brain, Home hides it. The panel says "No longer in your Brain".
 - Your choices are kept with your app on this computer.
 
 ## Try this
 
-Hide a card you rarely use, then add a shortcut to a skill you run most days.
+Hide a card you rarely use, then add a shortcut to the place you open most days.

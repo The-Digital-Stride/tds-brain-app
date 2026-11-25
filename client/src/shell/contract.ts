@@ -675,7 +675,10 @@ export interface SearchContext {
   clients: ClientInfo[];
   /** Help is switched on for this person's role: "Go to" lists Help. Missing means no. */
   helpVisible?: boolean;
-  /** The Skills drawer is not this person's (`skillsMenuVisible`): "Go to" leaves it out. Missing means shown. */
+  /**
+   * The Skills drawer is not this person's (`skillsMenuVisible`): "Go to" leaves it out and the Skills group finds
+   * nothing. Missing means shown.
+   */
   skillsHidden?: boolean;
   /** The team skill levels are on for this person: "Go to" lists the Skill levels tab. Missing means no. */
   hasSkillLevels?: boolean;

@@ -85,7 +85,4 @@
   .ch-pop .menu-row {
     font-size: var(--fs-control);
   }
-  .ch-pop .menu-row .meta {
-    font-size: var(--fs-small);
-  }
 }

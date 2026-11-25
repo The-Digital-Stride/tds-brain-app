@@ -85,7 +85,8 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 - A failed pinned-files lookup shows a message but doesn't retry until a star or the library changes.
 - With two tabs open, the last change to hidden items or shortcuts wins (the same gap as favourites).
 - Going back to an older version forgets the Home set-up: an older app drops `homeHidden` and `homeShortcuts` on its next settings save, so everything shows again.
-- Going back to v0.85 or v0.86 keeps skill and tool shortcuts but drops place and drawer ones, which those versions don't know.
+- Going back to v0.85 or v0.86 keeps tool shortcuts but drops place and drawer ones, which those versions don't know.
+- Shortcuts never hold a skill (Ian, 2026-11-25): v0.87.1 drops any saved skill shortcut on read and refuses one on save. Starting a skill from Cortex's own buttons (the Skills drawer, the Pinned skills card, search) is for owners and scouts only (`skillsMenuVisible`); everyone can still ask in a chat. A new way to start a skill must check `skillsMenuVisible` too.
 - An older server sends neither field, so Customise Home is hidden until the server updates.
 - A save sent a moment before a page reload begins, which the server reads before it writes, can show the old list
   until the next change (`pref-list.ts` `keepBoot`; about a millisecond on a local server, accepted).

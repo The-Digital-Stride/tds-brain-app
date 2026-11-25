@@ -29,7 +29,7 @@ Under the message box, Home shows cards for the things you have pinned. You pin 
 4. Click a row to open it. A task opens in the task panel, where **Start a chat** or **Open chat** takes you to its chat. A file opens in the viewer.
 5. Press **All tasks**, **All chats** or **All files** to see the full lists.
 
-![Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and pinned cards.](images/home-overview.webp)
+![Home in TDS Cortex, with the Start my day button, the message box, the Chat for picker, and the Meetings, Recent projects and pinned cards.](images/home-overview.webp)
 
 ## Good to know
 

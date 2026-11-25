@@ -117,7 +117,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'cards',
     anchor: '.home-tray .card-head',
     title: 'Cards on Home',
-    text: 'Your meetings and pinned tasks, chats and files show here. Drag a card by its grip to put them in your order.',
+    text: 'Your meetings, recent projects and pinned tasks, chats and files show here. Drag a card by its grip to put them in your order.',
   },
   {
     id: 'search',

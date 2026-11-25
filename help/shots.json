@@ -13,7 +13,7 @@
         "target": ".home-composer .client-select"
       }
     ],
-    "alt": "Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and pinned cards."
+    "alt": "Home in TDS Cortex, with the Start my day button, the message box, the Chat for picker, and the Meetings, Recent projects and pinned cards."
   },
   {
     "id": "home-start",

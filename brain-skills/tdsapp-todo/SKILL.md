@@ -3,7 +3,7 @@ name: tdsapp-todo
 description: Change a loose to-do in todo/ the way the Workbench does, with its known weak spots fixed - add one (for someone or open to anyone, or a private one in personal/todo/), edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, tick it off, move it between TDS and personal, put it in a project (with a stage), or link a library file to it (or unlink one) - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off", "make that personal", "add a personal to-do", "attach the quote to that to-do", "link the logo to the to-do", "take that file off the to-do", "put that to-do in the website project", "move it to the Build stage". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
 version: 0.6
 last_updated: 2026-11-21
-roles: owner, scout
+roles: owner, scout, team
 maturity: draft
 members: false
 agency: true
@@ -16,8 +16,7 @@ frontmatter, same error messages. The TDS Brain app uses it for its to-do contro
 here or in the app comes out the same. It was called `todo` until version 0.3; the `todo` skill is now
 a stand-in that runs this one.
 
-It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to
-the team. The weak spots it fixes are listed in `os/tds-brain-app/change-requests.md` (BCR-01 to 17).
+Released to the whole team for the first release (Ian, 2026-11-25). The weak spots it fixes are listed in `os/tds-brain-app/change-requests.md` (BCR-01 to 17).
 The Workbench still has them until it's changed too.
 
 ## How to run it

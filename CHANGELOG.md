@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.87.0 — 2026-11-25
+
+- **feat**: Home shortcuts can open a place or a drawer
+- **fix**: short shortcut groups first; panel hint names places and drawers
+
 ## v0.86.0 — 2026-11-25
 
 - **feat**: email threads find their project and show as one row

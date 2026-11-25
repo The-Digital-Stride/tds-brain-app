@@ -35,6 +35,13 @@
     color: var(--iron);
   }
 
+  .home-gm {
+    margin: 0 0 var(--sp-16);
+  }
+  .home-sub:has(+ .home-gm) {
+    margin-bottom: var(--sp-8);
+  }
+
   .home-composer {
     display: grid;
     gap: var(--sp-8);

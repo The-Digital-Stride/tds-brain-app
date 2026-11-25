@@ -993,15 +993,17 @@ describe('version and canDelete (plan 2026-11-15-delete-library-files)', () => {
     expect(ids((await l.list('client:acme-heating'))?.items)).toEqual([]);
   });
 
-  it('lets only the owner delete templates, and never personal files', async () => {
+  it('lets only an owner or a scout delete templates, and never personal files', async () => {
     const root = deletable();
-    for (const role of ['scout', 'team', 'unknown'] as const) {
+    for (const role of ['team', 'unknown'] as const) {
       const l = lib(root, { deletion: as(role), ignored: noneIgnored });
       expect(ids((await l.list('shared:templates'))?.items)).toEqual([]);
     }
-    const owner = lib(root, { deletion: as('owner'), ignored: noneIgnored });
-    expect(ids((await owner.list('shared:templates'))?.items)).toEqual(['templates/t.md']);
-    expect(ids((await owner.list('personal'))?.items)).toEqual([]);
+    for (const role of ['owner', 'scout'] as const) {
+      const l = lib(root, { deletion: as(role), ignored: noneIgnored });
+      expect(ids((await l.list('shared:templates'))?.items)).toEqual(['templates/t.md']);
+      expect(ids((await l.list('personal'))?.items)).toEqual([]);
+    }
   });
 
   it('leaves out files git ignores, and everything when git cannot answer', async () => {

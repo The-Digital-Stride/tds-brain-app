@@ -349,18 +349,16 @@ export function SettingsView({ tab, checks }: SettingsViewProps) {
             </dl>
           </section>
 
-          {identity.role === 'owner' || identity.role === 'scout' ? (
-            <section aria-labelledby="changes-h">
-              <div className="help-inline" data-heading="true">
-                <h2 id="changes-h">What's changed</h2>
-                <HelpLink page="version-history" />
-              </div>
-              <p className="setting-help">
-                Every version of the app, newest first. Select a version to see what changed.
-              </p>
-              <VersionHistory current={appVersion} />
-            </section>
-          ) : null}
+          <section aria-labelledby="changes-h">
+            <div className="help-inline" data-heading="true">
+              <h2 id="changes-h">What's changed</h2>
+              <HelpLink page="version-history" />
+            </div>
+            <p className="setting-help">
+              Every version of the app, newest first. Select a version to see what changed.
+            </p>
+            <VersionHistory current={appVersion} />
+          </section>
         </>
       ) : null}
     </div>

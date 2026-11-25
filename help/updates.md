@@ -35,7 +35,7 @@ Cortex checks for a newer version a few minutes after it starts, then about ever
 - Updating restarts Cortex. Your chats close, so finish anything important first.
 - If an update stops part-way, press **Try again** to finish it.
 - Some copies can't update themselves, such as one started by hand. Settings says why. Ask whoever looks after Cortex.
-- Owners and scouts can read what changed in each version. See Version history.
+- Everyone can read what changed in each version. See Version history.
 
 ## Try this
 

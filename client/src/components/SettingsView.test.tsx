@@ -310,15 +310,9 @@ describe('Dock app row', () => {
 });
 
 describe("what's changed", () => {
-  it('is shown to owners and scouts only', () => {
+  it('is shown to everyone', () => {
     standalone(false);
-    for (const role of ['team', 'unknown']) {
-      boot.identity.role = role;
-      render(<SettingsView tab="about" />);
-      expect(screen.queryByRole('heading', { name: "What's changed" })).toBeNull();
-      cleanup();
-    }
-    for (const role of ['owner', 'scout']) {
+    for (const role of ['team', 'unknown', 'owner', 'scout']) {
       boot.identity.role = role;
       render(<SettingsView tab="about" />);
       expect(screen.getByRole('heading', { name: "What's changed" })).toBeTruthy();

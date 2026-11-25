@@ -148,20 +148,12 @@ describe('the "This chat" panel', () => {
     expect(screen.getByText('No client')).toBeTruthy();
   });
 
-  it.each(['owner', 'scout'])('shows the resume line to an %s', (role) => {
+  it.each(['owner', 'scout', 'team', 'unknown'])('shows the resume line to %s', (role) => {
     h.role = role;
     renderPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
     expect(screen.getByText('claude --resume abc-123')).toBeTruthy();
     expect(screen.getByText(/do not show in the terminal's own list/)).toBeTruthy();
-  });
-
-  it.each(['team', 'unknown'])('never shows the resume line to %s', (role) => {
-    h.role = role;
-    renderPanel();
-    fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
-    expect(screen.queryByText(/claude --resume/)).toBeNull();
-    expect(screen.queryByText('Continue in the terminal')).toBeNull();
   });
 
   it('shows the chat kind and switches it', () => {

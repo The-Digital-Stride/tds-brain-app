@@ -891,7 +891,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       canArchive: canChange && features.includes(PROJECTS_ARCHIVE_CAPABILITY),
       // Project codes (R2 phase 4b): the script's own capability; "all" is the brain's Owner only.
       canRef,
-      canRefAll: canRef && identity.role === 'owner',
+      canRefAll: canRef && (identity.role === 'owner' || identity.role === 'scout'),
       // Chat summaries: the script's own capability, and the same roles check as any change.
       canSaveChat: canChange && features.includes(PROJECTS_CHAT_SUMMARY_CAPABILITY),
       looseLabels: tidied.rows.length,
@@ -917,9 +917,9 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       if (!caps.includes(PROJECTS_REFS_CAPABILITY)) {
         throw new ProjectsError('not-allowed', "Update the brain's skills to give projects codes.");
       }
-      // Decision 5: a backfill of every card is the brain Owner's alone (the script checks too).
-      if (action.all === true && identity.role !== 'owner') {
-        throw new ProjectsError('not-allowed', 'Only the brain Owner can give every project a code at once.');
+      // Decision 5: a backfill of every card is an owner's or a scout's alone (the script checks too).
+      if (action.all === true && identity.role !== 'owner' && identity.role !== 'scout') {
+        throw new ProjectsError('not-allowed', 'Only an owner or a scout can give every project a code at once.');
       }
     }
     if ('key' in action && action.key !== undefined) {

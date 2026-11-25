@@ -8,7 +8,7 @@ import { parseChatEmail } from '../../shared/chat-email-draft.ts';
 import { CHAT_EMAIL_LANG, type ReplyPiece } from '../../shared/chat-email-draft-contract.ts';
 
 // A line that could open an email block. Most replies have none, and then the lexer is never run.
-const MAY_OPEN = /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*email[ \t]*(?:\n|$)/i;
+const MAY_OPEN = /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*email[ \t]*(?:\r?\n|\r|$)/i;
 const OPENING = /^ {0,3}(`{3,}|~{3,})/;
 const lexer = new Marked();
 

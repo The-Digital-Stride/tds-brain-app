@@ -62,6 +62,23 @@ describe('parseChatEmail', () => {
     expect(parseChatEmail('To: a@x.co,, ;\nCc:\n\nx')).toEqual(email({ to: ['a@x.co'], body: 'x' }));
   });
 
+  it('a comma inside a quoted name does not split the entry', () => {
+    const got = parseChatEmail(
+      'To: "Example, Jo" <jo@acme.co.uk>, "Lee; Kim" <kim@acme.co.uk>, "unclosed <x@acme.co.uk>\n\nx',
+    );
+    expect(got.to).toEqual(['jo@acme.co.uk', 'kim@acme.co.uk']);
+    expect(got.dropped).toBe(1);
+  });
+
+  it('a From line among the headers is ignored: Gmail sends from the account it opens in', () => {
+    expect(parseChatEmail('From: Sam <sam@tds.example>\nTo: jo@acme.co.uk\nSubject: Hi\n\nText')).toEqual(
+      email({ to: ['jo@acme.co.uk'], subject: 'Hi', body: 'Text' }),
+    );
+    expect(parseChatEmail('To: jo@acme.co.uk\nfrom: sam@tds.example\nSubject: Hi\n\nText').subject).toBe(
+      'Hi',
+    );
+  });
+
   it('never repairs or invents an address', () => {
     const got = parseChatEmail(
       'To: jo@acme.co.uk>, <jo@acme.co.uk, jo @acme.co.uk, mailto:jo@acme.co.uk\n\nx',
@@ -89,6 +106,35 @@ describe('parseChatEmail', () => {
     expect(parseChatEmail(`Subject: ${'s'.repeat(CHAT_EMAIL_SUBJECT_MAX + 50)}\n\nx`).subject).toHaveLength(
       CHAT_EMAIL_SUBJECT_MAX,
     );
+  });
+
+  it('removes characters nobody can see from the text, keeping line breaks and tabs', () => {
+    const hidden = '\u200B\u200C\u200D\u2060\uFEFF\u202E\u200F\u0007\u0000';
+    const got = parseChatEmail(`To: a@x.co\n\nHi${hidden} Jo,\n\tindented\u200B\n\nBye${hidden}`);
+    expect(got.body).toBe('Hi Jo,\n\tindented\n\nBye');
+  });
+
+  it('refuses an address with a % in it: it could read as another address', () => {
+    const got = parseChatEmail('To: jo%40acme.co.uk@evil.example, jo+tag@acme.co.uk\n\nx');
+    expect(got.to).toEqual(['jo+tag@acme.co.uk']);
+    expect(got.dropped).toBe(1);
+  });
+
+  it('stops adding addresses once they would not all fit in a link', () => {
+    const long = Array.from(
+      { length: 20 },
+      (_, i) =>
+        `${'+'.repeat(62)}${String(i).padStart(2, '0')}@${'b'.repeat(60)}.${'c'.repeat(60)}.${'d'.repeat(60)}.co`,
+    );
+    const got = parseChatEmail(`To: ${long.join(', ')}\nSubject: ${'“'.repeat(300)}\n\n${'x'.repeat(9000)}`);
+    expect(got.dropped).toBe(0);
+    expect(got.over).toBeGreaterThan(0);
+    expect(got.to.length + got.over).toBe(20);
+    // Whatever is kept always fits, with the longest account address too.
+    const { url, fits } = chatEmailLink(`${'o'.repeat(64)}@${'t'.repeat(180)}.example`, got);
+    expect(fits).toBe(false);
+    expect(url.length).toBeLessThanOrEqual(GMAIL_COMPOSE_URL_MAX);
+    expect(query(url).get('to')?.split(',')).toEqual(got.to);
   });
 
   it('folds Windows line ends', () => {
@@ -177,20 +223,20 @@ describe('chatEmailLink', () => {
     expect(chatEmailLink(null, email({ body: `${exact.body}a` }))).toMatchObject({ fits: false });
   });
 
-  it('never goes over the limit: a huge list and subject loses the subject too', () => {
+  it('a long list and a long subject lose the subject before any recipient', () => {
     const big = email({
       to: Array.from(
-        { length: CHAT_EMAIL_RECIPIENTS_MAX },
-        (_, i) => `${'a'.repeat(62)}${String(i).padStart(2, '0')}@${'b'.repeat(186)}.co`,
+        { length: 20 },
+        (_, i) =>
+          `${'a'.repeat(62)}${String(i).padStart(2, '0')}@${'b'.repeat(60)}.${'c'.repeat(60)}.${'d'.repeat(60)}.co`,
       ),
       subject: '“'.repeat(CHAT_EMAIL_SUBJECT_MAX),
-      body: 'x',
+      body: 'x'.repeat(2000),
     });
-    // Only reachable with a long account address as well: the limits keep everything else inside the link.
-    const { url, fits } = chatEmailLink(`${'o'.repeat(60)}@tds.example`, big);
+    const { url, fits } = chatEmailLink(`${'o'.repeat(64)}@${'t'.repeat(60)}.example`, big);
     expect(fits).toBe(false);
     expect(url.length).toBeLessThanOrEqual(GMAIL_COMPOSE_URL_MAX);
-    expect(query(url).get('to')?.split(',')).toHaveLength(CHAT_EMAIL_RECIPIENTS_MAX);
+    expect(query(url).get('to')?.split(',')).toHaveLength(20);
     expect(query(url).has('su')).toBe(false);
     expect(query(url).has('body')).toBe(false);
   });

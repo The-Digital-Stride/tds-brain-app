@@ -32,7 +32,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const card = () => screen.getByRole('region', { name: /^Email draft/ });
+const card = () => screen.getByRole('group', { name: /^Email draft/ });
 const gmail = () => screen.getByRole('link', { name: /Open in Gmail/ });
 
 describe('EmailDraftCard', () => {
@@ -91,7 +91,8 @@ describe('EmailDraftCard', () => {
     fireEvent.click(copy);
     expect(writeText).toHaveBeenCalledWith(email().body);
     await waitFor(() => expect(within(card()).getByRole('status').textContent).toBe('Copied'));
-    expect(copy.textContent).toBe('Copied');
+    // The button's name still holds the words now on it.
+    expect(screen.getByRole('button', { name: 'Copied: Boiler quote' })).toBe(copy);
   });
 
   it('a text too long for a link opens Gmail without it and says to copy it in', () => {
@@ -111,7 +112,9 @@ describe('EmailDraftCard', () => {
     expect(card().textContent).toContain("1 address was left out: it didn't look like an email address.");
     rerender(<EmailDraftCard email={email({ dropped: 3, over: 2 })} ready />);
     expect(card().textContent).toContain("3 addresses were left out: they didn't look like email addresses.");
-    expect(card().textContent).toContain('Only the first 20 addresses are filled in.');
+    expect(card().textContent).toContain("2 more addresses didn't fit. Add them in Gmail.");
+    rerender(<EmailDraftCard email={email({ over: 1 })} ready />);
+    expect(card().textContent).toContain("1 more address didn't fit. Add it in Gmail.");
   });
 
   it('has no buttons or notices while the email is still arriving', () => {
@@ -120,5 +123,7 @@ describe('EmailDraftCard', () => {
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
     expect(card().textContent).not.toContain('left out');
+    expect(card().getAttribute('aria-busy')).toBe('true');
+    expect(card().querySelector('.hint')?.textContent).toBe('Still writing…');
   });
 });

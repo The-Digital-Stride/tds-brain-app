@@ -48,7 +48,7 @@ function show(items: ChatItem[], files: ChatFile[] = []) {
   );
   return onFile;
 }
-const cards = () => screen.queryAllByRole('region', { name: /^Email draft/ });
+const cards = () => screen.queryAllByRole('group', { name: /^Email draft/ });
 
 describe('an email Claude drafted, in the thread', () => {
   it('shows the words before, the card, and the words after, in order', () => {
@@ -101,6 +101,38 @@ describe('an email Claude drafted, in the thread', () => {
     expect(screen.queryByRole('link', { name: /Open in Gmail/ })).toBeNull();
     unmount();
     render(<Transcript items={[user, reply('a', open, true)]} sessionId="s" sessionState="idle" />);
+    expect(screen.getByRole('link', { name: /Open in Gmail/ })).toBeTruthy();
+  });
+
+  it('a reply that was stopped half-way through an email still gets its buttons', () => {
+    // A stopped turn never marks its reply as finished: what follows it, or Claude going idle, does.
+    const open = `Draft:\n\n${F}email\nTo: jo@acme.co.uk\n\nHi Jo, the quote is`;
+    const stopped: ChatItem = {
+      kind: 'turn-end',
+      id: 'e',
+      ok: true,
+      interrupted: true,
+      errorText: null,
+      durationMs: 1,
+    };
+    const { unmount } = render(
+      <Transcript items={[user, reply('a', open, false), stopped]} sessionId="s" sessionState="idle" />,
+    );
+    expect(screen.getByRole('link', { name: /Open in Gmail/ })).toBeTruthy();
+    expect(cards()[0]?.getAttribute('aria-busy')).toBe('false');
+    unmount();
+    // Still the newest thing while Claude works: still arriving.
+    render(<Transcript items={[user, reply('a', open, false)]} sessionId="s" sessionState="working" />);
+    expect(screen.queryByRole('link', { name: /Open in Gmail/ })).toBeNull();
+    cleanup();
+    // An older unfinished reply, with a newer message after it, while Claude works on that one.
+    render(
+      <Transcript
+        items={[user, reply('a', open, false), stopped, { ...user, id: 'u2' }, reply('b', 'Thinking', false)]}
+        sessionId="s"
+        sessionState="working"
+      />,
+    );
     expect(screen.getByRole('link', { name: /Open in Gmail/ })).toBeTruthy();
   });
 

@@ -214,9 +214,12 @@ named here or it isn't one.
    for an empty To), a hairline, then the whole message as plain pre-wrapped text in the reading face, never
    markdown, never clamped. Then "Open in Gmail" (a standard 32px `a.btn`, hidden text ": {subject} (opens
    Gmail in a small window)") and "Copy text" (a standard `.btn`, `useCopy`). Notices are `.notice` boxes
-   above the buttons: addresses left out (`warn`), and a text too long for Gmail's link (`info`: "This email
-   is too long to fill in for you. Press Copy text, then paste it into the Gmail window."). While the reply
-   is still arriving the card shows its text with no buttons or notices.
+   above the buttons: addresses left out or that didn't fit (`warn`), and a text too long for Gmail's link (`info`: "This email
+   is too long to fill in for you. Press Copy text, then paste it into the Gmail window."). The card is a
+   `role="group"` named "Email draft: {subject}" (not a region: a thread can hold several). Copy text carries
+   the subject as hidden text, never an `aria-label`, so its name still holds "Copied". While the reply is
+   still arriving the card is `aria-busy` and shows its text with a `.hint` "Still writing…" in place of the
+   buttons and notices.
    On the Updates tab, the `email` entries of one conversation are one row (`.proj-thread`): the subject once and
    one `.proj-email-meta` line ("3 updates · latest 24 Nov 2026 · Open in Gmail", or "In Sam's inbox") in
    `.proj-thread-head`, the newest part open, and the rest in a shut `Fold` "Earlier in this thread (n)" (level 4,

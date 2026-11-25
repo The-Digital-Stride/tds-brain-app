@@ -60,6 +60,15 @@ describe('splitReply', () => {
     expect(splitReply(`${F}email`).at(-1)).toMatchObject({ kind: 'email', closed: false });
   });
 
+  it('finds an email in a reply with Windows line ends', () => {
+    const pieces = splitReply(`Draft:\r\n\r\n${F}email\r\nTo: jo@acme.co.uk\r\n\r\nHello\r\n${F}\r\n`);
+    expect(pieces.at(-1)).toMatchObject({
+      kind: 'email',
+      closed: true,
+      email: { to: ['jo@acme.co.uk'], body: 'Hello' },
+    });
+  });
+
   it('holdsEmail says whether a reply has one', () => {
     expect(holdsEmail('no')).toBe(false);
     expect(holdsEmail(`${F}ts\nemail\n${F}`)).toBe(false);

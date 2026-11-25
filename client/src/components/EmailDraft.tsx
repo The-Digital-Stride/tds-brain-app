@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { chatEmailLink, chatEmailPeople } from '../../../shared/chat-email-draft.ts';
-import { CHAT_EMAIL_RECIPIENTS_MAX, type ChatEmail } from '../../../shared/chat-email-draft-contract.ts';
+import type { ChatEmail } from '../../../shared/chat-email-draft-contract.ts';
 import { openGmailWindow } from '../shell/gmail-window.ts';
 import { useCopy } from '../shell/useCopy.ts';
 import { useStore } from '../store.tsx';
@@ -9,7 +9,8 @@ import { useStore } from '../store.tsx';
  * An email Claude drafted in a chat (plan 2026-11-25-chat-email-to-gmail). Everything Gmail will be given is
  * on the card, as plain text: every address (Bcc too, and never a display name), the subject and the whole
  * message, never clamped, folded or drawn as markdown. "Open in Gmail" fills Gmail's own compose window;
- * nothing is sent or saved until the person does it there.
+ * the app itself sends and saves nothing (Gmail may keep what it is given as a draft, as it does for any
+ * compose window).
  * `ready` is false while the block is still arriving: no buttons and no notices yet.
  */
 export function EmailDraftCard({ email, ready }: { email: ChatEmail; ready: boolean }) {
@@ -19,7 +20,9 @@ export function EmailDraftCard({ email, ready }: { email: ChatEmail; ready: bool
   const link = useMemo(() => chatEmailLink(ownEmail, email), [ownEmail, email]);
   const named = email.subject === '' ? '' : `: ${email.subject}`;
   return (
-    <section className="email-draft" aria-label={`Email draft${named}`}>
+    // A group, not a region: a thread can hold several, and each region would be a landmark.
+    // biome-ignore lint/a11y/useSemanticElements: no element means "a labelled group of parts" here (a fieldset is for form controls).
+    <div className="email-draft" role="group" aria-label={`Email draft${named}`} aria-busy={!ready}>
       <dl className="email-draft-head">
         {chatEmailPeople(email).map(({ label, list }) =>
           list.length > 0 || label === 'To' ? (
@@ -48,7 +51,9 @@ export function EmailDraftCard({ email, ready }: { email: ChatEmail; ready: bool
           ) : null}
           {email.over > 0 ? (
             <p className="notice" data-shape="box" data-level="warn">
-              Only the first {CHAT_EMAIL_RECIPIENTS_MAX} addresses are filled in.
+              {email.over === 1
+                ? "1 more address didn't fit. Add it in Gmail."
+                : `${email.over} more addresses didn't fit. Add them in Gmail.`}
             </p>
           ) : null}
           {link.fits ? null : (
@@ -67,20 +72,19 @@ export function EmailDraftCard({ email, ready }: { email: ChatEmail; ready: bool
               Open in Gmail
               <span className="visually-hidden">{named} (opens Gmail in a small window)</span>
             </a>
-            <button
-              type="button"
-              className="btn"
-              aria-label={`Copy text${named}`}
-              onClick={() => void copy(email.body)}
-            >
+            {/* The name always holds the words on the button, "Copied" included (label in name). */}
+            <button type="button" className="btn" onClick={() => void copy(email.body)}>
               {said ?? 'Copy text'}
+              <span className="visually-hidden">{named}</span>
             </button>
             <span className="visually-hidden" role="status">
               {said ?? ''}
             </span>
           </div>
         </>
-      ) : null}
-    </section>
+      ) : (
+        <p className="hint">Still writing…</p>
+      )}
+    </div>
   );
 }

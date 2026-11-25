@@ -235,7 +235,18 @@ function HeldNotice({ text, sessionId, canResend }: { text: string; sessionId: s
   );
 }
 
-function Row({ item, sessionId, resendId }: { item: ChatItem; sessionId: string; resendId?: string | null }) {
+function Row({
+  item,
+  sessionId,
+  resendId,
+  arriving = false,
+}: {
+  item: ChatItem;
+  sessionId: string;
+  resendId?: string | null;
+  /** This reply is the newest thing in the thread and Claude is still writing it. */
+  arriving?: boolean;
+}) {
   switch (item.kind) {
     case 'user':
       return (
@@ -247,7 +258,7 @@ function Row({ item, sessionId, resendId }: { item: ChatItem; sessionId: string;
     case 'assistant':
       return (
         <div className="msg-assistant">
-          <AssistantText text={item.text} emails done={item.done} />
+          <AssistantText text={item.text} emails done={item.done || !arriving} />
         </div>
       );
     // A card still waiting on the person shows in the floater above the message box, not here.
@@ -347,6 +358,10 @@ export function Transcript({
   }, [items, sessionState]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
+  // The reply still being written: the newest item, while Claude works. A stopped or failed turn never
+  // marks its reply as finished (`done`), so anything older, or anything once Claude is free, counts as ended.
+  const newest = items.at(-1);
+  const arrivingId = busy && newest?.kind === 'assistant' && !newest.done ? newest.id : null;
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -376,7 +391,13 @@ export function Transcript({
                 waiting={sessionState === 'waiting'}
               />
             ) : (
-              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} resendId={resendId} />
+              <Row
+                key={itemKey(b.item)}
+                item={b.item}
+                sessionId={sessionId}
+                resendId={resendId}
+                arriving={b.item.kind === 'assistant' && b.item.id === arrivingId}
+              />
             ),
           )}
         </div>

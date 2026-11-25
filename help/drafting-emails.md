@@ -29,7 +29,7 @@ Ask Claude for an email in a project chat and the draft shows as a card. The car
 
 ## Good to know
 
-- Nothing is sent or saved in Gmail until you press Send there. Close the window to drop it.
+- Nothing is sent until you press Send in Gmail. If you close the window, Gmail may keep a copy in Drafts. Delete it there if you don't want it.
 - The email is plain text. Add bold or links in Gmail if you need them.
 - Your team signature is added when the email is sent, so the draft has none.
 - If the project has a code, the draft ends with it. Later replies then find the project.

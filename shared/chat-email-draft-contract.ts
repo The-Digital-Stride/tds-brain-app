@@ -17,7 +17,8 @@
  *     ```
  *
  * The chat shows that block as a card with "Open in Gmail", which opens Gmail's own compose window with the
- * fields filled in. Nothing is written to anyone's Gmail account: the person sends it, or closes the window.
+ * fields filled in. The app sends nothing and saves nothing: the person sends it in Gmail, or closes the
+ * window (Gmail may then keep a draft, as it does for any compose window).
  * An older app shows the block as an ordinary code block, and so does a terminal.
  */
 
@@ -26,6 +27,12 @@ export const CHAT_EMAIL_LANG = 'email';
 
 /** At most this many addresses over To, Cc and Bcc together; the rest are left out (`over` counts them). */
 export const CHAT_EMAIL_RECIPIENTS_MAX = 20;
+/**
+ * The addresses kept must also fit in this many characters of a link once encoded (each `+` and `@` costs
+ * three); a good address past it is left out and counted in `over`. It keeps the recipients inside
+ * GMAIL_COMPOSE_URL_MAX whatever the account address and the list look like.
+ */
+export const CHAT_EMAIL_RECIPIENTS_URL_BUDGET = 5000;
 /** A subject longer than this is cut. */
 export const CHAT_EMAIL_SUBJECT_MAX = 250;
 /**
@@ -44,12 +51,15 @@ export interface ChatEmail {
   bcc: string[];
   /** One line, trimmed, control and text-direction characters removed; '' when the block has none. */
   subject: string;
-  /** The message text exactly as written after the header lines: plain text, line ends as `\n`, trimmed of
-   *  blank lines at both ends. Never rendered as markdown. */
+  /** The message text as written after the header lines: plain text, line ends as `\n`, trimmed of blank
+   *  lines at both ends, with characters nobody can see removed (control characters other than a line break
+   *  or a tab, zero-width characters and text-direction marks; security review: the card must show all
+   *  that Gmail is given). Never rendered as markdown. */
   body: string;
   /** How many header entries were left out because they are not an address. A repeat is dropped silently. */
   dropped: number;
-  /** How many good addresses were left out because the email already had CHAT_EMAIL_RECIPIENTS_MAX. */
+  /** How many good addresses were left out because the email already had CHAT_EMAIL_RECIPIENTS_MAX, or
+   *  because they would not fit in a link (CHAT_EMAIL_RECIPIENTS_URL_BUDGET). */
   over: number;
 }
 
@@ -59,9 +69,11 @@ export interface ChatEmail {
  *   a repeat of To/Cc/Bcc adds to the list, a second Subject is ignored). They end at the first blank line
  *   or the first line that is not one of those headers; everything after is the body. A block with no
  *   header lines is all body.
- * - Addresses are split on commas and semicolons. `Name <a@b.co>` gives `a@b.co` (the name is never kept or
- *   shown); a bare address is taken as written. Anything else is dropped and counted. An address is never
- *   invented or repaired. The same address twice, in any of the three lists and any case, is kept once.
+ * - A `From:` line among the headers is read and ignored (Gmail sends from the account it opens in).
+ * - Addresses are split on commas and semicolons (not inside a quoted name). `Name <a@b.co>` gives `a@b.co`
+ *   (the name is never kept or shown); a bare address is taken as written. Anything else is dropped and
+ *   counted, and so is an address with a `%` in it (it could read as a different address). An address is
+ *   never invented or repaired. The same address twice, in any of the three lists and any case, is kept once.
  * - Never throws. Cost is linear in the text.
  * Body in `shared/chat-email-draft.ts`: `parseChatEmail`.
  */

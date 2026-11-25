@@ -179,16 +179,19 @@ export function PermissionCard(props: CardProps<PermissionItem>) {
   );
 }
 
-function PublishFactsList({ publish }: { publish: PublishFacts }) {
+function PublishFactsList({ publish, listId }: { publish: PublishFacts; listId: string }) {
   const { repo, isApp, branch, target, version, commits, commitCount } = publish;
+  // The team reads "tds-website", not "The-Digital-Stride/tds-website"; Cortex itself by name.
+  const where = isApp
+    ? `TDS Cortex${version ? `, version ${version}` : ''}`
+    : (repo?.split('/').pop() ?? "Couldn't read which repo this is");
   const shown = commits?.length ?? 0;
   const more = commitCount !== null && commitCount > shown ? commitCount - shown : 0;
   return (
     <ul className="publish-facts">
       <li>
         <strong>Where: </strong>
-        {repo ?? "Couldn't read which repo this is"}
-        {isApp ? ` (TDS Cortex${version ? `, version ${version}` : ''})` : ''}
+        {where}
       </li>
       <li>
         <strong>Branch: </strong>
@@ -201,12 +204,19 @@ function PublishFactsList({ publish }: { publish: PublishFacts }) {
         ) : commits.length === 0 ? (
           'None to send'
         ) : (
-          <ul className="publish-commits">
-            {commits.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-            {more > 0 ? <li>and {more} more</li> : null}
-          </ul>
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard.
+          <section className="publish-commits-box" tabIndex={0} aria-labelledby={listId}>
+            <span className="visually-hidden" id={listId}>
+              The commits going out
+            </span>
+            <ul className="publish-commits">
+              {commits.map((c, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: two commits can share a line of text.
+                <li key={i}>{c}</li>
+              ))}
+              {more > 0 ? <li>and {more} more</li> : null}
+            </ul>
+          </section>
         )}
       </li>
     </ul>
@@ -250,11 +260,18 @@ function PublishCard({
   const detailId = `perm-${item.requestId}-detail`;
   return (
     <section className="approval approval-publish" aria-labelledby={titleId} tabIndex={-1} ref={ref}>
-      <div className="approval-tag">Merge and push</div>
+      <div className="approval-tag">Needs your approval</div>
       <div className="approval-title" id={titleId}>
         {publishTitle(publish.kind)}
       </div>
-      <PublishFactsList publish={publish} />
+      {/* A force push or delete is said first, before the list can push it out of view. */}
+      {item.warning ? (
+        <p className="approval-warning">
+          <strong>Take care: </strong>
+          {item.warning}
+        </p>
+      ) : null}
+      <PublishFactsList publish={publish} listId={`perm-${item.requestId}-commits`} />
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard. */}
       <section className="approval-detail" tabIndex={0} aria-labelledby={detailId}>
         <span className="visually-hidden" id={detailId}>
@@ -264,12 +281,6 @@ function PublishCard({
           <code>{publish.command}</code>
         </pre>
       </section>
-      {item.warning ? (
-        <p className="approval-warning">
-          <strong>Take care: </strong>
-          {item.warning}
-        </p>
-      ) : null}
       <label className="form-field approval-note">
         <span className="label">If you say no, tell Claude why (optional)</span>
         <input

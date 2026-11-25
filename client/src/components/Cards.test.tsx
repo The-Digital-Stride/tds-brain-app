@@ -426,13 +426,40 @@ describe('PermissionCard: merge and push', () => {
   it('shows where it goes, the branch and the commits', () => {
     render(<PermissionCard item={publishPerm()} sessionId="s1" />);
     expect(screen.getByText('Are you sure you want to merge and push?')).toBeTruthy();
-    expect(
-      screen.getByText(/The-Digital-Stride\/tds-brain-app \(TDS Cortex, version 0\.82\.3\)/),
-    ).toBeTruthy();
+    expect(screen.getByText('TDS Cortex, version 0.82.3')).toBeTruthy();
+    expect(screen.getByText('Needs your approval')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'The commits going out' })).toBeTruthy();
     expect(screen.getByText(/app-change-guards \u2192 main/)).toBeTruthy();
     expect(screen.getByText('abc1234 feat: add guards')).toBeTruthy();
     expect(screen.getByText('def5678 fix: tidy')).toBeTruthy();
     expect(screen.getByText('git push origin main')).toBeTruthy();
+  });
+
+  it('names another repo by its short name, without the GitHub owner', () => {
+    render(
+      <PermissionCard
+        item={publishPerm(facts({ repo: 'The-Digital-Stride/tds-website', isApp: false, version: null }))}
+        sessionId="s1"
+      />,
+    );
+    expect(screen.getByText('tds-website')).toBeTruthy();
+    expect(screen.queryByText(/The-Digital-Stride/)).toBeNull();
+  });
+
+  it('shows a force-push warning before the facts', () => {
+    const { container } = render(
+      <PermissionCard
+        item={publishPerm(facts(), {
+          warning: 'This is a force push: it can overwrite work already on GitHub.',
+        })}
+        sessionId="s1"
+      />,
+    );
+    const warning = container.querySelector('.approval-warning');
+    const list = container.querySelector('.publish-facts');
+    expect(
+      warning && list && warning.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("says so when it couldn't read the commits", () => {

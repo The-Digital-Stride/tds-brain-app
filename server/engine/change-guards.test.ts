@@ -243,6 +243,78 @@ describe('detectPublish (decision 6)', () => {
     expect(detectPublish(`${cmd}\ngit push`)?.kind).toBe('push');
   });
 
+  it('skips a heredoc body inside $(…), so an apostrophe in a commit message is not a push', () => {
+    const cmd = "git commit -m \"$(cat <<'EOF'\nfix: the push notice doesn't wrap\nEOF\n)\"";
+    expect(detectPublish(cmd)).toBeNull();
+    expect(detectPublish(cmd.replace("<<'EOF'", '<<"EOF"'))).toBeNull();
+    expect(detectPublish(cmd.replace("<<'EOF'", '<<EOF'))).toBeNull();
+    expect(detectPublish(cmd.replace("<<'EOF'\n", '<<-EOF\n').replace('\nEOF\n', '\n\tEOF\n'))).toBeNull();
+    expect(detectPublish(`${cmd} && git push`)).toMatchObject({ kind: 'push', plain: true });
+    // Arithmetic shifts are not heredocs.
+    expect(detectPublish('echo $((1<<2)) && git push')?.kind).toBe('push');
+  });
+
+  it('counts gh api writes to contents, refs and merges', () => {
+    expect(
+      detectPublish('gh api -X PUT repos/o/r/contents/README.md -f message=x -f content=eA==')?.kind,
+    ).toBe('push');
+    expect(detectPublish('gh api repos/o/r/contents/a.txt -f message=x')?.kind).toBe('push');
+    expect(detectPublish('gh api --method=PATCH repos/o/r/git/refs/heads/main -f sha=abc')?.kind).toBe(
+      'push',
+    );
+    expect(detectPublish('gh api --method DELETE repos/o/r/git/refs/heads/x')?.kind).toBe('push');
+    expect(detectPublish('gh api -XPOST repos/o/r/git/refs -F ref=refs/heads/x -F sha=abc')?.kind).toBe(
+      'push',
+    );
+    expect(detectPublish('gh api -X POST repos/o/r/merges -f base=main -f head=x')?.kind).toBe('merge');
+    // Reads are not.
+    expect(detectPublish('gh api repos/o/r/git/refs/heads/main')).toBeNull();
+    expect(detectPublish('gh api repos/o/r/contents/README.md')).toBeNull();
+    expect(detectPublish('gh api -X GET repos/o/r/contents/x -f ref=main')).toBeNull();
+  });
+
+  it('counts a git alias defined with -c that pushes or merges', () => {
+    expect(detectPublish('git -c alias.p=push p')?.kind).toBe('push');
+    expect(detectPublish('git -c alias.m=merge m feature')).toMatchObject({ kind: 'merge', ref: 'feature' });
+    expect(detectPublish("git -c 'alias.sync=push --force' sync")).toMatchObject({
+      kind: 'push',
+      danger: 'force',
+      plain: false,
+    });
+    expect(detectPublish("git -c 'alias.x=!git push origin main' x")?.kind).toBe('push');
+    expect(detectPublish('git -c alias.P=push p')?.kind).toBe('push');
+    expect(detectPublish('git -c alias.p=push p --dry-run')).toBeNull();
+    expect(detectPublish('git -c alias.l=log l')).toBeNull();
+    expect(detectPublish('git -c alias.p=push status')).toBeNull();
+  });
+
+  it('counts git subtree push', () => {
+    expect(detectPublish('git subtree push -P lib origin main')).toMatchObject({
+      kind: 'push',
+      plain: false,
+    });
+    expect(detectPublish('git subtree split -P lib')).toBeNull();
+  });
+
+  it('only a bare git push with no options or environment is plain', () => {
+    expect(detectPublish('git push')?.plain).toBe(true);
+    expect(detectPublish('git push origin main')?.plain).toBe(true);
+    for (const cmd of [
+      'GIT_DIR=/other/.git git push',
+      'env GIT_DIR=/other/.git git push',
+      'GIT_DIR=x GIT_WORK_TREE=y git push',
+      'export GIT_DIR=/other/.git; git push',
+      'pushd /other && git push',
+      'git -C /x push',
+      'git --no-pager push',
+      '/usr/bin/git push',
+      'command git push',
+      'FOO=1 git push',
+    ]) {
+      expect(detectPublish(cmd)?.plain, cmd).toBe(false);
+    }
+  });
+
   it('marks force pushes, deletes and mirrors as dangerous', () => {
     expect(detectPublish('git push -f')?.danger).toBe('force');
     expect(detectPublish('git push --force origin main')?.danger).toBe('force');
@@ -260,6 +332,13 @@ describe('detectPublish (decision 6)', () => {
     expect(detectPublish('cd /a && git -C /c push')?.repoDir).toBe('/c');
     expect(detectPublish('git push')?.repoDir).toBeNull();
     expect(detectPublish('R=/r; git -C "$R" push')?.repoDir).toBe('/r');
+  });
+
+  it('follows pushd, popd, cd - and a bare cd for the repo folder', () => {
+    expect(detectPublish('pushd /a && git push')?.repoDir).toBe('/a');
+    expect(detectPublish('cd /a && pushd /b && popd && git push')?.repoDir).toBe('/a');
+    expect(detectPublish('cd /a && cd /b && cd - && git push')?.repoDir).toBe('/a');
+    expect(detectPublish('cd && git push')?.repoDir).toBe('~');
   });
 
   it('reads the ref for a push and a merge', () => {
@@ -493,6 +572,52 @@ describe('teamAppRefusal (decisions 1, 3, 5, 15)', () => {
     expect(getRole).not.toHaveBeenCalled();
   });
 
+  it("refuses a team member's command on a folder holding the app, after a bare cd, or through a glob", async () => {
+    const cmds = [
+      `rm -rf "$HOME/Library/Application Support/TDS Brain"`,
+      `cp -R /tmp/p/app "$HOME/Library/Application Support/TDS Brain/"`,
+      `rsync -a /tmp/p/ "$HOME/Library/Application Support/TDS Brain/app/"`,
+      `find "$HOME/Library/Application Support/TDS Brain" -name '*.ts' -exec sed -i '' 's,a,b,' {} +`,
+      `cd "$HOME/Library/Application Support/TDS Brain" && cd app && sed -i '' -e 's,a,b,' package.json`,
+      String.raw`sed -i '' 's,a,b,' ~/Library/Application\ Support/TDS\ Brain/ap*/package.json`,
+      `rm -rf ~/Library`,
+      `cd "$HOME/Library/Application Support" && cd "TDS Brain" && rm -rf app`,
+    ];
+    for (const command of cmds) {
+      expect(await teamAppRefusal(role('team'), 'Bash', { command }, ctx.brainRoot, ctx), command).toEqual({
+        reason: TEAM_APP_REFUSAL,
+        notice: TEAM_APP_NOTICE,
+      });
+    }
+    // A working folder that holds the app counts too.
+    const support = join(ctx.home, 'Library', 'Application Support');
+    expect(
+      await teamAppRefusal(role('team'), 'Bash', { command: 'rm -rf "TDS Brain"' }, support, ctx),
+    ).toEqual({ reason: TEAM_APP_REFUSAL, notice: TEAM_APP_NOTICE });
+  });
+
+  it("doesn't count home itself, the root or folders above home as holding the app", async () => {
+    const getRole = role('team');
+    for (const command of [
+      'cp x ~/',
+      'cp x "$HOME"',
+      'ls /',
+      `ls ${join(ctx.home, '..')}`,
+      'cd && touch x',
+    ]) {
+      expect(await teamAppRefusal(getRole, 'Bash', { command }, ctx.brainRoot, ctx), command).toBeNull();
+    }
+    expect(getRole).not.toHaveBeenCalled();
+  });
+
+  it('expands ~/ in an edit tool path', async () => {
+    const input = { file_path: '~/Library/Application Support/TDS Brain/app/server/x.ts', content: 'x' };
+    expect(await teamAppRefusal(role('team'), 'Write', input, ctx.brainRoot, ctx)).toEqual({
+      reason: TEAM_APP_REFUSAL,
+      notice: TEAM_APP_NOTICE,
+    });
+  });
+
   it('refuses a team member sed in the installed app', async () => {
     const cmd = `APP="$HOME/Library/Application Support/TDS Brain/app"
 cd "$APP" && sed -i '' 's/a/b/' server/index.ts`;
@@ -576,6 +701,25 @@ describe('publishFacts (decision 8)', () => {
     const f = await publishFacts(d, cmd, repo, ctx);
     expect(f).toMatchObject({ kind: 'push', branch: 'feature', target: 'feature', commitCount: 3 });
     expect(f.commits?.[0]?.replace(/^\w+ /, '')).toBe('feat: three');
+  });
+
+  it('names the other remote and its branch when the push goes somewhere other than origin', async () => {
+    git(repo, 'remote', 'add', 'fork', 'https://github.com/me/fork.git');
+    git(repo, 'update-ref', 'refs/remotes/fork/main', git(repo, 'rev-parse', 'main~1'));
+    for (const cmd of ['git push fork', 'git push fork main', 'git push fork HEAD']) {
+      const d = detectPublish(cmd);
+      if (!d) throw new Error('no publish');
+      expect(await publishFacts(d, cmd, repo, ctx), cmd).toMatchObject({
+        repo: 'me/fork',
+        branch: 'main',
+        target: 'main',
+        commitCount: 1,
+      });
+    }
+    const url = 'git push https://github.com/x/y.git main';
+    const d = detectPublish(url);
+    if (!d) throw new Error('no publish');
+    expect(await publishFacts(d, url, repo, ctx)).toMatchObject({ repo: 'x/y', commits: null });
   });
 
   it('caps the list at 20 but counts them all', async () => {
@@ -663,7 +807,28 @@ describe('isBrainSync (decision 6 exemption)', () => {
     expect(await sync('git push')).toBe(true);
     expect(await sync('git push origin main')).toBe(true);
     expect(await sync('git push', join(brain, 'clients'))).toBe(true);
-    expect(await sync(`git -C "${brain}" push`, other)).toBe(true);
+  });
+
+  it('exempts it after a commit whose message heredoc has an apostrophe', async () => {
+    const cmd = "git commit -m \"$(cat <<'EOF'\nfix: the push notice doesn't wrap\nEOF\n)\" && git push";
+    expect(await sync(cmd)).toBe(true);
+  });
+
+  it('never exempts a push pointed elsewhere by the environment, git options or pushd', async () => {
+    for (const cmd of [
+      `GIT_DIR=${other}/.git git push`,
+      `env GIT_DIR=${other}/.git git push`,
+      `GIT_DIR=x GIT_WORK_TREE=y git push`,
+      `pushd ${other} && git push`,
+      `export GIT_DIR=${other}/.git; git push`,
+      `GIT_DIR=${other}/.git; export GIT_DIR; git push`,
+      `git --git-dir=${other}/.git push`,
+      `git -C "${brain}" push`,
+      `cd ${other} && git push`,
+    ]) {
+      expect(await sync(cmd), cmd).toBe(false);
+    }
+    expect(await sync(`git -C "${brain}" push`, other)).toBe(false);
   });
 
   it('never exempts a force push, a delete, a merge, another branch or another repo', async () => {
@@ -800,5 +965,14 @@ describe('standing lines (decision 11)', () => {
     expect(APP_CODE_LINE).toContain('TDS Cortex Feedback');
     expect(TEAM_APP_REFUSAL).toContain('the-digital-stride/tds-cortex-feedback');
     expect(TEAM_APP_REFUSAL).toContain('Feature Request');
+  });
+
+  it('tell the person who can help when the role or the check fails', () => {
+    expect(UNKNOWN_ROLE_NOTICE).toBe(
+      "Cortex couldn't tell who you are, so it didn't change the app. Ask an owner or scout to run /doctor-cortex for you.",
+    );
+    expect(CHANGE_CHECK_FAILED).toBe(
+      "Cortex couldn't check whether this changes its own code, so it didn't run it. Try again, or ask an owner or scout to run /doctor-cortex if it keeps happening.",
+    );
   });
 });

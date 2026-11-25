@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -393,6 +401,7 @@ function setup(
     chatSummaryStore?: ChatSummaryStore;
     appRoot?: string;
     home?: string;
+    brainRoot?: string;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
@@ -416,7 +425,7 @@ function setup(
     dataDir: opts.dataDir,
     chatKinds: opts.chatKinds,
     brain: fakeBrain(opts.brain),
-    brainRoot: BRAIN,
+    brainRoot: opts.brainRoot ?? BRAIN,
     emailKeysDir: KEYS,
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
     engine: fx.engine,
@@ -7002,6 +7011,48 @@ describe('app change guards (plan 2026-11-25-app-change-guards)', () => {
       sessionAllowLabel: null,
       publish: { kind: 'push', repo: null, command: 'git push' },
     });
+  });
+
+  it("the brain's own plain push of main shows the ordinary card, with no publish facts", async () => {
+    const env = {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'T',
+      GIT_AUTHOR_EMAIL: 't@example.com',
+      GIT_COMMITTER_NAME: 'T',
+      GIT_COMMITTER_EMAIL: 't@example.com',
+    };
+    const g = (...args: string[]) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8' }).trim();
+    writeFileSync(join(repo, 'x.txt'), 'x\n');
+    g('add', '.');
+    g('commit', '-q', '-m', 'x');
+    g('update-ref', 'refs/remotes/origin/main', g('rev-parse', 'HEAD'));
+    g('config', 'branch.main.remote', 'origin');
+    g('config', 'branch.main.merge', 'refs/heads/main');
+    const fx = setup(undefined, { appRoot, home, brain: as('owner'), brainRoot: repo });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const q = fx.queries[0] as FakeQuery;
+    expect(await changeGuard(q)(call('Bash', { command: 'git push' }, repo), 'toolu_1')).toEqual({
+      continue: true,
+    });
+    const suggestions: PermissionUpdate[] = [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Bash', ruleContent: 'git:*' }],
+        behavior: 'allow',
+        destination: 'session',
+      },
+    ];
+    // Claude Code may still ask (no allow rule): the card is the ordinary one.
+    const { promise } = q.ask('Bash', { command: 'git push' }, { suggestions });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({ type: 'permission-request', sessionAllowLabel: expect.any(String) });
+    expect(req && 'publish' in req).toBe(false);
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    expect(await promise).toMatchObject({ behavior: 'allow' });
   });
 
   it("refuses a team member's edit to the app's code, and tells the person", async () => {

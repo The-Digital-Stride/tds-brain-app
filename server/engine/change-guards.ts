@@ -18,7 +18,7 @@ import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { PublishFacts, PublishKind, Role } from '../../shared/contract.ts';
 import { INSTALLED_APP_DIR, SUPPORT_DIR_NAME } from '../../shared/install-contract.ts';
-import { installedAppDir } from '../settings.ts';
+import { expandHomeFor, installedAppDir } from '../settings.ts';
 
 export type { Role };
 
@@ -38,11 +38,11 @@ export const TEAM_APP_NOTICE =
 
 /** Notice and deny reason when the role can't be read and no recent role is known (decision 15). */
 export const UNKNOWN_ROLE_NOTICE =
-  "Cortex couldn't tell who you are, so it didn't change the app. Run /doctor-cortex.";
+  "Cortex couldn't tell who you are, so it didn't change the app. Ask an owner or scout to run /doctor-cortex for you.";
 
 /** Notice and deny reason when the check itself failed (decision 7: fail closed). */
 export const CHANGE_CHECK_FAILED =
-  "Cortex couldn't check whether this changes its own code, so it didn't run it. Try again, or run /doctor-cortex if it keeps happening.";
+  "Cortex couldn't check whether this changes its own code, so it didn't run it. Try again, or ask an owner or scout to run /doctor-cortex if it keeps happening.";
 
 /** Standing instructions for every chat (decision 11). */
 export const PUBLISH_LINE =
@@ -120,13 +120,68 @@ interface Seg {
 const WORD_END = new Set([' ', '\t', '\r', '\n', ';', '&', '|', '(', ')', '<', '>']);
 const REDIR_OPS = ['<<<', '<<-', '<<', '<&', '<>', '<', '>>', '>|', '>&', '>'];
 
-/** The index of the `)` closing a `$(` or `(` whose body starts at `i`, or -1. */
-function scanParen(src: string, start: number): number {
+/**
+ * A heredoc's delimiter word, read from `i` (just after `<<` or `<<-` and any blanks), with quotes and
+ * escapes removed: [delimiter, index after]. Null when it can't be read.
+ */
+function readDelim(src: string, start: number): [string, number] | null {
+  let i = start;
+  let delim = '';
+  while (i < src.length && !WORD_END.has(src[i] as string)) {
+    const c = src[i] as string;
+    if (c === "'" || c === '"') {
+      const e = src.indexOf(c, i + 1);
+      if (e < 0) return null;
+      delim += src.slice(i + 1, e);
+      i = e + 1;
+    } else if (c === '\\') {
+      delim += src[i + 1] ?? '';
+      i += 2;
+    } else {
+      delim += c;
+      i++;
+    }
+  }
+  return delim ? [delim, i] : null;
+}
+
+/**
+ * The index of the `)` closing a `$(` or `(` whose body starts at `i`, or -1. Heredoc bodies are skipped up
+ * to their delimiter line, as `lex` does, so an apostrophe in one doesn't read as a quote. `arith` is for
+ * `$((…))`, where `<<` is a shift.
+ */
+function scanParen(src: string, start: number, arith = false): number {
   let depth = 1;
   let i = start;
+  const heredocs: { delim: string; strip: boolean }[] = [];
   while (i < src.length) {
     const ch = src[i];
-    if (ch === '\\') {
+    if (!arith && ch === '<' && src[i + 1] === '<' && src[i + 2] !== '<') {
+      i += 2;
+      const strip = src[i] === '-';
+      if (strip) i++;
+      while (src[i] === ' ' || src[i] === '\t') i++;
+      const got = readDelim(src, i);
+      if (!got) return -1;
+      heredocs.push({ delim: got[0], strip });
+      i = got[1];
+    } else if (ch === '\n' && heredocs.length > 0) {
+      i++;
+      for (const h of heredocs.splice(0)) {
+        let closed = false;
+        while (i < src.length) {
+          let end = src.indexOf('\n', i);
+          if (end < 0) end = src.length;
+          const line = src.slice(i, end);
+          i = end < src.length ? end + 1 : src.length;
+          if ((h.strip ? line.replace(/^\t+/, '') : line) === h.delim) {
+            closed = true;
+            break;
+          }
+        }
+        if (!closed) return -1;
+      }
+    } else if (ch === '\\') {
       i += 2;
     } else if (ch === "'") {
       const e = src.indexOf("'", i + 1);
@@ -137,7 +192,7 @@ function scanParen(src: string, start: number): number {
       while (i < src.length && src[i] !== '"') {
         if (src[i] === '\\') i += 2;
         else if (src[i] === '$' && src[i + 1] === '(') {
-          const e = scanParen(src, i + 2);
+          const e = scanParen(src, i + 2, src[i + 2] === '(');
           if (e < 0) return -1;
           i = e + 1;
         } else i++;
@@ -316,7 +371,7 @@ function lex(input: string): Tok[] | null {
             const e = src[i + 2] === '(' ? -2 : scanParen(src, i + 2);
             if (e === -2) {
               w.bad = true;
-              const close = scanParen(src, i + 2);
+              const close = scanParen(src, i + 2, true);
               if (close < 0) return null;
               w.v += src.slice(i, close + 1);
               i = close + 1;
@@ -347,7 +402,7 @@ function lex(input: string): Tok[] | null {
       } else if (ch === '$' && src[i + 1] === '(') {
         if (src[i + 2] === '(') {
           w.bad = true;
-          const close = scanParen(src, i + 2);
+          const close = scanParen(src, i + 2, true);
           if (close < 0) return null;
           w.v += src.slice(i, close + 1);
           i = close + 1;
@@ -442,7 +497,14 @@ interface ShellState {
   dir: string | null;
   /** For `~` and `$HOME`; null leaves them as written. */
   home: string | null;
+  /** The folder before the last `cd`, `pushd` or `popd` (for `cd -`); undefined when there was none. */
+  prev: string | null | undefined;
+  /** The folders `pushd` left, for `popd`. */
+  stack: (string | null)[];
 }
+
+/** Where a `cd -`, `popd` or argument-less `pushd` goes when nothing before it says: no real folder. */
+const UNKNOWN_DIR = '/nonexistent/cortex-unknown-folder';
 
 function expand(v: string, st: ShellState): string {
   let out = v.replace(
@@ -458,16 +520,31 @@ function expand(v: string, st: ShellState): string {
   return out;
 }
 
-/** Applies a segment's standalone assignments, `export`s and `cd` to the state. */
+/** Applies a segment's standalone assignments, `export`s, `cd`, `pushd` and `popd` to the state. */
 function track(words: Word[], st: ShellState): void {
   const vals = words.map((w) => w.v);
+  const cmd = vals[0];
   if (vals.length > 0 && vals.every((v) => ASSIGNMENT.test(v))) {
     for (const w of words) setVar(w, st);
-  } else if (vals[0] === 'export') {
+  } else if (cmd === 'export') {
     for (const w of words.slice(1)) if (ASSIGNMENT.test(w.v)) setVar(w, st);
-  } else if (vals[0] === 'cd' && words[1]) {
-    const to = expand(words[1].v, st);
-    st.dir = st.dir && !isAbsolute(to) ? posix.join(st.dir, to) : to;
+  } else if (cmd === 'cd' || cmd === 'pushd' || cmd === 'popd') {
+    const before = st.dir;
+    let a = 1;
+    while (a < vals.length && /^-[LPe@]+$/.test(vals[a] as string)) a++;
+    const arg = vals[a];
+    if (cmd === 'popd') {
+      st.dir = st.stack.length > 0 ? (st.stack.pop() ?? null) : UNKNOWN_DIR;
+    } else if (arg === undefined) {
+      st.dir = cmd === 'cd' ? (st.home ?? '~') : UNKNOWN_DIR;
+    } else if (arg === '-' && cmd === 'cd') {
+      st.dir = st.prev === undefined ? UNKNOWN_DIR : st.prev;
+    } else {
+      const to = expand(arg, st);
+      st.dir = st.dir && !isAbsolute(to) ? posix.join(st.dir, to) : to;
+    }
+    if (cmd === 'pushd') st.stack.push(before);
+    st.prev = before;
   }
 }
 
@@ -477,7 +554,13 @@ function setVar(w: Word, st: ShellState): void {
   st.vars.set(m[1] as string, w.subs.length || w.bad ? null : expand(m[2] as string, st));
 }
 
-const freshState = (home: string | null): ShellState => ({ vars: new Map(), dir: null, home });
+const freshState = (home: string | null): ShellState => ({
+  vars: new Map(),
+  dir: null,
+  home,
+  prev: undefined,
+  stack: [],
+});
 
 // ---------------------------------------------------------------------------
 // Publish detection (decision 6)
@@ -593,20 +676,31 @@ const GIT_VALUE_OPTS = new Set([
   '--config-env',
   '--super-prefix',
 ]);
-const GIT_PLAIN_OPTS = new Set([
-  '--no-pager',
-  '-p',
-  '-P',
-  '--paginate',
-  '--no-replace-objects',
-  '--literal-pathspecs',
-  '--no-optional-locks',
-]);
 
+const ALIAS_SETTING = /^alias\.([^=]+)=([\s\S]*)$/i;
+
+/** A `!` (shell) alias: whatever it mentions. */
+function shellAlias(value: string, repoDir: string | null): Found | null {
+  const push = /\bpush\b/.test(value);
+  const merge = /\bmerge\b(?!-)/.test(value);
+  if (!push && !merge) return null;
+  const kind: PublishKind = push && merge ? 'merge-and-push' : merge ? 'merge' : 'push';
+  return { kind, source: 'git', repoDir, ref: null, remote: null, danger: null, plain: false };
+}
+
+/**
+ * A `git` command at `vals[i]`. Plain (the brain-sync rule) only when nothing comes before `git` in the
+ * segment and there are no global options at all.
+ */
 function gitAt(vals: string[], i: number, dir: string | null): Found | null {
   let k = i + 1;
   let repoDir: string | null = null;
-  let extra = false;
+  // Aliases set on the command line; null when the value comes from the environment (`--config-env`).
+  const aliases = new Map<string, string | null>();
+  const alias = (setting: string, value: boolean) => {
+    const m = ALIAS_SETTING.exec(setting);
+    if (m) aliases.set((m[1] as string).toLowerCase(), value ? (m[2] as string) : null);
+  };
   while (k < vals.length && (vals[k] as string).startsWith('-')) {
     const a = vals[k] as string;
     if (a === '-C') {
@@ -615,47 +709,85 @@ function gitAt(vals: string[], i: number, dir: string | null): Found | null {
       k += 2;
       continue;
     }
-    if (GIT_VALUE_OPTS.has(a)) {
-      extra = true;
-      k += 2;
-      continue;
-    }
-    if (!GIT_PLAIN_OPTS.has(a)) extra = true;
-    k++;
+    if (a === '-c' || a === '--config-env') alias(vals[k + 1] ?? '', a === '-c');
+    else if (a.startsWith('--config-env=')) alias(a.slice('--config-env='.length), false);
+    k += GIT_VALUE_OPTS.has(a) ? 2 : 1;
   }
   if (repoDir && dir && !isAbsolute(repoDir)) repoDir = posix.join(dir, repoDir);
   repoDir ??= dir;
+  const bare = i === 0 && vals[i] === 'git' && k === i + 1;
   const sub = vals[k];
   const args = vals.slice(k + 1);
   if (sub === 'push') {
     const p = parsePush(args);
     if (!p) return null;
-    return { kind: 'push', source: 'git', repoDir, ...p, plain: p.plain && !extra };
+    return { kind: 'push', source: 'git', repoDir, ...p, plain: p.plain && bare };
   }
   if (sub === 'merge') {
     const m = parseMerge(args);
     if (!m) return null;
     return { kind: 'merge', source: 'git', repoDir, ref: m.ref, remote: null, danger: null, plain: false };
   }
+  if (sub === 'subtree' && args.includes('push')) {
+    return { kind: 'push', source: 'git', repoDir, ref: null, remote: null, danger: null, plain: false };
+  }
+  const key = sub?.toLowerCase();
+  if (key !== undefined && aliases.has(key)) {
+    const value = aliases.get(key);
+    // Set from the environment: it can't be read, so it counts.
+    if (value === null || value === undefined)
+      return { kind: 'push', source: 'git', repoDir, ref: null, remote: null, danger: null, plain: false };
+    if (value.trimStart().startsWith('!')) return shellAlias(value, repoDir);
+    const f = gitAt(['git', ...value.split(/\s+/).filter(Boolean), ...args], 0, repoDir);
+    return f ? { ...f, plain: false } : null;
+  }
   return null;
 }
 
+const GH_BODY_OPTS = new Set(['-f', '-F', '--field', '--raw-field', '--input']);
+
 function ghAt(vals: string[], i: number, dir: string | null): Found | null {
   const rest: string[] = [];
+  let method: string | null = null;
+  let body = false;
   for (let k = i + 1; k < vals.length; k++) {
     const a = vals[k] as string;
     if (a === '-R' || a === '--repo') {
       k++;
-      continue;
+    } else if (a === '-X' || a === '--method') {
+      method = vals[k + 1] ?? null;
+      k++;
+    } else if (a.startsWith('--method=')) {
+      method = a.slice('--method='.length);
+    } else if (/^-X./.test(a)) {
+      method = a.slice(2);
+    } else if (GH_BODY_OPTS.has(a)) {
+      body = true;
+      k++;
+    } else if (/^(?:-[fF].|--(?:field|raw-field|input)=)/.test(a)) {
+      body = true;
+    } else {
+      rest.push(a);
     }
-    rest.push(a);
   }
   const plainArgs = rest.filter((a) => !a.startsWith('-'));
-  const merges =
-    (plainArgs[0] === 'pr' && plainArgs[1] === 'merge') ||
-    (plainArgs[0] === 'api' && rest.some((a) => /\/merges?(?:[?#]|$)/.test(a)));
-  if (!merges) return null;
-  return { kind: 'merge', source: 'gh', repoDir: dir, ref: null, remote: null, danger: null, plain: false };
+  const found = (kind: PublishKind): Found => ({
+    kind,
+    source: 'gh',
+    repoDir: dir,
+    ref: null,
+    remote: null,
+    danger: null,
+    plain: false,
+  });
+  if (plainArgs[0] === 'pr' && plainArgs[1] === 'merge') return found('merge');
+  if (plainArgs[0] !== 'api') return null;
+  if (rest.some((a) => /\/merges?(?:[?#]|$)/.test(a))) return found('merge');
+  // Fields imply POST unless a method is named.
+  const verb = (method ?? (body ? 'POST' : 'GET')).toUpperCase();
+  const writes = verb !== 'GET' && verb !== 'HEAD';
+  if (writes && rest.some((a) => /\/contents(?:\/|$)|\/git\/refs(?:\/|[?#]|$)/.test(a))) return found('push');
+  return null;
 }
 
 function wtFinishAt(vals: string[], i: number, dir: string | null): Found | null {
@@ -711,6 +843,12 @@ function findPublishes(text: string, st: ShellState, depth: number): Found[] {
   return found;
 }
 
+/**
+ * Anything that can point a push at another repo without showing in its own segment: a `GIT_*` variable
+ * (set, exported or passed through `env`) or the folder stack. A plain push never has any of these.
+ */
+const REDIRECTS_GIT = /GIT_[A-Za-z0-9_]|\b(?:pushd|popd)\b/;
+
 /** Pure: the publish in a Bash command, or null. Heredoc bodies stripped, quotes respected. */
 export function detectPublish(command: string): DetectedPublish | null {
   const list = findPublishes(command, freshState(null), 0);
@@ -726,7 +864,7 @@ export function detectPublish(command: string): DetectedPublish | null {
     kind,
     danger,
     dangerous: danger !== null,
-    plain: list.length === 1 && primary.plain,
+    plain: list.length === 1 && primary.plain && !REDIRECTS_GIT.test(command),
   };
 }
 
@@ -850,6 +988,28 @@ function pathLike(v: string): boolean {
   return v.startsWith('/') || v.startsWith('~') || v.startsWith('.') || v.includes('/');
 }
 
+/** For a word with glob characters, the folder before the first one (what the glob can reach); else the word. */
+function globBase(v: string): string {
+  const at = v.search(/[*?[]/);
+  if (at < 0) return v;
+  const slash = v.lastIndexOf('/', at);
+  return slash < 0 ? '.' : slash === 0 ? '/' : v.slice(0, slash);
+}
+
+/**
+ * Whether a command's path touches app code: inside it (`isAppCodePath`), or a folder holding an app root
+ * (`rm -rf` on its parent). Home itself, `/` and the folders above home don't count as holding it.
+ */
+async function touchesAppPath(path: string, ctx: AppCodeContext): Promise<boolean> {
+  if (await isAppCodePath(path, ctx)) return true;
+  const p = await realish(path);
+  if (inside(await realish(ctx.home), p)) return false;
+  for (const root of [ctx.appRoot, installedAppDir(ctx.home)]) {
+    if (inside(await realish(root), p)) return true;
+  }
+  return false;
+}
+
 /** Every path-like word in a command, made absolute against the `cd`s before it. Null when unreadable. */
 function pathsIn(text: string, st: ShellState, base: string, out: Set<string>, depth: number): boolean {
   if (depth > MAX_DEPTH) return false;
@@ -863,10 +1023,12 @@ function pathsIn(text: string, st: ShellState, base: string, out: Set<string>, d
       const eq = v.indexOf('=');
       if (eq > 0 && (v.startsWith('-') || ASSIGNMENT.test(v))) v = v.slice(eq + 1);
       if (!pathLike(v)) continue;
-      out.add(resolve(base, st.dir ?? '.', v));
+      out.add(resolve(base, st.dir ?? '.', globBase(v)));
     }
     for (const r of seg.redirs) if (r.body && !pathsIn(r.body, st, base, out, depth + 1)) return false;
     track(commandWords(seg.words), st);
+    // The folder each `cd` lands in counts too: `cd <parent> && cd app && sed -i …`.
+    if (st.dir) out.add(resolve(base, st.dir));
   }
   return true;
 }
@@ -880,7 +1042,7 @@ function flatText(command: string): string {
 
 /** Whether a Bash command touches app code (decision 4). */
 export async function touchesAppCode(command: string, cwd: string, ctx: AppCodeContext): Promise<boolean> {
-  if (await isAppCodePath(cwd, ctx)) return true;
+  if (await touchesAppPath(cwd, ctx)) return true;
   const flat = flatText(command);
   if (MARKERS.some((m) => m.test(flat) || m.test(command))) return true;
   const paths = new Set<string>();
@@ -888,11 +1050,11 @@ export async function touchesAppCode(command: string, cwd: string, ctx: AppCodeC
     // Unreadable: check each whitespace-separated piece that looks like a path.
     for (const piece of command.split(/\s+/)) {
       const v = piece.replace(/["'\\]/g, '');
-      if (pathLike(v)) paths.add(resolve(cwd, v.startsWith('~') ? ctx.home + v.slice(1) : v));
+      if (pathLike(v)) paths.add(resolve(cwd, globBase(v.startsWith('~') ? ctx.home + v.slice(1) : v)));
     }
   }
   if (paths.size > MAX_PATHS) return true;
-  for (const p of paths) if (await isAppCodePath(p, ctx)) return true;
+  for (const p of paths) if (await touchesAppPath(p, ctx)) return true;
   return false;
 }
 
@@ -1059,7 +1221,7 @@ export async function teamAppRefusal(
     if (EDIT_TOOLS.has(toolName)) {
       const raw = toolName === 'NotebookEdit' ? input.notebook_path : input.file_path;
       if (typeof raw !== 'string' || !raw) return null;
-      if (!(await isAppCodePath(resolve(cwd, raw), ctx))) return null;
+      if (!(await isAppCodePath(resolve(cwd, expandHomeFor(raw, ctx.home)), ctx))) return null;
     } else if (toolName === 'Bash') {
       const command = typeof input.command === 'string' ? input.command : '';
       if (!(await touchesAppCode(command, cwd, ctx))) return null;
@@ -1163,6 +1325,13 @@ export function quickPublishFacts(toolName: string, input: Record<string, unknow
   return kind ? bareFacts(kind, toolName, null) : null;
 }
 
+/** The remote a push names when it isn't origin (a remote name, URL or path), else null. */
+function otherRemote(d: DetectedPublish): string | null {
+  return d.source === 'git' && d.kind === 'push' && d.remote !== null && d.remote !== 'origin'
+    ? d.remote
+    : null;
+}
+
 /** Where the publish goes and which commits it carries: [branch, target, range]. */
 async function rangeFor(
   d: DetectedPublish,
@@ -1176,7 +1345,16 @@ async function rangeFor(
     return [cur, def, safeRef(def) ? `origin/${def}..HEAD` : null];
   }
   if (d.kind === 'push') {
+    const other = otherRemote(d);
+    // A URL or path: no remote-tracking branch to compare with.
+    const named = other === null || safeRef(other);
     if (d.ref === null || d.ref === 'HEAD') {
+      if (other !== null) {
+        if (!named) return [cur, cur, null];
+        const push = await gitRead(top, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{push}']);
+        if (push?.startsWith(`${other}/`)) return [cur, push.slice(other.length + 1), '@{push}..HEAD'];
+        return [cur, cur, safeRef(cur) ? `${other}/${cur}..HEAD` : null];
+      }
       const up = await gitRead(top, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
       if (up) return [cur, up.slice(up.indexOf('/') + 1), '@{upstream}..HEAD'];
       return [cur, cur, safeRef(cur) ? `origin/${cur}..HEAD` : null];
@@ -1187,8 +1365,8 @@ async function rangeFor(
     const branch = fromHead ? cur : src;
     // The commits going out are the pushed ref's own, not HEAD's: `git push origin other` from main.
     const tip = fromHead ? 'HEAD' : src;
-    const remote = d.remote && safeRef(d.remote) ? d.remote : 'origin';
-    return [branch, dst || null, safeRef(dst) && safeRef(tip) ? `${remote}/${dst}..${tip}` : null];
+    const remote = other ?? 'origin';
+    return [branch, dst || null, named && safeRef(dst) && safeRef(tip) ? `${remote}/${dst}..${tip}` : null];
   }
   return [d.ref, cur, safeRef(d.ref) ? `HEAD..${d.ref}` : null];
 }
@@ -1205,10 +1383,18 @@ export async function publishFacts(
     const top = await gitRead(repoDirFor(d, cwd, ctx.home), ['rev-parse', '--show-toplevel']);
     if (!top) return facts;
     facts.isApp = await isAppCodePath(top, ctx).catch(() => false);
-    facts.repo = repoName(
-      (await originUrl(top).catch(() => null)) ??
-        (await gitRead(top, ['config', '--get', 'remote.origin.url'])),
-    );
+    const other = otherRemote(d);
+    if (other === null) {
+      facts.repo = repoName(
+        (await originUrl(top).catch(() => null)) ??
+          (await gitRead(top, ['config', '--get', 'remote.origin.url'])),
+      );
+    } else if (other.includes(':')) {
+      // A URL (or `host:path`) given in place of a remote name.
+      facts.repo = repoName(other);
+    } else if (safeRef(other)) {
+      facts.repo = repoName(await gitRead(top, ['config', '--get', `remote.${other}.url`]));
+    }
     if (facts.isApp) facts.version = await readVersion(top);
     const cur = (await gitRead(top, ['symbolic-ref', '--short', '-q', 'HEAD'])) || null;
     const [branch, target, range] = await rangeFor(d, top, cur);

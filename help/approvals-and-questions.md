@@ -8,7 +8,7 @@ benefit: You stay in control, and Claude never changes things behind your back.
 roles: all
 related: [talking-to-claude, chats-drawer, home]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -35,22 +35,14 @@ An approval card says **Needs your approval**. It names the thing Claude wants t
 
 When Claude asks a question, a card shows the answers to pick from. Pick one, or use **Or type your own answer**. Then press **Send answer**. Some questions let you pick more than one.
 
-## Merge and push
-
-When Claude is about to merge or push work, for example a new version of TDS Cortex, it shows a card titled **Are you sure you want to merge and push?** The card shows where the work is going, the branch, and the commits going out.
-
-1. Read the card.
-2. Press **Yes, merge and push** to go ahead.
-3. Press **No, not now** to stop. You can tell Claude why.
-
-There is never an **Allow for this chat** for these. You are asked every time. If it is a force push, the card also shows a **Take care** warning. The brain's own daily sync doesn't ask.
-
-Only owners and scouts can change TDS Cortex itself. If someone on the team asks Claude for a change to the app, Claude offers to add it as a feature request in the TDS Cortex Feedback project.
+Before Claude merges or pushes work, a card asks **Are you sure you want to merge and push?** That means sending the work to GitHub, where the team shares it. The card lists the changes going out. Press the yes button to go ahead, or **No, not now** to stop. These cards ask every time.
 
 ## Good to know
 
 - Some approval cards also offer **Allow for this chat**. That says yes to this kind of change for the rest of that chat. The card says exactly what it covers.
 - Claude waits for you. It does not carry on until you answer.
+- A force push can overwrite work already on GitHub, so its card starts with a **Take care** warning. The brain's own daily sync doesn't ask.
+- Only owners and scouts can change Cortex itself. Ask Claude for a change and it offers to add your idea to the TDS Cortex Feedback project.
 
 ## Try this
 

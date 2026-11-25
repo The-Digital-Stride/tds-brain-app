@@ -40,7 +40,8 @@ function ChatDrawerBody() {
     onProjects && sheetWidth ? maxBesideContent(sheetWidth) : undefined,
   );
   // When that room is there, the Projects page makes way for the drawer; below it the drawer overlays as before.
-  const room = layer.width + 2 * CHAT_DRAWER_PAD;
+  // The drawer is on the sheet's right edge: the page gives up its width and the gap beside it.
+  const room = layer.width + CHAT_DRAWER_PAD;
   const makeWay = onProjects && sheetWidth !== undefined && sheetWidth - room >= CONTENT_MIN;
   useEffect(() => {
     if (!makeWay) return;

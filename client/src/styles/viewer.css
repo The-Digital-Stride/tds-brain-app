@@ -12,6 +12,13 @@
     inset: 0;
     z-index: var(--z-viewer);
   }
+  /* A phone-width window: the desk's gap drops to 8px (shell.css), and the viewer's with it, so the viewer stays
+   as tall as the sheet and every panel that floats over it. */
+  @media (max-width: 599px) {
+    .viewer-layer {
+      --viewer-pad: 8px;
+    }
+  }
   .viewer-veil {
     position: absolute;
     inset: 0;
@@ -317,15 +324,17 @@
   /* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
    usable beside it. It sits inside the sheet, so a pushing panel stays in view and the sheet's inert rules apply. */
   .chat-drawer {
-    /* The viewer's gap (set on .viewer-layer, which this isn't inside), so both drawers sit alike. */
-    --viewer-pad: 12px;
+    /* The air it keeps on its left when it is as wide as the sheet allows (`CHAT_DRAWER_PAD`, useLayerWidth.ts). */
+    --chat-drawer-gap: var(--sp-12);
     position: absolute;
-    top: var(--viewer-pad);
-    bottom: var(--viewer-pad);
-    right: var(--viewer-pad);
+    /* The sheet's own top, bottom and right edges, which are the file viewer's too: every drawer that comes in
+     from the right is the same height (Ian, 2026-11-25; it used to sit 12px inside the sheet, 24px shorter). */
+    top: 0;
+    bottom: 0;
+    right: 0;
     z-index: var(--z-rail);
-    width: min(520px, calc(100% - 2 * var(--viewer-pad)));
-    max-width: calc(100% - 2 * var(--viewer-pad));
+    width: min(520px, calc(100% - var(--chat-drawer-gap)));
+    max-width: calc(100% - var(--chat-drawer-gap));
     display: flex;
     flex-direction: column;
     border-radius: var(--r-16);

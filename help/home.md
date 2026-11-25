@@ -36,7 +36,7 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 ## Good to know
 
 - To choose what shows here, see [Customise Home](help:customise-home).
-- The **Recent** cards list the newest projects, tasks, chats, documents and images. Your personal files and tasks stay off them.
+- The **Recent** cards list your own newest things: your tasks, chats, and the projects and files you changed. Personal ones stay off.
 - Your chat opens as soon as you send, and you can follow it in the [Chats drawer](help:chats-drawer).
 - Owners and scouts can pick a skill on Home first, and Home starts the chat from that skill.
 - To move a card, drag the grip beside its heading. Or put the keyboard on the grip and use the arrow keys. Once you have moved a card, **Reset card order** puts them back.

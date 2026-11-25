@@ -30,6 +30,7 @@ import {
   pinnedChats,
   pinnedFileIds,
   pinnedTodos,
+  projectWorkedOn,
   RECENT_MAX,
   recentChats,
   recentProjects,
@@ -430,9 +431,7 @@ export function Home() {
   const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []).filter(
     inProject,
   );
-  const recentTodoRows = recentTodos(mine, todos?.open ?? [], today, boot.identity.slug)
-    .filter(inProject)
-    .slice(0, RECENT_MAX);
+  const recentTodoRows = recentTodos(mine, today, boot.identity.slug).filter(inProject).slice(0, RECENT_MAX);
   const recentChatRows = recentChats(live, sessions?.past ?? []).slice(0, RECENT_MAX);
   const favTodos = new Set(boot.prefs.favouriteTodos ?? []);
   const favChats = new Set(boot.prefs.favouriteChats ?? []);
@@ -972,7 +971,7 @@ export function Home() {
                       <StateNote kind="loading" />
                     ) : recentTodoRows.length === 0 ? (
                       <StateNote kind="empty">
-                        {project ? 'No tasks in this project.' : 'No tasks yet.'}
+                        {project ? 'No tasks of yours in this project.' : 'Tasks assigned to you show here.'}
                       </StateNote>
                     ) : (
                       <>
@@ -1062,7 +1061,8 @@ export function Home() {
                           <span className="line-text">
                             <span className="line-title">{projectText(p, clients)}</span>
                             <span className="line-meta">
-                              Last worked on {whenDate(p.lastChanged?.at ?? '')}
+                              {projectWorkedOn(p).mine ? 'You last worked on' : 'Last worked on'}{' '}
+                              {whenDate(projectWorkedOn(p).at)}
                             </span>
                           </span>
                         </HomeRow>
@@ -1252,7 +1252,10 @@ export function Home() {
                   app: 'app:documents',
                   all: 'All documents',
                   nouns: ['document', 'documents'],
-                  empty: ['No documents yet.', 'No documents in this project.'],
+                  empty: [
+                    'Documents you change show here.',
+                    "You haven't changed any documents in this project.",
+                  ],
                 }),
               },
               {
@@ -1265,7 +1268,7 @@ export function Home() {
                   app: 'app:images',
                   all: 'All images',
                   nouns: ['image', 'images'],
-                  empty: ['No images yet.', 'No images in this project.'],
+                  empty: ['Images you change show here.', "You haven't changed any images in this project."],
                 }),
               },
               {

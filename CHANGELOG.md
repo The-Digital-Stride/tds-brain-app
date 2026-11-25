@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.88.1 — 2026-11-25
+
+- **fix**: Recent cards show my own things, not the team's
+
 ## v0.88.0 — 2026-11-25
 
 - **feat**: Recent tasks, chats, documents and images cards

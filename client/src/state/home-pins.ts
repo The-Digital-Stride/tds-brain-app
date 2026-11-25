@@ -43,9 +43,22 @@ export function pinnedFileIds(favs: readonly string[]): string[] {
  * newest first (`lastChanged.at` is the last git commit on the project's folder).
  */
 export function recentProjects(cards: readonly ProjectCard[] | undefined): ProjectCard[] {
-  return (cards ?? [])
+  const list = cards ?? [];
+  // A server that read this person's history sends `lastMine` on every card (null when they never worked on it):
+  // then only their own projects show, by their own last change (plan 2026-11-25-my-recents, decision 3).
+  if (list.some((c) => c.lastMine !== undefined)) {
+    return list
+      .filter((c) => isOpenProject(c) && Boolean(c.lastMine))
+      .sort((a, b) => Date.parse(b.lastMine ?? '') - Date.parse(a.lastMine ?? ''));
+  }
+  return list
     .filter((c) => isOpenProject(c) && Boolean(c.lastChanged))
     .sort((a, b) => Date.parse(b.lastChanged?.at ?? '') - Date.parse(a.lastChanged?.at ?? ''));
+}
+
+/** The date Recent projects shows for a card, and whether it is this person's own last change. */
+export function projectWorkedOn(c: ProjectCard): { at: string; mine: boolean } {
+  return c.lastMine ? { at: c.lastMine, mine: true } : { at: c.lastChanged?.at ?? '', mine: false };
 }
 
 /** Most rows a Recent card ever holds (the server's cap for files; tasks and chats are cut to match). */
@@ -75,18 +88,14 @@ export function todoArrival(
 }
 
 /**
- * The tasks Home lists under "Recent tasks": yours, then ones open to anyone, TDS scope only (private titles
- * stay off Home unless pinned), once each, newest arrival first, undated last, ties by title.
+ * The tasks Home lists under "Recent tasks": the ones assigned to this person (plan 2026-11-25-my-recents), TDS
+ * scope only (private titles stay off Home unless pinned), once each, newest arrival first, undated last, ties by
+ * title.
  */
-export function recentTodos(
-  mine: TodoItem[],
-  open: TodoItem[],
-  today: string,
-  me: string | null,
-): TodoItem[] {
+export function recentTodos(mine: TodoItem[], today: string, me: string | null): TodoItem[] {
   const seen = new Set<string>();
   const rows: { t: TodoItem; at: number }[] = [];
-  for (const t of [...mine, ...open]) {
+  for (const t of mine) {
     if (t.scope !== 'tds' || seen.has(t.key)) continue;
     seen.add(t.key);
     const a = todoArrival(t, today, me);

@@ -48,6 +48,7 @@ import {
   orderGroups,
   tidyFileName,
 } from './library-rules.ts';
+import type { MyChanges } from './my-changes.ts';
 import type { ProjectsIndex } from './projects.ts';
 
 export const LIMITS = { depth: 8, listed: 5000, visited: 50_000 } as const;
@@ -179,8 +180,11 @@ export interface Library {
    * best first, across every scope. Listing metadata only: file contents are never read.
    */
   search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
-  /** The newest files of one kind for Home's Recent cards (see LibraryRecentResponse). Never throws. */
-  recent(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse>;
+  /**
+   * The newest files of one kind for Home's Recent cards (see LibraryRecentResponse). Never throws. With `mine`
+   * only files this person changed, newest change of theirs first; unreadable history → `partial: true` and none.
+   */
+  recent(kind: LibraryKind, project?: ProjectKey, mine?: MyChanges): Promise<LibraryRecentResponse>;
   scopes(): Promise<LibraryScope[]>;
   list(scope: string): Promise<LibraryListing | null>;
   file(id: string): Promise<LibraryFile | null>;
@@ -1176,7 +1180,12 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     };
   }
 
-  async function recent(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse> {
+  async function recent(
+    kind: LibraryKind,
+    project?: ProjectKey,
+    mine?: MyChanges,
+  ): Promise<LibraryRecentResponse> {
+    if (mine && !mine.readable) return { files: [], partial: true };
     const keys = await projectKeysFor();
     if (project && !keys) return { files: [], partial: false };
     // Personal files are never listed unasked, so their folder is never built for this either.
@@ -1188,10 +1197,13 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         if (item.kind !== kind) continue;
         const projects = keys ? keys(item.path) : undefined;
         if (project && !projects?.includes(project)) continue;
-        found.push({
-          hit: { item: projects ? { ...item, projects } : item, scope: info },
-          at: Date.parse(item.modified) || 0,
-        });
+        let at = Date.parse(item.modified) || 0;
+        if (mine) {
+          const changed = mine.paths.get(item.path.toLowerCase());
+          if (changed === undefined) continue;
+          at = Date.parse(changed) || 0;
+        }
+        found.push({ hit: { item: projects ? { ...item, projects } : item, scope: info }, at });
       }
     }
     found.sort(
@@ -1223,11 +1235,11 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       }
     },
 
-    async recent(kind, project) {
+    async recent(kind, project, mine) {
       try {
-        return await recent(kind, project);
+        return await recent(kind, project, mine);
       } catch {
-        return { files: [], partial: false };
+        return { files: [], partial: !!mine };
       }
     },
 

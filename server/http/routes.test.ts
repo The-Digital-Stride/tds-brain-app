@@ -1186,18 +1186,33 @@ describe('library routes', () => {
     expect(docs.hits.every((h) => h.item.kind === 'document')).toBe(true);
   });
 
-  it('lists the recent files of one kind', async () => {
+  it('says the history is unread (never the team’s files) when the brain is not a git repo', async () => {
     const { ctx } = setup();
     const ok = await call(ctx, `${ROUTES.libraryRecent}?kind=image`);
     expect(ok.status).toBe(200);
-    const body = json(ok) as LibraryRecentResponse;
-    expect(body.partial).toBe(false);
-    expect(body.files.length).toBeGreaterThan(0);
-    expect(body.files.every((f) => f.item.kind === 'image' && f.scope.kind !== 'personal')).toBe(true);
-    const docs = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc`)) as LibraryRecentResponse;
-    expect(docs.files.every((f) => f.item.kind === 'document')).toBe(true);
-    const none = json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=acme/nothing`));
-    expect(none.files).toEqual([]);
+    expect(json(ok) as LibraryRecentResponse).toEqual({ files: [], partial: true });
+  });
+
+  it('asks for the recent files of one kind, as this person, with the project', async () => {
+    const asked: unknown[][] = [];
+    const answer = { files: [], partial: false } satisfies LibraryRecentResponse;
+    const me = { name: 'Sam', slug: 'sam', email: 's@x.com', role: 'scout', knownMember: true };
+    const ctx = {
+      brain: {
+        identity: async () => me,
+        libraryRecent: async (...args: unknown[]) => {
+          asked.push(args);
+          return answer;
+        },
+      },
+      log: () => {},
+    } as unknown as RouteContext;
+    expect(json(await call(ctx, `${ROUTES.libraryRecent}?kind=doc&project=acme/web`))).toEqual(answer);
+    await call(ctx, `${ROUTES.libraryRecent}?kind=image`);
+    expect(asked).toEqual([
+      ['document', 'acme/web', me],
+      ['image', undefined, me],
+    ]);
   });
 
   it('refuses a bad recent kind or project, and any method but GET', async () => {

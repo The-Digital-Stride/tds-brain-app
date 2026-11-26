@@ -54,6 +54,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
 const { ProjectTodos } = await import('./ProjectTodos.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
+const { keptDrafts } = await import('../../state/kept-drafts.ts');
 
 const SKY = card({ slug: 'site', title: 'Sky site', owner: 'someone' });
 const ACME = card({ slug: 'boiler', client: 'acme', title: 'Boiler leads', owner: 'me' });
@@ -69,6 +70,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  keptDrafts.reload();
   projectsStore.reset();
   vi.clearAllMocks();
 });
@@ -319,6 +322,7 @@ describe('a chat started from a project stays on the project page', () => {
       project: 'acme/boiler',
       client: 'acme',
       in: 'drawer',
+      slot: 'checklist',
     });
     cleanup();
     projectsStore.reset();
@@ -330,6 +334,7 @@ describe('a chat started from a project stays on the project page', () => {
       draft: 'Show me the checklist in notes/old.md',
       client: 'acme',
       in: 'drawer',
+      slot: 'checklist',
     });
   });
 
@@ -368,6 +373,66 @@ describe('a chat started from a project stays on the project page', () => {
     render(<ProjectTodos {...(props as unknown as Parameters<typeof ProjectTodos>[0])} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open chat: Job a' }));
     expect(store.openChat).toHaveBeenCalledWith('s1', { in: 'drawer' });
+    store.sessions = null;
+  });
+
+  it('a message saved for later renames the button that brings it back, and only that one', async () => {
+    keptDrafts.save('project:acme/boiler', { text: 'Half a thought', picks: null });
+    await show(projectList([card({ ...ACME, checklist: 'notes/old.md' })]));
+    fireEvent.click(screen.getByRole('button', { name: /Boiler leads/ }));
+    expect(screen.queryByRole('button', { name: 'New chat for this project' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ask Claude about the checklist' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open saved message' }));
+    expect(store.newChat).toHaveBeenCalledWith({ project: 'acme/boiler', client: 'acme', in: 'drawer' });
+    // The checklist button has its own place, and its own name.
+    act(() => {
+      keptDrafts.drop('project:acme/boiler');
+      keptDrafts.save('project:acme/boiler#checklist', { text: 'And what is late?', picks: null });
+    });
+    expect(screen.getByRole('button', { name: 'New chat for this project' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open saved checklist message' }));
+    expect(store.newChat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slot: 'checklist', in: 'drawer' }),
+    );
+  });
+
+  it("a task's saved message renames its chat button; a chat it has since been given wins and uses it up", () => {
+    const row = {
+      key: 'a.md',
+      id: 'a.md',
+      scope: 'tds',
+      title: 'Job a',
+      assignee: 'me',
+      stage: null,
+      due: null,
+      mine: true,
+    };
+    const props = { card: ACME, team: [], rows: [row], failed: false, reload: async () => {} };
+    keptDrafts.save('todo:a.md', { text: 'Half a thought', picks: null });
+    render(<ProjectTodos {...(props as unknown as Parameters<typeof ProjectTodos>[0])} />);
+    const button = screen.getByRole('button', { name: 'Open saved message: Job a' });
+    expect(button.getAttribute('data-tip')).toBe('Open saved message');
+    fireEvent.click(button);
+    expect(store.newChat).toHaveBeenCalledWith(expect.objectContaining({ todoId: 'a.md', in: 'drawer' }));
+    cleanup();
+    store.sessions = {
+      live: [
+        {
+          id: 's1',
+          todoId: 'a.md',
+          state: 'waiting',
+          title: 'x',
+          client: null,
+          startedAt: '',
+          lastActivityAt: '',
+        },
+      ],
+      past: [],
+    };
+    render(<ProjectTodos {...(props as unknown as Parameters<typeof ProjectTodos>[0])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open chat: Job a' }));
+    expect(store.openChat).toHaveBeenCalledWith('s1', { in: 'drawer' });
+    expect(keptDrafts.get('todo:a.md')).toBeNull();
     store.sessions = null;
   });
 });

@@ -70,6 +70,14 @@
     "alt": "A new chat open beside a project, with Project and Chat for already filled in."
   },
   {
+    "id": "project-chat-save",
+    "scene": "project-chat-save",
+    "crop": ".chat-drawer",
+    "pad": 0,
+    "callouts": [],
+    "alt": "The question Cortex asks when you leave an unfinished message, with Save for later in the middle."
+  },
+  {
     "id": "chat-reply",
     "scene": "chat-reply",
     "crop": ".thread-col",

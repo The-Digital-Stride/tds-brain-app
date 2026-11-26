@@ -361,6 +361,11 @@
     flex: none;
     margin: 0 var(--sp-12) var(--sp-6);
   }
+  /* Up to three answers ("Discard message", "Save for later", "Keep writing"): the question takes its own line so
+   they never wrap one by one in a narrow drawer (as the project move question does). */
+  .chat-drawer .confirm > span:first-child {
+    flex-basis: 100%;
+  }
   .chat-drawer-name {
     flex: 1;
     min-width: 0;

@@ -30,6 +30,7 @@ import { TodosDrawer } from './shell/TodosDrawer.tsx';
 import { ToolTabs, tabGroupFor } from './shell/ToolTabs.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
+import { useJustKept } from './state/kept-drafts.ts';
 import { StoreProvider, useStore, useToolSnapshot } from './store.tsx';
 import { useAdsPreload } from './tools/ad-manager/use-ads-preload.ts';
 import { Tour, useTourOpen } from './tour/index.ts';
@@ -41,8 +42,11 @@ function Announcer() {
   const card = chat ? pendingCard(chat) : null;
   const state = chat?.sessionState ?? null;
   const last = chat?.items.at(-1);
+  // Nothing shows for "Save for later" but the opener's new name, so it is said here.
+  const justKept = useJustKept();
   let text = '';
-  if (card?.kind === 'question') text = 'Claude has a question for you';
+  if (justKept) text = 'Message saved for later.';
+  else if (card?.kind === 'question') text = 'Claude has a question for you';
   else if (card?.kind === 'permission') text = 'Claude needs your approval';
   else if (chat?.compacting) text = 'Claude is summarising the earlier conversation to make room';
   else if (state === 'working' || state === 'starting') text = 'Claude is working';

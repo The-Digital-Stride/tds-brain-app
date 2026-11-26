@@ -25,6 +25,7 @@ class FakeEventSource {
 }
 
 const { StoreProvider, useStore } = await import('./store.tsx');
+const { keptDrafts } = await import('./state/kept-drafts.ts');
 type StoreApi = ReturnType<typeof useStore>;
 
 let store: StoreApi;
@@ -60,6 +61,9 @@ const PROJECTS = 'app:projects';
 const picks = { project: 'acme/site' as const, client: 'acme' };
 
 beforeEach(() => {
+  window.localStorage.clear();
+  keptDrafts.use('sam');
+  keptDrafts.reload();
   seen.length = 0;
   vi.stubGlobal('EventSource', FakeEventSource);
   api.bootstrap.mockResolvedValue(boot);
@@ -294,6 +298,87 @@ describe('send from the drawer', () => {
     });
     expect(store.chatDrawer).toBeNull();
     expect(store.activeChat).toMatchObject({ kind: 'live', sessionId: 's9' });
+  });
+});
+
+describe('a message saved for later', () => {
+  const KEY = 'project:acme/site';
+  it("comes back from the same button, with its words and picks, in place of the opener's own", async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: '', client: 'northwind' } });
+    await mount();
+    act(() => store.openView(PROJECTS));
+    act(() => store.newChat({ in: 'drawer', project: 'acme/site', client: 'acme', draft: 'Opener text' }));
+    expect(store.activeChat).toMatchObject({
+      kind: 'new',
+      in: 'drawer',
+      draft: 'Half a thought',
+      picks: { project: '', client: 'northwind' },
+      keepKey: KEY,
+      kept: { text: 'Half a thought' },
+    });
+  });
+
+  it("with nothing kept the opener's own text is used, and the chat knows where it would be kept", async () => {
+    await mount();
+    act(() => store.openView(PROJECTS));
+    act(() => store.newChat({ in: 'drawer', project: 'acme/site', draft: 'Opener text' }));
+    expect(store.activeChat).toMatchObject({ draft: 'Opener text', keepKey: KEY });
+    expect(store.activeChat).not.toHaveProperty('kept');
+  });
+
+  it("a task's chat and the checklist button each keep their own", async () => {
+    keptDrafts.save(KEY, { text: 'For the project', picks: null });
+    await mount();
+    act(() => store.openView(PROJECTS));
+    act(() =>
+      store.newChat({ in: 'drawer', project: 'acme/site', todoId: 'a.md', draft: 'About todo/a.md' }),
+    );
+    expect(store.activeChat).toMatchObject({ draft: 'About todo/a.md', keepKey: 'todo:a.md' });
+    act(() => store.dropNewChatDrawer());
+    act(() => store.newChat({ in: 'drawer', project: 'acme/site', draft: 'Show me', slot: 'checklist' }));
+    expect(store.activeChat).toMatchObject({ draft: 'Show me', keepKey: 'project:acme/site#checklist' });
+  });
+
+  it("Home's own chat, and a chat with no task or project, can't be kept", async () => {
+    keptDrafts.save(KEY, { text: 'For the project', picks: null });
+    await mount();
+    act(() => store.newChat({ project: 'acme/site' }));
+    expect(store.activeChat).toMatchObject({ in: 'sheet', draft: '', keepKey: null });
+    act(() => store.openView(PROJECTS));
+    act(() => store.newChat({ in: 'drawer' }));
+    expect(store.activeChat).toMatchObject({ in: 'drawer', keepKey: null });
+  });
+
+  it('is used up by Send, from the drawer or after Open full screen', async () => {
+    for (const fullScreen of [false, true]) {
+      keptDrafts.save(KEY, { text: 'Half a thought', picks: null });
+      await mount();
+      act(() => store.openView(PROJECTS));
+      act(() => store.newChat({ in: 'drawer', project: 'acme/site', client: 'acme' }));
+      if (fullScreen) {
+        act(() => store.expandNewChatDrawer('Half a thought', { project: 'acme/site', client: 'acme' }));
+        expect(store.activeChat).toMatchObject({ in: 'sheet', keepKey: KEY });
+        // Still kept: Home's box doesn't ask before it loses text.
+        expect(keptDrafts.get(KEY)).not.toBeNull();
+      }
+      await act(async () => {
+        await store.send('Half a thought', 'acme', [], 'acme/site');
+      });
+      expect(keptDrafts.get(KEY)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('stays kept when the start is refused', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: null });
+    api.startSession.mockRejectedValueOnce(new Error('Four chats are already running.'));
+    await mount();
+    act(() => store.openView(PROJECTS));
+    act(() => store.newChat({ in: 'drawer', project: 'acme/site', client: 'acme' }));
+    await act(async () => {
+      expect(await store.send('Half a thought', 'acme', [], 'acme/site')).toBe(false);
+    });
+    expect(keptDrafts.get(KEY)?.text).toBe('Half a thought');
   });
 });
 

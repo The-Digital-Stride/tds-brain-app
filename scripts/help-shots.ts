@@ -51,6 +51,7 @@ const VIEWPORT = { width: 1000, height: 760 };
 const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'chats-drawer': { width: 1000, height: 420 },
   'project-chat': { width: 1000, height: 560 },
+  'project-chat-save': { width: 1000, height: 560 },
   'todos-drawer': { width: 1000, height: 600 },
   'skills-drawer': { width: 1000, height: 560 },
   'documents-grid': { width: 920, height: 700 },
@@ -323,6 +324,22 @@ const SCENES: Record<string, Scene> = {
     await page.locator('.chat-drawer .composer-input').waitFor();
     // The chip and both pickers fill in once the project list has loaded.
     await page.locator('.chat-drawer .chat-drawer-name .chip').waitFor();
+  },
+
+  async 'project-chat-save'(page) {
+    await page.locator('button.rail-item[aria-label="Projects"]').click();
+    await page
+      .getByRole('button', { name: /^Boiler quote pack/ })
+      .first()
+      .click();
+    await page.getByRole('button', { name: 'New chat for this project' }).click();
+    await page.locator('.chat-drawer .chat-drawer-name .chip').waitFor();
+    // Typed key by key, as a person would, then Hide chat: the question with its three answers.
+    await page
+      .locator('.chat-drawer .composer-input')
+      .pressSequentially('What is still to do on this project?');
+    await page.locator('.chat-drawer [aria-label="Hide chat"]').click();
+    await page.getByRole('group', { name: 'Save or discard your message' }).waitFor();
   },
 
   async 'chat-reply'(page) {

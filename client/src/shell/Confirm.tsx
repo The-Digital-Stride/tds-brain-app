@@ -6,6 +6,7 @@ export function Confirm({
   text,
   action,
   safe = 'Cancel',
+  extra,
   variant,
   busy,
   onConfirm,
@@ -17,6 +18,11 @@ export function Confirm({
   action: string;
   /** The safe option: "Keep editing", "Keep chat" when protecting work; "Cancel" for a constructive step. */
   safe?: string;
+  /**
+   * A third answer, between the action and the safe option, for a question with a middle way ("Save for later"):
+   * a standard button, so the action stays the only coloured one.
+   */
+  extra?: { label: string; onChoose: () => void };
   variant: 'primary' | 'danger';
   busy: boolean;
   onConfirm: () => void;
@@ -49,6 +55,20 @@ export function Confirm({
       >
         {action}
       </button>
+      {extra ? (
+        <button
+          type="button"
+          className="btn"
+          data-size="small"
+          aria-disabled={busy || undefined}
+          aria-describedby={textId}
+          onClick={() => {
+            if (!busy) extra.onChoose();
+          }}
+        >
+          {extra.label}
+        </button>
+      ) : null}
       <button
         type="button"
         className="btn"

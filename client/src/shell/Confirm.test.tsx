@@ -72,4 +72,35 @@ describe('Confirm', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it('a third answer sits between the action and the safe option, and is the only extra', () => {
+    const onChoose = vi.fn();
+    const { onConfirm, onCancel } = setup({
+      safe: 'Keep writing',
+      extra: { label: 'Save for later', onChoose },
+    });
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Delete project',
+      'Save for later',
+      'Keep writing',
+    ]);
+    const extra = screen.getByRole('button', { name: 'Save for later' });
+    // A standard button: the action stays the only coloured one, and the safe option keeps the focus.
+    expect(extra.getAttribute('data-variant')).toBeNull();
+    expect(extra.getAttribute('aria-describedby')).toBe(
+      screen.getByRole('button', { name: 'Delete project' }).getAttribute('aria-describedby'),
+    );
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep writing' }));
+    fireEvent.click(extra);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('the third answer does nothing while busy', () => {
+    const onChoose = vi.fn();
+    setup({ busy: true, extra: { label: 'Save for later', onChoose } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save for later' }));
+    expect(onChoose).not.toHaveBeenCalled();
+  });
 });

@@ -12,6 +12,7 @@ import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
+import { keptDraftKey, useKeptDraft } from '../../state/kept-drafts.ts';
 import { useProjects } from '../../state/projects.ts';
 import { saveChatRequest, savingChat, takeSaveChatRequest } from '../../state/save-chat-request.ts';
 import { useStore } from '../../store.tsx';
@@ -66,6 +67,9 @@ interface Removal {
   unarchive: () => void;
   onDone: (res: ProjectRemoveResult, mode: 'archive' | 'delete') => void;
 }
+
+/** The checklist button's own place for a message saved for later (`newChat`'s `slot`). */
+const CHECKLIST_SLOT = 'checklist';
 
 function useRemoval(
   card: ProjectCard,
@@ -278,6 +282,10 @@ function Overview({
   onMove: () => void;
 }) {
   const { newChat } = useStore();
+  const checklistWaiting =
+    useKeptDraft(
+      card.archived ? null : keptDraftKey({ todoId: null, project: card.key, slot: CHECKLIST_SLOT }),
+    ) !== null;
   const editable = canChange && isEditable(card);
   const clientName =
     card.space === 'personal'
@@ -525,10 +533,12 @@ function Overview({
                   draft: `Show me the checklist in ${card.checklist}`,
                   ...(card.archived ? (place.client ? { client: place.client } : {}) : place),
                   in: 'drawer',
+                  // Its own place for a message saved for later, apart from the project's plain new chat.
+                  slot: CHECKLIST_SLOT,
                 });
               }}
             >
-              Ask Claude about the checklist
+              {checklistWaiting ? 'Open saved checklist message' : 'Ask Claude about the checklist'}
             </button>
           </section>
         ) : null}
@@ -571,6 +581,8 @@ export function ProjectPage({
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
   const { todos, newChat, newChatDrawer, activeChat, requestComposerFocus } = useStore();
+  // A message saved for later from this project's new chat: the button says so, and brings it back.
+  const chatWaiting = useKeptDraft(keptDraftKey({ todoId: null, project: card.key })) !== null;
   // The list reloads when the project's count moves or the to-do lists change (an add in the To-dos panel).
   const todosStamp = useMemo(() => [card.openTodos, todos], [card.openTodos, todos]);
   const projectTodos = useProjectTodos(card.key, todosStamp);
@@ -703,7 +715,7 @@ export function ProjectPage({
             }}
           >
             <Icon name="chat" size={14} />
-            New chat for this project
+            {chatWaiting ? 'Open saved message' : 'New chat for this project'}
           </button>
         ) : null}
         {editable ? (

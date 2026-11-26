@@ -31,6 +31,7 @@ import { demoSafeEnv } from '../server/engine/demo-guard.ts';
 import { codeFromRunningServer, signInUrl } from '../server/launcher.ts';
 import { defaultDataDir, expandHomeFor, readSettings } from '../server/settings.ts';
 import { createAppStore } from '../server/store/app-store.ts';
+import { createChatPlaceStore } from '../server/store/chat-places.ts';
 import { createTokenSavingsStore } from '../server/store/token-savings.ts';
 import { demoGitEnv, redact } from './help-shots-lib.ts';
 
@@ -52,6 +53,7 @@ const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'chats-drawer': { width: 1000, height: 420 },
   'project-chat': { width: 1000, height: 560 },
   'project-chat-save': { width: 1000, height: 560 },
+  'project-chat-list': { width: 1000, height: 400 },
   'todos-drawer': { width: 1000, height: 600 },
   'skills-drawer': { width: 1000, height: 560 },
   'documents-grid': { width: 920, height: 700 },
@@ -139,6 +141,19 @@ const SEEDERS: Record<string, () => Promise<void>> = {
     const day = '2026-10-20';
     await store.add({ day, source: 'summary', measure: 'compacted', tokens: 184_000, dedupeKey: 'demo-a' });
     await store.add({ day, source: 'cache', measure: 'reused', tokens: 1_250_000, dedupeKey: 'demo-b' });
+  },
+  // The demo's earlier Acme chat belongs to the demo project, so the project's Chats tab has a past chat to list.
+  async 'project-chat-list'() {
+    // The repo's own projects skill, so the demo project can take a chat summary and rows offer Save to project.
+    cpSync(
+      join(ROOT, 'brain-skills', 'tdsapp-projects'),
+      inDemo(join(BRAIN, '.claude', 'skills', 'tdsapp-projects')),
+      { recursive: true },
+    );
+    await createChatPlaceStore(inDemo(DATA)).set('6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f', {
+      client: 'acme-heating',
+      project: 'acme-heating/boiler-quote-pack',
+    });
   },
 };
 
@@ -340,6 +355,25 @@ const SCENES: Record<string, Scene> = {
       .pressSequentially('What is still to do on this project?');
     await page.locator('.chat-drawer [aria-label="Hide chat"]').click();
     await page.getByRole('group', { name: 'Save or discard your message' }).waitFor();
+  },
+
+  async 'project-chat-list'(page) {
+    await page.locator('button.rail-item[aria-label="Projects"]').click();
+    await page
+      .getByRole('button', { name: /^Boiler quote pack/ })
+      .first()
+      .click();
+    // One chat from today, sent from the project, beside the earlier one the seeder placed here.
+    await page.getByRole('button', { name: 'New chat for this project' }).click();
+    await page.locator('.chat-drawer .chat-drawer-name .chip').waitFor();
+    await page
+      .locator('.chat-drawer .composer-input')
+      .pressSequentially('What is still to do on this project?');
+    await page.locator('.chat-drawer').getByRole('button', { name: 'Send' }).click();
+    await page.locator('.chat-drawer .msg-assistant').waitFor();
+    await page.locator('.chat-drawer [aria-label="Hide chat"]').click();
+    await page.locator('nav[aria-label="Project sections"]').getByRole('button', { name: 'Chats' }).click();
+    await page.locator('.proj-card .line').nth(1).waitFor();
   },
 
   async 'chat-reply'(page) {

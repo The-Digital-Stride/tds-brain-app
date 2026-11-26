@@ -116,6 +116,7 @@ import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
+import type { ProjectChatsResponse } from '../../shared/project-chats-contract.ts';
 import {
   EMAIL_NAME_MAX,
   EMAIL_PEOPLE_MAX,
@@ -228,6 +229,7 @@ export interface RouteContext {
     teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
     /** Chat summaries: this person's `chat` entries for one chat on a project (whole log, newest first). */
     chatEntries?: ProjectUpdatesService['chatEntries'];
+    myChatEntries?: ProjectUpdatesService['myChatEntries'];
     /** Chat summaries: hands the brain the session manager's `ownsChat`, for "Open chat" on `chat` entries. */
     setHoldsChat?: (fn: ((chatId: string) => Promise<boolean>) | null) => void;
   };
@@ -1748,6 +1750,52 @@ async function projectsRoute(
     return;
   }
 
+  if (path === ROUTES.projectChats) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const list = ctx.brain.projects;
+    if (!list) throw missing();
+    const who = await identity();
+    try {
+      const projects = await list.call(ctx.brain, who);
+      const card =
+        projects.projects.find((c) => c.key === key) ??
+        projects.projects.find((c) => (c.movedFrom ?? []).includes(key)) ??
+        null;
+      if (!card)
+        throw new HttpError(404, 'not-found', "That project couldn't be found. It may have been moved.");
+      // An empty list would read as "no chats", so a missing service is an error.
+      const service = ctx.sessions.chatSummaries;
+      if (!service)
+        throw new HttpError(503, 'engine-missing', "Chats aren't available in this copy of the app yet.");
+      // The same answer as the unsaved route: archived or read-only projects still list their chats.
+      let canSave =
+        (await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) === 'allowed';
+      if (canSave) {
+        try {
+          await savableCard(ctx, list, key, who);
+        } catch (err) {
+          if (!(err instanceof HttpError && err.code === 'not-allowed')) throw err;
+          canSave = false;
+        }
+      }
+      const entries = ctx.brain.myChatEntries;
+      const result = await service.forProject({
+        keys: [card.key, ...(card.movedFrom ?? [])],
+        // Absent: reject, so saved is unknown rather than "never".
+        entries: entries
+          ? () => entries.call(ctx.brain, card.key, who)
+          : () => Promise.reject(new Error('Chat entries are not available.')),
+      });
+      const body: ProjectChatsResponse = { chats: result.chats, canSave, more: result.more };
+      sendJson(res, 200, body);
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading the project's chats");
+    }
+    return;
+  }
+
   if (path === ROUTES.projectEmailDrafts) {
     const drafts = ctx.brain.emailDrafts;
     if (!drafts) throw missing();
@@ -2987,6 +3035,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectUpdates ||
     path === ROUTES.chatSummaryDraft ||
     path === ROUTES.projectUnsavedChats ||
+    path === ROUTES.projectChats ||
     path === ROUTES.projectEmailDrafts ||
     path === ROUTES.projectActivity ||
     path === ROUTES.projectSeen ||

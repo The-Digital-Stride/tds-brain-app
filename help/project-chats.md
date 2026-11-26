@@ -6,7 +6,7 @@ order: 4
 summary: Start a chat from a project and it opens next to the page, set to that project.
 benefit: You ask Claude about a project without losing your place in it.
 roles: all
-related: [projects, picking-the-client, saving-chats-to-projects, drafting-emails, talking-to-claude]
+related: [projects, project-chat-list, picking-the-client, saving-chats-to-projects, drafting-emails, talking-to-claude]
 since: 0.91.0
 reviewed: 2026-11-26
 ---
@@ -27,7 +27,7 @@ A chat you start from a project opens beside the project's page. You stay in the
 2. Check **Project** (1) and **Chat for** (2). Both are filled in for you.
 3. Type your message and press **Send**. The reply appears above, in the same place.
 4. Press **Open full screen** (3) for more room. Your message and both pickers go with you.
-5. Press **Hide chat** (4) to close it. A chat you have sent keeps running, and Chats lists it.
+5. Press **Hide chat** (4) to close it. A chat you have sent keeps running. The project's [**Chats** tab](help:project-chat-list) lists it.
 
 ![A new chat open beside a project, with Project and Chat for already filled in.](images/project-chat.webp)
 

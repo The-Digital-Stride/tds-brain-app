@@ -632,6 +632,18 @@ project: `newChat({ …, in: 'drawer' })` opens the drawer with nothing sent.
 - A start that is refused (four chats already running) is repeated in the box's status line, because an
   overlaying drawer can cover the sheet's notices.
 
+### A project's Chats tab
+
+Plan: `docs/plans/2026-11-26-project-chats-tab.md`. The last page tab on a project (Overview, Tasks, Updates,
+Files, Chats), with no `.count`: a count means "waiting". One `.card.proj-card` in the usual `.tray.lib-tray`,
+headed "Your chats for this project" with a `.hint` saying whose they are ("Only you can see these. They stay on
+this Mac."). Rows are the Chats drawer's (`li.line` > `button.line-main`, so they lift), and the row opens the
+chat in the chat drawer beside the project (Actions rule 1). The details line is "Open now" or "Last active
+{date}", then " · " and "not saved yet", "saved {date}" or "new messages since you saved on {date}"; nothing about
+saving where the person can't save. The one action is the small **Save to project** at the row's end, hidden
+on a saved chat with nothing new and on a chat that is replying. No star, bin or rename here: those stay in the
+Chats drawer. Loading, empty and failed lines are `StateNote`; a re-read keeps the rows on screen.
+
 ### The message box's scope row
 
 `.composer-scope` holds pickers only, never loose text. Each is a `.scope-field`: a small visible label and a

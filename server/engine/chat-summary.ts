@@ -26,6 +26,12 @@ import {
   type UnsavedChat,
 } from '../../shared/chat-summary-contract.ts';
 import type { ApiErrorCode, ChatFilesSnapshot } from '../../shared/contract.ts';
+import {
+  PROJECT_CHATS_MAX,
+  type ProjectChat,
+  type ProjectChatsInput,
+  type ProjectChatsResult,
+} from '../../shared/project-chats-contract.ts';
 import type { ProjectKey } from '../../shared/projects-contract.ts';
 import type { ChatSummaryStore } from '../store/chat-summaries.ts';
 
@@ -459,6 +465,8 @@ export interface ChatSummaryService {
   recordSaved(chat: string, key: ProjectKey): Promise<void>;
   /** The nudge's list (contract count rule), newest first, at most UNSAVED_CHATS_MAX. */
   unsaved(input: UnsavedInput): Promise<UnsavedChat[]>;
+  /** The project's Chats tab: every chat placed there, newest first, with whether its summary was saved. */
+  forProject(input: ProjectChatsInput): Promise<ProjectChatsResult>;
 }
 
 /** Chats looked at for the nudge at most, newest first. */
@@ -576,6 +584,55 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
         });
       }
       return out;
+    },
+
+    async forProject(input) {
+      const keys = new Set<string>(input.keys);
+      const all = (await opts.port.placed().catch(() => [] as PlacedChat[]))
+        .filter((p) => keys.has(p.project))
+        .sort((a, b) => b.lastModified - a.lastModified);
+      const placed = all.slice(0, PROJECT_CHATS_MAX);
+      // Read at most once, and only when some chat has no record: the updates log is the slow part.
+      let entries: Promise<Map<string, string> | null> | null = null;
+      const readEntries = () => {
+        entries ??= input.entries().catch(() => null);
+        return entries;
+      };
+      const chats: ProjectChat[] = [];
+      for (const p of placed) {
+        const records = await opts.store.forChat(p.chat);
+        let rec: { savedAt: string; messages: number } | null = null;
+        for (const [k, r] of records) if (keys.has(k) && (!rec || r.savedAt > rec.savedAt)) rec = r;
+        const lastActive = new Date(p.lastModified).toISOString();
+        let saved: ProjectChat['saved'];
+        let savedAt: string | null = null;
+        if (rec) {
+          savedAt = rec.savedAt;
+          saved = 'saved';
+          // Same counting rule as the Overview card: only a chat active since the save is counted.
+          if (lastActive > rec.savedAt) {
+            const count = await opts.port.messages(p.chat).catch(() => null);
+            if (count !== null && count > rec.messages) saved = 'new';
+          }
+        } else {
+          const mine = await readEntries();
+          const at = mine?.get(p.chat);
+          if (!mine) saved = null;
+          else if (at !== undefined) {
+            saved = 'saved';
+            savedAt = at;
+          } else saved = 'never';
+        }
+        chats.push({
+          chat: p.chat,
+          title: oneLine(p.title, CHAT_TITLE_MAX) || 'Untitled chat',
+          lastActive,
+          busy: p.replying,
+          saved,
+          savedAt,
+        });
+      }
+      return { chats, more: all.length > PROJECT_CHATS_MAX };
     },
   };
 }

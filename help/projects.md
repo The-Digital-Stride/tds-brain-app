@@ -6,7 +6,7 @@ order: 3
 summary: See every project, who is on it, its tasks and its files, in one place.
 benefit: Know how each project is going without asking around.
 roles: all
-related: [project-chats, project-emails, saving-chats-to-projects, project-codes, meetings, todos, documents, images, picking-the-client, home]
+related: [project-chats, project-chat-list, project-emails, saving-chats-to-projects, project-codes, meetings, todos, documents, images, picking-the-client, home]
 since: 0.55.0
 reviewed: 2026-11-26
 ---
@@ -24,7 +24,7 @@ Projects shows the team's work for each client: each project's brief, team, task
 
 1. Open Projects.
 2. Choose **Mine**, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what's new, what's due, chats not saved yet, the brief and team. **Tasks** lists everyone's; choose **Mine** there to see just yours. **Updates** logs notes, calls, emails, [chat summaries](help:saving-chats-to-projects) and changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one.
+3. Open a project. **Overview** shows what's new, what's due, chats not saved yet, the brief and team. **Tasks** lists everyone's; choose **Mine** there to see just yours. **Updates** logs notes, calls, emails, [chat summaries](help:saving-chats-to-projects) and changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one. **Chats** lists [your chats](help:project-chat-list).
 4. **New project** adds one; **Edit** changes one. **Add to team** keeps a person marked "from tasks".
 5. **New chat for this project** opens [a chat beside it](help:project-chats).
 6. **Move** moves a project to another client.

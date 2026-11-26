@@ -2232,6 +2232,8 @@ export const ROUTES = {
   chatSummaryDraft: '/api/chat-summary/draft',
   /** Chat summaries, decision 10. `GET ?key=<ProjectKey>` → UnsavedChatsResponse (this Mac's chats only). */
   projectUnsavedChats: '/api/projects/unsaved-chats',
+  /** A project's Chats tab. `GET ?key=<ProjectKey>` → ProjectChatsResponse (shared/project-chats-contract.ts). */
+  projectChats: '/api/projects/chats',
   /** Home meetings. `GET` → HomeMeetingsResponse (shared/home-meetings-contract.ts): every upcoming meeting, this Mac's calendar only. */
   homeMeetings: '/api/meetings',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */

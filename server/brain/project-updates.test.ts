@@ -680,4 +680,17 @@ describe('chat entries', () => {
     });
     expect(await setup({ caps: CAPS }).svc.chatEntries('acme/none', CHAT, me())).toEqual([]);
   });
+
+  it('myChatEntries: this person only, newest at per chat, empty for an unknown project', async () => {
+    add('2026-10-01T09:00:00Z', chatEntry('2026-10-01T09:00:00Z'), FOLDER, 'old111');
+    add('2026-10-04T09:00:00Z', chatEntry('2026-10-04T09:00:00Z'), FOLDER, 'new111');
+    add('2026-10-05T09:00:00Z', chatEntry('2026-10-05T09:00:00Z', 'ben-mcadam'), FOLDER, 'ben111');
+    add('2026-10-06T09:00:00Z', chatEntry('2026-10-06T09:00:00Z', 'sam-example', OTHER), FOLDER, 'oth111');
+    add('2026-10-03T09:00:00Z', entry('2026-10-03T09:00:00Z'), FOLDER, 'not111');
+    const got = await setup({ caps: CAPS }).svc.myChatEntries(KEY, me());
+    expect(got.get(CHAT)).toBe('2026-10-04T09:00:00Z');
+    expect(got.get(OTHER)).toBe('2026-10-06T09:00:00Z');
+    expect(got.size).toBe(2);
+    expect((await setup({ caps: CAPS }).svc.myChatEntries('acme/none', me())).size).toBe(0);
+  });
 });

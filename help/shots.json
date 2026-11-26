@@ -78,6 +78,26 @@
     "alt": "The question Cortex asks when you leave an unfinished message, with Save for later in the middle."
   },
   {
+    "id": "project-chat-list",
+    "scene": "project-chat-list",
+    "crop": ".lib.proj",
+    "callouts": [
+      {
+        "n": 1,
+        "target": "nav[aria-label=\"Project sections\"] button[aria-current=\"page\"]"
+      },
+      {
+        "n": 2,
+        "target": ".proj-card .line:nth-child(2) .line-main"
+      },
+      {
+        "n": 3,
+        "target": ".proj-card .line .btn"
+      }
+    ],
+    "alt": "A project's Chats tab, listing two chats with a Save to project button beside each."
+  },
+  {
     "id": "chat-reply",
     "scene": "chat-reply",
     "crop": ".thread-col",

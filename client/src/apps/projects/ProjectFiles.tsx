@@ -18,6 +18,7 @@ import { DOCUMENTS } from '../documents/kind.tsx';
 import { IMAGES } from '../images/kind.tsx';
 import { useLoaded } from '../shared/data.ts';
 import { type KindSpec, LibraryBrowser, type View } from '../shared/LibraryBrowser.tsx';
+import type { UploadStatus } from '../shared/upload.tsx';
 import { AddArtifactForm } from './AddArtifactForm.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
@@ -407,6 +408,7 @@ export function ProjectFiles({
   onLinking,
   addingArtifact = false,
   onAddingArtifact,
+  upload,
 }: {
   card: ProjectCard;
   canChange: boolean;
@@ -416,6 +418,8 @@ export function ProjectFiles({
   /** Whether the "Add a claude.ai page" form is open. The page owns it, like `linking`. */
   addingArtifact?: boolean;
   onAddingArtifact?: (open: boolean) => void;
+  /** An upload's progress or result (the page owns the Upload button, which sits in its tabs row). */
+  upload?: UploadStatus;
 }) {
   const { dispatch } = useShell();
   const [message, setMessage] = useState('');
@@ -426,6 +430,14 @@ export function ProjectFiles({
   useEffect(() => {
     if (linking) setDone('');
   }, [linking]);
+
+  // A new upload word replaces what was said before it, so the newest line is the one on screen.
+  const uploadText = upload?.text ?? '';
+  useEffect(() => {
+    if (!uploadText) return;
+    setDone('');
+    setMessage('');
+  }, [uploadText]);
 
   // A file opens at once in the viewer drawer over the right of the page, like a to-do's or a chat's
   // files. Its library (the place line and "Open in Documents") is filled in when the lookup answers,
@@ -448,6 +460,8 @@ export function ProjectFiles({
     }
   };
 
+  const status = done || (upload?.level === 'info' ? upload.text : '');
+
   return (
     <>
       {message ? (
@@ -455,8 +469,13 @@ export function ProjectFiles({
           {message}
         </p>
       ) : null}
-      <p className={done ? 'proj-note' : 'visually-hidden'} role="status">
-        {done}
+      {upload && upload.level !== 'info' && upload.text ? (
+        <p className="notice" data-level={upload.level} data-shape="box" role="alert">
+          {upload.text}
+        </p>
+      ) : null}
+      <p className={status ? 'proj-note' : 'visually-hidden'} role="status">
+        {status}
       </p>
       {linking && canChange ? (
         <div className="tray lib-tray">

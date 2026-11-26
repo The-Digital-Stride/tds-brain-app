@@ -16,6 +16,7 @@ import { keptDraftKey, useKeptDraft } from '../../state/kept-drafts.ts';
 import { useProjects } from '../../state/projects.ts';
 import { saveChatRequest, savingChat, takeSaveChatRequest } from '../../state/save-chat-request.ts';
 import { useStore } from '../../store.tsx';
+import { canUploadToProject, UploadButton, useFilePicker, useLibraryUpload } from '../shared/upload.tsx';
 import { EmailDrafts } from './EmailDrafts.tsx';
 import {
   dateWords,
@@ -598,6 +599,16 @@ export function ProjectPage({
   // And Add a claude.ai page, offered only where the server says so (live project with a card, not legacy).
   const [addingArtifact, setAddingArtifact] = useState(false);
   const canAddArtifact = list.canAddArtifact === true && editable && card.space !== 'legacy';
+  // And Upload: the same per-card rule, with the server's own flag. The target is the card as it is when files are chosen.
+  const canUpload = canUploadToProject(list, card);
+  const uploading = useLibraryUpload();
+  const picker = useFilePicker((files) => void uploading.upload(files, { kind: 'project', card }));
+  const { clear: clearUpload, busy: uploadBusy } = uploading;
+  // Another project's words don't carry over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the project changes.
+  useEffect(() => {
+    if (!uploadBusy) clearUpload();
+  }, [card.key]);
   // And Add an update: the Updates tab says whether the brain's skill allows it.
   const [addingUpdate, setAddingUpdate] = useState(false);
   const [canAddUpdate, setCanAddUpdate] = useState(false);
@@ -803,6 +814,14 @@ export function ProjectPage({
             Add files
           </button>
         ) : null}
+        {tab === 'files' && canUpload ? (
+          <UploadButton
+            destination={card.title || 'this project'}
+            busy={uploading.busy}
+            picker={picker}
+            small
+          />
+        ) : null}
         {tab === 'files' && canAddArtifact ? (
           <button
             type="button"
@@ -816,6 +835,7 @@ export function ProjectPage({
             Add a claude.ai page
           </button>
         ) : null}
+        {tab === 'files' && canUpload ? picker.input : null}
       </div>
       <div className="proj-body">
         {tab === 'overview' ? (
@@ -867,6 +887,7 @@ export function ProjectPage({
             onLinking={setLinking}
             addingArtifact={addingArtifact && canAddArtifact}
             onAddingArtifact={setAddingArtifact}
+            upload={uploading.status}
           />
         ) : null}
         {tab === 'chats' ? (

@@ -88,6 +88,27 @@ describe('the Files tab, in the shared library browser', () => {
     await waitFor(() => expect(titles()).toEqual(['logo.png']));
   });
 
+  it('shows a type badge on every tile and row, for documents and images', async () => {
+    answer([PLAN, BRIEF], [LOGO]);
+    show();
+    await waitFor(() => expect(titles()).toContain('plan.docx'));
+    const labels = () => [...document.querySelectorAll('.lib-type')].map((b) => b.textContent);
+    const hidden = () =>
+      [...document.querySelectorAll('.line-meta > .visually-hidden')].map((b) => b.textContent);
+    // Documents open as a list: the badge is a slot in each row, before the title.
+    expect(document.querySelectorAll('.lib-row .lib-open > .lib-type')).toHaveLength(2);
+    expect(labels().sort()).toEqual(['DOCX', 'PDF']);
+    expect(hidden().sort()).toEqual(['DOCX, ', 'PDF, ']);
+    fireEvent.click(screen.getByRole('radio', { name: 'Grid' }));
+    await waitFor(() => expect(document.querySelectorAll('.lib-tile-pic > .lib-type')).toHaveLength(2));
+    expect(labels().sort()).toEqual(['DOCX', 'PDF']);
+    expect(hidden().sort()).toEqual(['DOCX, ', 'PDF, ']);
+    fireEvent.click(screen.getByRole('radio', { name: 'Images, 1' }));
+    await waitFor(() => expect(titles()).toEqual(['logo.png']));
+    expect(labels()).toEqual(['PNG']);
+    expect(hidden()).toEqual(['PNG, ']);
+  });
+
   it('keeps keyboard focus on the switch when the arrow keys change the kind', async () => {
     answer([PLAN, BRIEF], [LOGO]);
     show();

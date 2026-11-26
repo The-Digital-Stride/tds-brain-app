@@ -112,6 +112,12 @@ import {
   SKILL_LEVEL_SETTERS,
   type SkillLevels,
 } from '../../shared/levels-contract.ts';
+import {
+  LIBRARY_UPLOAD_MESSAGES,
+  LIBRARY_UPLOAD_TYPES,
+  type LibraryUploadRequest,
+  type LibraryUploadResponse,
+} from '../../shared/library-upload-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
@@ -161,6 +167,11 @@ import type { EmailDraftsService } from '../brain/email-drafts.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { classify } from '../brain/library-rules.ts';
+import {
+  LibraryUploadError,
+  type LibraryUploadErrorCode,
+  type LibraryUploadService,
+} from '../brain/library-upload.ts';
 import { withLastMine as withMineCards } from '../brain/my-changes.ts';
 import {
   artifactRefusal,
@@ -218,6 +229,8 @@ export interface RouteContext {
     projectSeen?: (key: ProjectKey, token: string, identity: Identity) => Promise<void>;
     /** Claude artifacts in projects (decision 8): "Add a claude.ai page". Absent: the route says it isn't there. */
     projectArtifact?: ProjectArtifactService;
+    /** Library uploads (plan 2026-11-26-file-types-and-uploads): absent, no flags and the route refuses. */
+    libraryUpload?: LibraryUploadService;
     projectMeetings?: (key: ProjectKey) => Promise<ProjectMeetingsResponse>;
     projectBusiness?: (key: ProjectKey) => Promise<ProjectBusinessResponse>;
     homeMeetings?: () => Promise<HomeMeetingsResponse>;
@@ -1472,7 +1485,6 @@ function bindHoldsChat(ctx: RouteContext): void {
   set.call(ctx.brain, (chatId) => owns.call(ctx.sessions, chatId));
 }
 
-/** Sets `canAddArtifact` (true only; absent otherwise) on a list the route sends: changes allowed and the files skill can add pages. */
 /** Each shared project card gets `lastMine` (this person's newest change under its folder); none when unreadable. */
 async function withLastMine(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
   const mine = ctx.brain.myChanges;
@@ -1481,10 +1493,24 @@ async function withLastMine(ctx: RouteContext, list: ProjectList, who: Identity)
   return changes ? { ...list, projects: withMineCards(list.projects, changes) } : list;
 }
 
+/**
+ * Sets `canAddArtifact` and `canUploadFiles` (each true only; absent otherwise) on a list the route sends: changes
+ * allowed, and the files skill can add pages or files for this person.
+ */
 async function withArtifactFlag(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
-  const service = ctx.brain.projectArtifact;
-  if (!service || !list || list.canChange !== true) return list;
-  return (await safe(service.canAdd(who), false)) ? { ...list, canAddArtifact: true } : list;
+  const artifact = ctx.brain.projectArtifact;
+  const upload = ctx.brain.libraryUpload;
+  if ((!artifact && !upload) || !list || list.canChange !== true) return list;
+  const [canAdd, canUpload] = await Promise.all([
+    artifact ? safe(artifact.canAdd(who), false) : false,
+    upload ? safe(upload.canUploadFiles(who), false) : false,
+  ]);
+  if (!canAdd && !canUpload) return list;
+  return {
+    ...list,
+    ...(canAdd ? { canAddArtifact: true } : {}),
+    ...(canUpload ? { canUploadFiles: true } : {}),
+  };
 }
 
 /** The six projects routes. Every one has already passed the security gate. */
@@ -2028,6 +2054,95 @@ async function uploadTodoFileRoute(
   sendJson(res, 200, out);
 }
 
+/**
+ * `POST ROUTES.libraryUpload`: exactly `{upload, scope}` or `{upload, project, expect}`, no other fields (both
+ * `scope` and `project` is refused). The values are checked by the brain's library upload service.
+ */
+export function parseLibraryUploadRequest(body: unknown): LibraryUploadRequest {
+  const bad = () => new HttpError(400, 'bad-request', LIBRARY_UPLOAD_MESSAGES.badRequest);
+  if (!isRec(body)) throw bad();
+  const { upload } = body;
+  if (typeof upload !== 'string' || upload === '' || upload.length > 64) throw bad();
+  const keys = Object.keys(body).sort().join(',');
+  if (keys === 'scope,upload') {
+    const { scope } = body;
+    if (typeof scope !== 'string' || scope === '' || scope.length > 200) throw bad();
+    return { upload, scope };
+  }
+  if (keys === 'expect,project,upload') {
+    const { project, expect } = body;
+    if (!isProjectKey(project) || typeof expect !== 'string' || expect.length > 128) throw bad();
+    return { upload, project, expect };
+  }
+  throw bad();
+}
+
+const LIBRARY_UPLOAD_STATUS: Record<LibraryUploadErrorCode, number> = {
+  'bad-request': 400,
+  'not-allowed': 403,
+  'not-found': 404,
+  changed: 409,
+  internal: 500,
+};
+
+/**
+ * Files a staged upload into a library or a project (plan 2026-11-26-file-types-and-uploads, overseer ruling 4).
+ * The staged file is used up first, whatever happens next, so the same upload can never be filed twice. No Tasks
+ * switch (ruling 5): the files skill's `roles:` is the gate, checked again on every request.
+ */
+async function libraryUploadRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RouteContext,
+): Promise<void> {
+  const request = parseLibraryUploadRequest(await readJson(req));
+  let file: StagedFile | undefined;
+  try {
+    file = ctx.uploads.claim([request.upload]).files[0];
+  } catch (err) {
+    if (err instanceof UploadError)
+      throw new HttpError(400, 'bad-request', LIBRARY_UPLOAD_MESSAGES.badRequest);
+    throw err;
+  }
+  if (!file) throw new HttpError(400, 'bad-request', LIBRARY_UPLOAD_MESSAGES.badRequest);
+  // The staged kind must be the library's kind for that extension (an image is never filed as a document).
+  const ext = extensionOf(file.name);
+  if (!LIBRARY_UPLOAD_TYPES.includes(ext) || classify(ext)?.kind !== file.kind)
+    throw new HttpError(400, 'bad-request', LIBRARY_UPLOAD_MESSAGES.badType);
+  const service = ctx.brain.libraryUpload;
+  if (!service) throw new HttpError(403, 'not-allowed', LIBRARY_UPLOAD_MESSAGES.notAllowed);
+  const who = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+  // A project upload also needs what any project change needs; the service checks `canChange` and the card.
+  if (
+    'project' in request &&
+    (await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed'
+  )
+    throw new HttpError(403, 'not-allowed', LIBRARY_UPLOAD_MESSAGES.notAllowed);
+  let saved: LibraryUploadResponse;
+  try {
+    saved = await service.save(
+      'project' in request
+        ? { stagedPath: file.path, name: file.name, project: request.project, expect: request.expect }
+        : { stagedPath: file.path, name: file.name, scope: request.scope },
+      who,
+      { onSaved: () => ctx.hub.publish({ type: 'brain-changed', area: 'library' }) },
+    );
+  } catch (err) {
+    if (err instanceof LibraryUploadError)
+      throw new HttpError(LIBRARY_UPLOAD_STATUS[err.code], err.code, err.message);
+    ctx.log('Adding a file to the library failed unexpectedly.');
+    throw new HttpError(500, 'internal', LIBRARY_UPLOAD_MESSAGES.saveFailed);
+  }
+  ctx.log('project' in request ? 'Added a file to a project.' : 'Added a file to the library.');
+  sendJson(
+    res,
+    200,
+    saved.list
+      ? { ...saved, list: await withArtifactFlag(ctx, await withLastMine(ctx, saved.list, who), who) }
+      : saved,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The library (read-only). The browser only ever sends an id; the brain readers map it to a file
 // they have checked, and each route then checks the item suits it.
@@ -2388,7 +2503,16 @@ async function libraryRoute(
     if (!scope) throw new HttpError(400, 'bad-request', 'Choose whose files to show.');
     const listing = await safe(ctx.brain.library(scope), null);
     if (!listing) throw new HttpError(404, 'not-found', 'Those files could not be found.');
-    sendJson(res, 200, listing);
+    // `canUpload` (true only): the same rule the upload route uses, read afresh for this person.
+    const upload = ctx.brain.libraryUpload;
+    const who = upload ? await safe(ctx.brain.identity(), UNKNOWN_IDENTITY) : null;
+    const canUpload = upload && who ? await safe(upload.canUpload(scope, who), false) : false;
+    sendJson(res, 200, canUpload ? { ...listing, canUpload: true } : listing);
+    return true;
+  }
+  if (path === ROUTES.libraryUpload) {
+    if (method !== 'POST') throw methodNotAllowed();
+    await libraryUploadRoute(req, res, ctx);
     return true;
   }
   const del = LIBRARY_ITEM_DELETE.exec(path);

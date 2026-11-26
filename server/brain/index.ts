@@ -16,6 +16,7 @@ import {
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
+import { createLibraryUpload, type LibraryUploadService } from './library-upload.ts';
 import { createMyChanges } from './my-changes.ts';
 import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
 import { createProjectArtifact, type ProjectArtifactService } from './project-artifact.ts';
@@ -82,6 +83,8 @@ export type SearchableBrain = BrainReaders &
     projectSeen?: ProjectActivityService['seen'];
     /** Claude artifacts in projects (decision 8): "Add a claude.ai page". The real brain always has it. */
     projectArtifact?: ProjectArtifactService;
+    /** Library uploads (plan 2026-11-26-file-types-and-uploads): Upload in Documents, Images and a project's Files. */
+    libraryUpload?: LibraryUploadService;
     /** Projects R2 phase 4: this Mac's own meetings for a project (the cache /gm writes, read only). */
     projectMeetings?: ProjectMeetingsService['read'];
     /** Client background on a project's Overview (read only). */
@@ -248,6 +251,25 @@ export function createBrainReaders(
   // One bridge per brain, so ads changes run one at a time; the in-flight file lives in the app's data folder.
   const ads = createAdsService(root, { ...deps.adsSkill, dataDir: deps.dataDir ?? null });
   const todoTimeline = createTodoTimeline(deps.todoLog);
+  const changeProject: NonNullable<SearchableBrain['changeProject']> = async (action, identity) => {
+    if (action.kind === 'update' || action.kind === 'update-remove') {
+      try {
+        const answer = await projectUpdates.change(action, identity);
+        return { ...(await projects.list(identity)), ...answer };
+      } finally {
+        projects.changed();
+      }
+    }
+    const list = await projects.change(action, identity);
+    // A card or its links changed: files listed in any scope may now belong elsewhere.
+    projects.changed();
+    return { ...list, ...editAnswers.get(action) };
+  };
+  // A saved upload's listing refreshes and the project lists recount, as for a to-do upload.
+  const onFileSaved = (path: string) => {
+    library.changed(path);
+    projects.changed(path);
+  };
   return {
     root,
     ads,
@@ -255,10 +277,15 @@ export function createBrainReaders(
     projectSeen: projectActivity.seen,
     projectArtifact: createProjectArtifact(root, {
       files: filesSkill,
-      onSaved: (path) => {
-        library.changed(path);
-        projects.changed(path);
-      },
+      onSaved: onFileSaved,
+    }),
+    // Saved by `tdsapp-files add`, then linked through the same `changeProject` as "Add files".
+    libraryUpload: createLibraryUpload(root, {
+      files: filesSkill,
+      scopes: () => library.scopes(),
+      projects: (identity) => projects.list(identity),
+      link: (action, identity) => changeProject(action, identity),
+      onSaved: onFileSaved,
     }),
     projectMeetings: projectMeetings.read,
     projectBusiness: projectBusiness.read,
@@ -323,20 +350,7 @@ export function createBrainReaders(
     libraryItemForPath: (rel) => library.itemForPath(rel),
     projects: (identity) => projects.list(identity),
     projectsIndex: () => projects.index(),
-    changeProject: async (action, identity) => {
-      if (action.kind === 'update' || action.kind === 'update-remove') {
-        try {
-          const answer = await projectUpdates.change(action, identity);
-          return { ...(await projects.list(identity)), ...answer };
-        } finally {
-          projects.changed();
-        }
-      }
-      const list = await projects.change(action, identity);
-      // A card or its links changed: files listed in any scope may now belong elsewhere.
-      projects.changed();
-      return { ...list, ...editAnswers.get(action) };
-    },
+    changeProject,
     projectUpdates: (key, before, identity) => projectUpdates.read(key, before, identity),
     // The service drops its own caches after a move; onMoved (above) drops the library's.
     moveProject: (req, identity, opts) => projects.move(req, identity, opts),

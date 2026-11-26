@@ -107,6 +107,8 @@ describe('DocumentsSheet', () => {
     expect(screen.queryByRole('region', { name: 'Brand' })).toBeNull();
     const row = screen.getByRole('button', { name: /^Google Ads audit/ });
     expect(row.textContent).toContain('PDF, 840 KB');
+    expect(row.querySelector('.lib-type')?.textContent).toBe('PDF');
+    expect(row.querySelector('.line-meta')?.textContent).toBe('PDF, 840 KB');
     expect(row.textContent).toContain('Changed 15 Sep 2026');
     expect(row.textContent).not.toMatch(/Final|By |Draft/);
     expect(row.querySelector('.line-title')?.getAttribute('title')).toBe('audit.pdf');
@@ -217,6 +219,7 @@ describe('DocumentsSheet', () => {
       `/api/library/thumb/${encodeURIComponent(lead.id)}?w=320&v=${encodeURIComponent(lead.modified)}`,
     );
     expect(tile.textContent).toContain('PDF, 840 KB');
+    expect(tile.querySelector('.lib-tile-pic > .lib-type')?.textContent).toBe('PDF');
     const note = screen
       .getByRole('button', { name: /^Winter boiler campaign/ })
       .closest('.img-tile') as HTMLElement;
@@ -302,7 +305,7 @@ describe('a claude.ai artifact among the documents', () => {
     render(<DocumentsSheet />);
     await card('Plans');
     expect(screen.getByRole('button', { name: /^Campaign page/ }).textContent).toContain(
-      'HTML page, 840 KB, from claude.ai',
+      'HTML, 840 KB, from claude.ai',
     );
     expect(screen.getByRole('button', { name: /^Explainer/ }).textContent).not.toContain('claude.ai');
   });
@@ -320,6 +323,49 @@ describe('a claude.ai artifact among the documents', () => {
     const row = screen.getByRole('button', { name: /^Budget sheet/ }).textContent ?? '';
     expect(row).toContain('Link to a claude.ai page');
     expect(row).not.toContain('KB');
+  });
+
+  it('shows a type badge on every row and tile, and says the type in the meta line', async () => {
+    api.library.mockImplementation(async (scope: string) => listing(scope, [page, artifactPage], ['Plans']));
+    const { container } = render(<DocumentsSheet />);
+    await card('Plans');
+    const row = screen.getByRole('button', { name: /^Campaign page/ });
+    const badge = row.querySelector('.lib-type');
+    expect(badge?.textContent).toBe('HTML');
+    expect(badge?.getAttribute('aria-hidden')).toBe('true');
+    expect(badge?.getAttribute('data-tone')).toBe('muted');
+    // Straight after the icon box, before the title.
+    expect(row.querySelector('.doc-glyph')?.nextElementSibling).toBe(badge);
+    expect(badge?.nextElementSibling?.className).toBe('line-text');
+    expect(row.querySelector('.line-meta .visually-hidden')?.textContent).toBe('HTML, ');
+    expect(row.querySelector('.line-meta')?.textContent).toBe('HTML, 840 KB, from claude.ai');
+    fireEvent.click(screen.getByRole('radio', { name: 'Grid' }));
+    const tile = screen.getByRole('button', { name: /^Campaign page/ }).closest('.img-tile') as HTMLElement;
+    const pic = tile.querySelector('.lib-tile-pic') as HTMLElement;
+    expect(pic.querySelector(':scope > .lib-type')?.textContent).toBe('HTML');
+    expect(tile.querySelector('.line-meta .visually-hidden')?.textContent).toBe('HTML, ');
+    expect(container.querySelectorAll('.lib-type').length).toBe(2);
+  });
+
+  it('labels a PDF, a Word file and a link card by their own extension', async () => {
+    const docx = {
+      ...page,
+      id: 'client:acme.d9',
+      title: 'Brief',
+      name: 'brief.docx',
+      ext: 'docx',
+    } as typeof page;
+    const linkCard = {
+      ...artifactPage,
+      id: 'client:acme.d8',
+      title: 'Linked',
+      artifact: { ...artifactPage.artifact, kind: 'link' as const },
+    } as typeof page;
+    api.library.mockImplementation(async (scope: string) => listing(scope, [docx, linkCard], ['Plans']));
+    render(<DocumentsSheet />);
+    await card('Plans');
+    expect(screen.getByRole('button', { name: /^Brief\s*DOCX,\s*840 KB/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Linked\s*HTML,\s*Link to a claude.ai page/ })).toBeTruthy();
   });
 
   it('gives the panel one Source row, and none for an ordinary page', () => {

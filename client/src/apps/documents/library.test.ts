@@ -97,9 +97,9 @@ describe('words', () => {
     expect(countWords(18)).toBe('18 documents');
   });
 
-  it('a row meta line is the type and the size', () => {
-    expect(metaWords(doc())).toBe('PDF, 840 KB');
-    expect(metaWords(doc({ ext: 'md', bytes: 3000 }))).toBe('Markdown, 3 KB');
+  it('a row meta line is the size only: the type is the badge', () => {
+    expect(metaWords(doc())).toBe('840 KB');
+    expect(metaWords(doc({ ext: 'md', bytes: 3000 }))).toBe('3 KB');
   });
 
   it('drafts a chat message that names each file by its path', () => {

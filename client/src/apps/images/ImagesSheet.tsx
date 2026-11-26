@@ -3,6 +3,7 @@ import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { useKeepCurrent, useLibraryData } from '../shared/data.ts';
 import { LibraryBrowser } from '../shared/LibraryBrowser.tsx';
+import { useSheetUpload } from '../shared/upload.tsx';
 import { IMAGES } from './kind.tsx';
 import { chatDraft } from './library.ts';
 import { type ImagesState, imagesStore, useImages } from './store.ts';
@@ -13,6 +14,7 @@ export function ImagesSheet() {
   const { state, dispatch } = useShell();
   const { newChat } = useStore();
   const data = useLibraryData(imagesStore, 'image');
+  const up = useSheetUpload(data);
   useKeepCurrent(imagesStore, data);
 
   const open = (image: LibraryItem) => {
@@ -41,6 +43,8 @@ export function ImagesSheet() {
       }}
       onChoose={open}
       onOpen={view}
+      actions={up.actions}
+      upload={up.status}
       selection={{ onAsk: (picked) => newChat({ draft: chatDraft(picked) }) }}
     />
   );

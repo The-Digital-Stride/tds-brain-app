@@ -4,18 +4,19 @@ import { validArtifact } from '../shared/artifact-words.ts';
 import type { ItemProps, KindSpec } from '../shared/LibraryBrowser.tsx';
 import { ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
+import { TypeBadge, TypeWord } from '../shared/TypeBadge.tsx';
 import { dateWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
-import { countWords, filterDocs, metaWords, sortDocs, summaryWords } from './library.ts';
+import { countWords, filterDocs, metaWords as sizeOnly, sortDocs, summaryWords } from './library.ts';
 
-function metaLine({ item, note }: ItemProps): string {
+function metaWords({ item, note }: ItemProps): string {
   // A link card is a shortcut, not a page worth a size (UX review): say what it is.
   const artifact = validArtifact(item.artifact);
   const words = !artifact
-    ? metaWords(item)
+    ? sizeOnly(item)
     : artifact.kind === 'link'
       ? 'Link to a claude.ai page'
-      : `${metaWords(item)}, from claude.ai`;
+      : `${sizeOnly(item)}, from claude.ai`;
   return note ? `${words} · ${note}` : words;
 }
 
@@ -27,6 +28,7 @@ function Tile(p: ItemProps) {
       {/* The picture sits outside the open button, so the bin can sit on the picture's own corner. */}
       <div className="lib-tile-pic">
         <Thumb item={doc} width={320} icon={FORMAT_ICONS[doc.format ?? 'doc']} iconSize={22} />
+        <TypeBadge ext={doc.ext} />
         {edge}
       </div>
       <button
@@ -40,7 +42,10 @@ function Tile(p: ItemProps) {
           <span className="line-title" title={doc.name}>
             {doc.title}
           </span>
-          <span className="line-meta">{metaLine(p)}</span>
+          <span className="line-meta">
+            <TypeWord ext={doc.ext} />
+            {metaWords(p)}
+          </span>
         </span>
       </button>
       <FileStar item={doc} />
@@ -63,11 +68,15 @@ function Row(p: ItemProps) {
         <span className="doc-glyph">
           <Icon name={FORMAT_ICONS[doc.format ?? 'doc']} size={18} />
         </span>
+        <TypeBadge ext={doc.ext} />
         <span className="line-text">
           <span className="line-title" title={doc.name}>
             {doc.title}
           </span>
-          <span className="line-meta">{metaLine(p)}</span>
+          <span className="line-meta">
+            <TypeWord ext={doc.ext} />
+            {metaWords(p)}
+          </span>
         </span>
         <span className="doc-col doc-date">
           <span className="visually-hidden">Changed </span>

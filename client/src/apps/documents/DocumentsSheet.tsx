@@ -2,6 +2,7 @@ import type { LibraryItem } from '../../../../shared/contract.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useKeepCurrent, useLibraryData } from '../shared/data.ts';
 import { LibraryBrowser } from '../shared/LibraryBrowser.tsx';
+import { useSheetUpload } from '../shared/upload.tsx';
 import { DOCUMENTS } from './kind.tsx';
 import { type DocsState, docsStore, useDocs } from './store.ts';
 
@@ -10,6 +11,7 @@ export function DocumentsSheet() {
   const s = useDocs();
   const { state, dispatch } = useShell();
   const data = useLibraryData(docsStore, 'document');
+  const up = useSheetUpload(data);
   useKeepCurrent(docsStore, data);
 
   const open = (doc: LibraryItem) => {
@@ -38,6 +40,8 @@ export function DocumentsSheet() {
       }}
       onChoose={open}
       onOpen={view}
+      actions={up.actions}
+      upload={up.status}
     />
   );
 }

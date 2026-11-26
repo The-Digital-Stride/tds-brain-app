@@ -2,6 +2,7 @@ import { FileStar } from '../../shell/FileStar.tsx';
 import type { ItemProps, KindSpec } from '../shared/LibraryBrowser.tsx';
 import { ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
+import { TypeBadge, TypeWord } from '../shared/TypeBadge.tsx';
 import { countWords, filterImages, metaWords, summaryWords, tileWords } from './library.ts';
 
 function Item({ item: image, layout, current, onChoose, onOpen, tick, note, edge }: ItemProps) {
@@ -31,6 +32,7 @@ function Item({ item: image, layout, current, onChoose, onOpen, tick, note, edge
       {layout === 'grid' ? (
         <div className="lib-tile-pic">
           {thumb}
+          <TypeBadge ext={image.ext} />
           {edge}
         </div>
       ) : null}
@@ -42,11 +44,15 @@ function Item({ item: image, layout, current, onChoose, onOpen, tick, note, edge
         onClick={onChoose}
       >
         {layout === 'list' ? thumb : null}
+        {layout === 'list' ? <TypeBadge ext={image.ext} /> : null}
         <span className="line-text">
           <span className="line-title" title={image.name}>
             {image.name}
           </span>
-          <span className="line-meta">{note ? `${meta} · ${note}` : meta}</span>
+          <span className="line-meta">
+            <TypeWord ext={image.ext} />
+            {note ? `${meta} · ${note}` : meta}
+          </span>
         </span>
       </button>
       <FileStar item={image} name={image.name} />

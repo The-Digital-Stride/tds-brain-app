@@ -175,9 +175,37 @@ describe('ImagesSheet', () => {
     expect(screen.getByRole('button', { name: /^acme-logo\.png/ }).textContent).toContain(
       'PNG, 1200 × 628, 184 KB',
     );
+    const meta = (name: RegExp) =>
+      screen.getByRole('button', { name }).querySelector('.line-meta')?.textContent;
+    expect(meta(/^acme-logo\.png/)).toBe('PNG, 1200 × 628, 184 KB');
+    expect(meta(/^van-front\.jpg/)).toBe('JPG, 184 KB');
     expect(screen.getByRole('button', { name: /^van-front\.jpg/ }).textContent).toContain('JPG, 184 KB');
     const img = document.querySelector('img') as HTMLImageElement;
     expect(img.getAttribute('src')).toContain('w=96');
+  });
+
+  it('shows the file type badge on every tile and row, in the right place', async () => {
+    const { container } = render(<ImagesSheet />);
+    await card('Brand');
+    // Grid is the default: the badge sits on the picture, after the thumb, and never in the open button.
+    const tile = screen.getByRole('button', { name: /^acme-logo\.png/ }).closest('.img-tile') as HTMLElement;
+    const badge = tile.querySelector('.lib-tile-pic > .lib-type') as HTMLElement;
+    expect(badge.textContent).toBe('PNG');
+    expect(badge.getAttribute('aria-hidden')).toBe('true');
+    expect(badge.getAttribute('data-tone')).toBe('muted');
+    expect(badge.previousElementSibling?.classList.contains('img-thumb')).toBe(true);
+    expect(tile.querySelector('.lib-open .lib-type')).toBeNull();
+    // The tile's visible words stay the dimensions; the type is in the hidden word.
+    expect(tile.querySelector('.line-meta')?.textContent).toBe('PNG, 1200 × 628');
+    expect(tile.querySelector('.line-meta .visually-hidden')?.textContent).toBe('PNG, ');
+    expect([...container.querySelectorAll('.lib-type')].map((b) => b.textContent)).toContain('JPG');
+    fireEvent.click(screen.getByRole('radio', { name: 'List' }));
+    const row = screen.getByRole('button', { name: /^acme-logo\.png/ });
+    const rowBadge = row.querySelector('.lib-type') as HTMLElement;
+    expect(rowBadge.textContent).toBe('PNG');
+    expect(rowBadge.previousElementSibling?.classList.contains('img-thumb')).toBe(true);
+    expect(rowBadge.nextElementSibling?.className).toBe('line-text');
+    expect(container.querySelector('.lib-tile-pic')).toBeNull();
   });
 
   it('a card hides and shows its images', async () => {

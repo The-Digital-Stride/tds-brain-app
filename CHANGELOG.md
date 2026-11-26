@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.94.0 — 2026-11-26
+
+- **feat**: file type badges and uploads in Documents, Images and project Files
+- **fix**: upload review fixes, help pages and What's new
+
 ## v0.93.0 — 2026-11-26
 
 - **feat**: a Chats tab on every project

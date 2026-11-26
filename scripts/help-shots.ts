@@ -50,6 +50,7 @@ const FROZEN = '2026-11-20T09:30:00.000Z';
 const VIEWPORT = { width: 1000, height: 760 };
 const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'chats-drawer': { width: 1000, height: 420 },
+  'project-chat': { width: 1000, height: 560 },
   'todos-drawer': { width: 1000, height: 600 },
   'skills-drawer': { width: 1000, height: 560 },
   'documents-grid': { width: 920, height: 700 },
@@ -310,6 +311,18 @@ const SCENES: Record<string, Scene> = {
     await startChat(page, 'Northwind', 'Summarise the kick-off call for me', '.msg-assistant');
     await openDrawer(page, 'Chats');
     await page.locator('#drawer .line').nth(1).waitFor();
+  },
+
+  async 'project-chat'(page) {
+    await page.locator('button.rail-item[aria-label="Projects"]').click();
+    await page
+      .getByRole('button', { name: /^Boiler quote pack/ })
+      .first()
+      .click();
+    await page.getByRole('button', { name: 'New chat for this project' }).click();
+    await page.locator('.chat-drawer .composer-input').waitFor();
+    // The chip and both pickers fill in once the project list has loaded.
+    await page.locator('.chat-drawer .chat-drawer-name .chip').waitFor();
   },
 
   async 'chat-reply'(page) {

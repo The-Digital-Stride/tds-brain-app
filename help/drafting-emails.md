@@ -6,9 +6,9 @@ order: 7
 summary: Open an email Claude drafted in Gmail, filled in and ready to check.
 benefit: No copying and pasting between the chat and Gmail.
 roles: all
-related: [project-emails, project-codes, projects]
+related: [project-emails, project-codes, projects, project-chats]
 since: 0.90.0
-reviewed: 2026-11-25
+reviewed: 2026-11-26
 ---
 
 ## What it does

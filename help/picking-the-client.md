@@ -6,9 +6,9 @@ order: 2
 summary: Tell Claude which client a chat is about, or let Cortex work it out.
 benefit: Claude uses the right client's notes, so answers fit the job.
 roles: all
-related: [home, talking-to-claude, settings, pinned]
+related: [home, talking-to-claude, project-chats, settings, pinned]
 since: 0.38.0
-reviewed: 2026-11-24
+reviewed: 2026-11-26
 ---
 
 ## What it does

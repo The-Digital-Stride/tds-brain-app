@@ -80,6 +80,7 @@ import type {
   SkillLevels,
   TurnLevel,
 } from '../../shared/levels-contract.ts';
+import type { LibraryUploadRequest, LibraryUploadResponse } from '../../shared/library-upload-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
 import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
@@ -261,6 +262,9 @@ export const api = {
     request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
   /** Files a staged upload into the library and links it to the to-do (release 3). */
   uploadTodoFile: (req: TodoUploadRequest) => request<TodoUploadResponse>('POST', ROUTES.todoUpload, req),
+  /** Files a staged upload into a client's or the personal library, or a project (plan 2026-11-26-file-types-and-uploads). */
+  libraryUpload: (req: LibraryUploadRequest) =>
+    request<LibraryUploadResponse>('POST', ROUTES.libraryUpload, req),
   /** Projects R1 (plan 2026-11-20-projects-system). */
   projects: () => request<ProjectList>('GET', ROUTES.projects),
   /** Chat summaries as project updates (plan 2026-11-24-chat-summary-updates): Claude's draft of the review form. */

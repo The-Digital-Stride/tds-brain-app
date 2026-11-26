@@ -6,9 +6,9 @@ order: 2
 summary: Browse the Brain's pictures by client, and ask Claude about them.
 benefit: Find logos and photos quickly, and reuse them with confidence.
 roles: all
-related: [documents, deleting-files, talking-to-claude, home]
+related: [documents, files-on-todos, projects, deleting-files, talking-to-claude, home]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-26
 ---
 
 ## What it does
@@ -20,6 +20,7 @@ Images shows the pictures in the Brain that you're allowed to see. You can brows
 - You find the right logo or photo without asking around.
 - You see a preview before you use it.
 - You can hand a picture to Claude in one click.
+- You can add a new picture without leaving the app.
 
 ## How to use it
 
@@ -29,11 +30,17 @@ Images shows the pictures in the Brain that you're allowed to see. You can brows
 4. Tick a picture (1) to select it.
 5. Press **Ask Claude about them** to start a chat about your pictures.
 6. Press **Copy file paths** to copy where they are kept. A file path is a file's address.
+7. Press **Upload** (2) to add pictures. See Good to know for what you can add.
 
 ![Images in a grid, with one picture selected.](images/images-grid.webp)
 
 ## Good to know
 
+- A small grey label on each picture says its type, such as PNG or JPG.
+- **Upload** opens your file chooser. Pick up to 10 files, 32 MB each: pictures, PDF, Word, Excel, PowerPoint, CSV, Markdown or text.
+- Pictures go in the chosen client's images folder. A PDF or other document goes to [Documents](help:documents) instead, and the message tells you.
+- In **My personal files**, uploads stay on this Mac only.
+- **Upload** shows only if you're allowed to add files. You can't drag files in.
 - You only see what your role lets you see.
 - You can download any picture.
 - Very large libraries may not list every file.

@@ -243,6 +243,12 @@ export interface ProjectList {
    * allowed (`canChange`), `tdsapp-files` reports 'files-artifact-v1' and this person may add files. Absent = false.
    */
   canAddArtifact?: boolean;
+  /**
+   * File uploads (plan 2026-11-26-file-types-and-uploads): "Upload" is offered on a project's Files tab. True only
+   * when changes would be allowed (`canChange`), `tdsapp-files` reports 'files-add-v1' and this person may add
+   * files. Absent = false. Per card the client also needs it not archived, `card === 'ok'` and `space !== 'legacy'`.
+   */
+  canUploadFiles?: boolean;
   /** R2 phase 4b: canChange && the script answers PROJECTS_REFS_CAPABILITY. False/absent → no code buttons. */
   canRef?: boolean;
   /** R2 phase 4b: canRef && identity.role 'owner' or 'scout'. Gates "Give projects codes". */

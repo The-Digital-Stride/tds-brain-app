@@ -4,8 +4,9 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
+import { ROUTES, SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { SETUP_ROUTES } from '../../shared/install-contract.ts';
+import { LIBRARY_UPLOAD_MESSAGES } from '../../shared/library-upload-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { cookieValueFor, createAuthCodes, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
@@ -313,6 +314,47 @@ describe('a client guess passed to the server (demo mode, help phase 1 decision 
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ kind: 'ask', options: [] });
     expect(guessCalls).toEqual(['Notes from the Acme Heating call']);
+  });
+});
+
+describe('POST /api/library/upload through the real gate (plan 2026-11-26-file-types-and-uploads)', () => {
+  const headers = {
+    cookie: GOOD_COOKIE,
+    origin: `http://${HOST}`,
+    'sec-fetch-site': 'same-origin',
+    'content-type': 'application/json',
+  };
+
+  it('lets the JSON request the client sends reach the route (no 415 or 403 from the gate)', async () => {
+    // A body without `scope` or `project`: only the route itself answers this way.
+    const r = await send(ROUTES.libraryUpload, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ upload: 'not-staged' }),
+    });
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toEqual({
+      code: 'bad-request',
+      message: LIBRARY_UPLOAD_MESSAGES.badRequest,
+    });
+  });
+
+  it('still refuses another content type, a missing session and another origin at the gate', async () => {
+    const body = JSON.stringify({ upload: 'u1', scope: 'personal' });
+    const plain = await send(ROUTES.libraryUpload, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'text/plain' },
+      body,
+    });
+    expect(plain.status).toBe(415);
+    const { cookie: _, ...noCookie } = headers;
+    expect((await send(ROUTES.libraryUpload, { method: 'POST', headers: noCookie, body })).status).toBe(401);
+    const foreign = await send(ROUTES.libraryUpload, {
+      method: 'POST',
+      headers: { ...headers, origin: 'https://evil.example' },
+      body,
+    });
+    expect(foreign.status).toBe(403);
   });
 });
 

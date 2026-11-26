@@ -31,14 +31,15 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    /* Lines pack to the right, so actions that wrap under the tabs stay right-aligned together. */
+    justify-content: flex-end;
     gap: var(--sp-8);
   }
-  .proj-tabrow > .btn {
-    margin-left: auto;
-  }
-  /* A second action (Add a claude.ai page beside Add files) sits next to the first, not spread apart. */
-  .proj-tabrow > .btn + .btn {
-    margin-left: 0;
+  /* The tabs keep the left; the actions (Add files, Upload, Add a claude.ai page) sit together at the right end. */
+  /* `:first-child` so it outranks the tabs' own `margin: 0` on the sheet (sections.css). */
+  .proj-tabrow > :first-child,
+  .lib > .proj-tabrow > .tool-tabs:first-child {
+    margin-right: auto;
   }
 
   .proj-tools {

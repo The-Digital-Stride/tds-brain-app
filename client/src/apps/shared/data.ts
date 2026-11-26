@@ -85,6 +85,8 @@ export interface LibraryData {
   project: string;
   /** Links the person cannot see, left out of a project's files. */
   hiddenLinks: number;
+  /** The listing on screen says this person may upload into it (never true while a project is chosen). */
+  canUpload?: boolean;
 }
 
 const NONE: LibraryItem[] = [];
@@ -133,6 +135,7 @@ export function useLibraryData<S extends LibraryState>(
     truncated: own?.truncated ?? false,
     project,
     hiddenLinks: byProject?.hidden ?? 0,
+    canUpload: own?.canUpload === true,
   };
 
   if (project) {

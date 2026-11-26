@@ -51,9 +51,9 @@ export function summaryWords(docs: LibraryItem[]): string {
   return `${countWords(docs.length)}, ${sizeWords(docs.reduce((sum, d) => sum + d.bytes, 0))}`;
 }
 
-/** A row's meta line: "PDF, 840 KB". */
+/** A row's meta line: "840 KB". The type is said once, by the badge (and a hidden word before this line). */
 export function metaWords(doc: LibraryItem): string {
-  return `${typeWords(doc.ext)}, ${sizeWords(doc.bytes)}`;
+  return sizeWords(doc.bytes);
 }
 
 /** The message a new chat starts with when it is opened from the library. */

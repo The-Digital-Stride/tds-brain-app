@@ -213,6 +213,26 @@ export function createFilesSkillRunner(root: string, options: FilesSkillOptions 
   };
 }
 
+/**
+ * The script may pick a free name (" (2)"), never another folder: true only when `saved` is a plain file name
+ * directly in the folder `asked` (the brain-relative path the server chose) is in. Anything else is not trusted.
+ */
+export function savedOnlyRenamed(asked: string, saved: unknown): boolean {
+  const cut = asked.lastIndexOf('/');
+  if (cut <= 0 || typeof saved !== 'string') return false;
+  const folder = asked.slice(0, cut + 1);
+  if (!saved.startsWith(folder)) return false;
+  const name = saved.slice(folder.length);
+  return (
+    name !== '' &&
+    name !== '.' &&
+    name !== '..' &&
+    !name.includes('/') &&
+    !name.includes('\\') &&
+    !name.includes('\0')
+  );
+}
+
 /** True when the script is there and reports the delete feature. The caller checks the skill's `roles:`. */
 export async function hasDeleteCapability(runner: Pick<FilesSkillRunner, 'capabilities'>): Promise<boolean> {
   return (await runner.capabilities()).includes(FILES_CAPABILITY);

@@ -32,9 +32,9 @@ describe('words', () => {
     expect(tileWords(item({ width: null, height: null }))).toBe('184 KB');
   });
 
-  it('a row shows the type, the dimensions when known, and the size', () => {
-    expect(metaWords(item())).toBe('PNG, 1200 × 628, 184 KB');
-    expect(metaWords(item({ ext: 'svg', width: null, height: null }))).toBe('SVG, 184 KB');
+  it('a row shows the dimensions when known, and the size (the type is the badge)', () => {
+    expect(metaWords(item())).toBe('1200 × 628, 184 KB');
+    expect(metaWords(item({ ext: 'svg', width: null, height: null }))).toBe('184 KB');
   });
 
   it('drafts a chat message that names each file by its path', () => {

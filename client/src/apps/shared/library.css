@@ -114,6 +114,22 @@
     position: relative;
     margin-bottom: var(--sp-6);
   }
+  /* The file's type: the tile picture's bottom-left corner (tick, Open and the bin hold the others), and a fixed slot in a row so titles line up. */
+  .lib-tile-pic > .lib-type {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    pointer-events: none;
+  }
+  .lib-row .lib-type {
+    flex: none;
+    box-sizing: border-box;
+    width: 52px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .img-tile .lib-delete,
   .img-tile .star-btn:not([aria-pressed="true"]) {
     background: var(--glass-92);
@@ -170,6 +186,10 @@
   /* On a narrow sheet the date goes: the order still shows what is newest, and the panel has it. */
   @container (max-width: 480px) {
     .doc-date {
+      display: none;
+    }
+    /* The type badge already says what the file is: the kind icon gives its room to the title. */
+    .lib-row .doc-glyph {
       display: none;
     }
   }

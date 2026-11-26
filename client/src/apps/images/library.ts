@@ -24,9 +24,9 @@ export function tileWords(image: LibraryItem): string {
   return pictureWords(image) ?? sizeWords(image.bytes);
 }
 
-/** A row's meta line: "PNG, 1200 × 628, 184 KB", or "PNG, 184 KB" when the size is not known. */
+/** A row's meta line: "1200 × 628, 184 KB", or "184 KB" when the size is not known. The type is the badge. */
 export function metaWords(image: LibraryItem): string {
-  return [image.ext.toUpperCase(), pictureWords(image), sizeWords(image.bytes)].filter(Boolean).join(', ');
+  return [pictureWords(image), sizeWords(image.bytes)].filter(Boolean).join(', ');
 }
 
 /** The message a new chat starts with when it is opened from the library. */

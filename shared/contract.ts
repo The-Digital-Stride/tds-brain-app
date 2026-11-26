@@ -1124,6 +1124,12 @@ export interface LibraryListing {
   items: LibraryItem[];
   /** True when the scope held more files than the cap and the rest were left out. */
   truncated: boolean;
+  /**
+   * True when this person may upload into this scope (ROUTES.libraryUpload, shared/library-upload-contract.ts):
+   * only for `personal` and `client:<slug>` scopes, when the `tdsapp-files` skill is there, its `roles:` allow
+   * them and it lists 'files-add-v1'. Absent or false: no upload. Older servers don't send it.
+   */
+  canUpload?: boolean;
 }
 
 /** Server only: where an item's file really is. */
@@ -2357,6 +2363,12 @@ export const ROUTES = {
    * plain UK-English `error` from FILES_CHANGE_MESSAGES.
    */
   libraryItem: (id: string) => `/api/library/items/${encodeURIComponent(id)}`,
+  /**
+   * `POST` JSON LibraryUploadRequest → LibraryUploadResponse (shared/library-upload-contract.ts). Files a staged
+   * upload (from ROUTES.uploads) into a client's or the personal library through the `tdsapp-files` skill's `add`
+   * and, for a project, links it to the card. Errors as that file lists.
+   */
+  libraryUpload: '/api/library/upload',
   /**
    * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
    *

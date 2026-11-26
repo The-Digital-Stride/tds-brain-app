@@ -180,4 +180,50 @@ describe('LibraryBrowser', () => {
     const row = open('x.a');
     expect(within(row).getByText(/from the library/)).toBeTruthy();
   });
+
+  it('draws actions last in the tools row, after Layout', () => {
+    const { container } = render(<Host actions={<button type="button">Upload</button>} />);
+    const tools = container.querySelector('.lib-tools') as HTMLElement;
+    expect(tools.lastElementChild?.textContent).toBe('Upload');
+    expect(tools.lastElementChild?.previousElementSibling?.textContent).toBe('GridList');
+  });
+
+  it('draws no status line when there is no upload prop', () => {
+    const { container } = render(<Host />);
+    expect(container.querySelector('.lib-note')).toBeNull();
+    expect(container.querySelectorAll('[role="alert"]').length).toBe(0);
+  });
+
+  it('keeps an empty status line mounted, hidden, above the items', () => {
+    const { container } = render(<Host upload={{ text: '', level: 'info' }} />);
+    const line = container.querySelector('.lib-main > p[role="status"].visually-hidden:not(.lib-summary)');
+    expect(line).toBeTruthy();
+    expect(line?.textContent).toBe('');
+    expect(line?.compareDocumentPosition(container.querySelector('.lib-tray') as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('says progress in a visible note, in the same status line', () => {
+    const { container, rerender } = render(<Host upload={{ text: '', level: 'info' }} />);
+    const line = container.querySelector('p[role="status"]:not(.lib-summary)') as HTMLElement;
+    rerender(<Host upload={{ text: 'Adding 2 of 3…', level: 'info' }} />);
+    expect(container.querySelector('p[role="status"]:not(.lib-summary)')).toBe(line);
+    expect(line.className).toBe('lib-note');
+    expect(line.textContent).toBe('Adding 2 of 3…');
+    expect(container.querySelectorAll('[role="alert"]').length).toBe(0);
+  });
+
+  it('shows a failure as an error box and saved-not-linked as a warning', () => {
+    const { container, rerender } = render(
+      <Host upload={{ text: '"x.pdf" couldn\'t be added: No.', level: 'error' }} />,
+    );
+    const err = screen.getByRole('alert');
+    expect(err.getAttribute('data-level')).toBe('error');
+    expect(err.getAttribute('data-shape')).toBe('box');
+    expect(err.className).toBe('notice');
+    expect(container.querySelector('.lib-note')).toBeNull();
+    rerender(<Host upload={{ text: 'Saved, not linked.', level: 'warn' }} />);
+    expect(screen.getByRole('alert').getAttribute('data-level')).toBe('warn');
+  });
 });

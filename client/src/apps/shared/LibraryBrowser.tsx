@@ -15,6 +15,7 @@ import {
   SelectionBar,
   useDeleteFocus,
 } from './parts.tsx';
+import type { UploadStatus } from './upload.tsx';
 import { selectionWords } from './words.ts';
 
 /** What the browser shows and how: held by an app's store or by a plain `useState`. */
@@ -117,6 +118,10 @@ export interface LibraryBrowserProps {
   selection?: { onAsk(items: LibraryItem[]): void };
   /** Replaces the "nothing here" words. */
   empty?: string;
+  /** Drawn last in the tools row, after Layout (the Upload button). */
+  actions?: ReactNode;
+  /** An upload's progress or result. Given (even quiet), a status line is always mounted above the items. */
+  upload?: UploadStatus;
 }
 
 const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
@@ -144,6 +149,8 @@ export function LibraryBrowser({
   note,
   selection,
   empty,
+  actions,
+  upload,
 }: LibraryBrowserProps) {
   const { deleteFile, hiddenFileIds } = useStore();
   const { said, copy } = useCopy();
@@ -276,6 +283,7 @@ export function LibraryBrowser({
             options={LAYOUTS}
             onChange={(layout) => onView({ layout })}
           />
+          {actions}
         </LibraryTools>
 
         {formats ? (
@@ -285,6 +293,21 @@ export function LibraryBrowser({
           </div>
         ) : null}
 
+        {upload ? (
+          <>
+            <p
+              className={upload.level === 'info' && upload.text ? 'lib-note' : 'visually-hidden'}
+              role="status"
+            >
+              {upload.level === 'info' ? upload.text : ''}
+            </p>
+            {upload.level !== 'info' && upload.text ? (
+              <p className="notice" data-level={upload.level} data-shape="box" role="alert">
+                {upload.text}
+              </p>
+            ) : null}
+          </>
+        ) : null}
         {scopeName ? (
           <h2 className="visually-hidden">
             {spec.words.heading} in {scopeName}

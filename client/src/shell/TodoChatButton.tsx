@@ -2,6 +2,7 @@ import type { ProjectKey, TodoProjectMatch } from '../../../shared/projects-cont
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatProject } from '../state/chat-project.ts';
 import { todoChatClient } from '../state/client-choice.ts';
+import { keptDraftKey, keptDrafts, useKeptDraft } from '../state/kept-drafts.ts';
 import { useProjects } from '../state/projects.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
@@ -41,12 +42,18 @@ export function TodoChatButton({
   const { state: shellState, dispatch, modes } = useShell();
   const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
+  // A message saved for later from this task's chat (only a chat beside a project's page can be kept).
+  const keepKey = keptDraftKey({ todoId: todo.key });
+  const waiting = useKeptDraft(place === 'drawer' ? keepKey : null) !== null && !chat;
   const choose = () => {
     // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
     if (shellState.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
     onOpened?.();
-    if (chat) place ? openChat(chat.id, { in: place }) : openChat(chat.id);
-    else {
+    if (chat) {
+      // The task has a chat now, so a message saved for its new chat has had its day.
+      keptDrafts.drop(keepKey);
+      place ? openChat(chat.id, { in: place }) : openChat(chat.id);
+    } else {
       const client = todoChatClient(todo, boot?.clients ?? []);
       const project = todo.project ?? todoChatProject(todo, projectList?.projects);
       newChat({
@@ -66,8 +73,8 @@ export function TodoChatButton({
       type="button"
       className="icon-btn todo-go"
       data-todo-open={todo.key}
-      aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
-      data-tip={chat ? 'Open chat' : 'Start a chat'}
+      aria-label={`${chat ? 'Open chat' : waiting ? 'Open saved message' : 'Start a chat on this'}: ${todo.title}`}
+      data-tip={chat ? 'Open chat' : waiting ? 'Open saved message' : 'Start a chat'}
       aria-describedby={describedBy || undefined}
       onClick={choose}
     >

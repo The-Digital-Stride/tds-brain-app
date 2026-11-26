@@ -39,6 +39,7 @@ const { StoreProvider, useStore } = await import('../store.tsx');
 const { ShellProvider } = await import('./ShellProvider.tsx');
 const { ChatDrawer } = await import('./ChatDrawer.tsx');
 const { projectsStore } = await import('../state/projects.ts');
+const { keptDrafts } = await import('../state/kept-drafts.ts');
 
 type StoreApi = ReturnType<typeof useStore>;
 let store: StoreApi;
@@ -106,9 +107,24 @@ async function open(over: Parameters<StoreApi['newChat']>[0] = {}) {
 const box = () => screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement;
 const type = (value: string) => fireEvent.input(box(), { target: { value } });
 const hide = () => fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
+/** The question's name when the message can be kept for later (three answers). */
+const ASK = 'Save or discard your message';
+const KEY = 'project:acme/site';
+const saveForLater = async () =>
+  fireEvent.click(
+    within(await screen.findByRole('group', { name: ASK })).getByRole('button', { name: 'Save for later' }),
+  );
+/** Press the opener again, as the project page's button does. */
+const reopen = async (over: Parameters<StoreApi['newChat']>[0] = {}) => {
+  act(() => store.newChat({ in: 'drawer', project: 'acme/site', client: 'acme', ...over }));
+  await screen.findByRole('region', { name: 'New chat' });
+  await act(async () => {});
+};
 
 beforeEach(() => {
   window.localStorage.clear();
+  keptDrafts.use('sam');
+  keptDrafts.reload();
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.stubGlobal('innerWidth', 1600);
   api.bootstrap.mockResolvedValue(boot);
@@ -150,15 +166,15 @@ describe('the unsent chat in the drawer', () => {
     await open();
     type('Half a thought');
     hide();
-    const ask = await screen.findByRole('group', { name: 'Discard your message' });
+    const ask = await screen.findByRole('group', { name: ASK });
     fireEvent.click(within(ask).getByRole('button', { name: 'Keep writing' }));
-    await waitFor(() => expect(screen.queryByRole('group', { name: 'Discard your message' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('group', { name: ASK })).toBeNull());
     expect(store.newChatDrawer).not.toBeNull();
     expect(box().value).toBe('Half a thought');
     // Discard closes it.
     hide();
     fireEvent.click(
-      within(await screen.findByRole('group', { name: 'Discard your message' })).getByRole('button', {
+      within(await screen.findByRole('group', { name: ASK })).getByRole('button', {
         name: 'Discard message',
       }),
     );
@@ -170,7 +186,7 @@ describe('the unsent chat in the drawer', () => {
     await open();
     hide();
     await waitFor(() => expect(store.newChatDrawer).toBeNull());
-    expect(screen.queryByRole('group', { name: 'Discard your message' })).toBeNull();
+    expect(screen.queryByRole('group', { name: ASK })).toBeNull();
   });
 
   it('Hide puts focus back on the button that opened the drawer', async () => {
@@ -248,7 +264,7 @@ describe('the unsent chat in the drawer', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalled());
     // The text is still in the box while it starts, but it has been sent: there is nothing to discard.
     act(() => store.openView('settings'));
-    expect(screen.queryByRole('group', { name: 'Discard your message' })).toBeNull();
+    expect(screen.queryByRole('group', { name: ASK })).toBeNull();
     expect(store.view).toBe('settings');
     await act(async () => started({ session: live('s9') }));
     expect(store.view).toBe('settings');
@@ -269,7 +285,7 @@ describe('the unsent chat in the drawer', () => {
     await screen.findByRole('region', { name: 'New chat' });
     type('Second');
     act(() => store.openView('settings'));
-    expect(screen.getByRole('group', { name: 'Discard your message' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: ASK })).toBeTruthy();
     expect(store.view).toBe(PROJECTS);
     await act(async () => started({ session: live('s9') }));
     expect(box().value).toBe('Second');
@@ -319,5 +335,176 @@ describe('the unsent chat in the drawer', () => {
       expect(document.querySelector('.chat-drawer .home-status')?.textContent).not.toBe(''),
     );
     expect(store.newChatDrawer).not.toBeNull();
+  });
+});
+
+describe('Save for later', () => {
+  it('the question has three answers in order, with Keep writing focused', async () => {
+    await open();
+    type('Half a thought');
+    hide();
+    const ask = await screen.findByRole('group', { name: ASK });
+    expect(
+      within(ask)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Discard message', 'Save for later', 'Keep writing']);
+    expect(within(ask).getByText('Discard what you have written?')).toBeTruthy();
+    expect(document.activeElement).toBe(within(ask).getByRole('button', { name: 'Keep writing' }));
+  });
+
+  it('keeps the words and both picks, closes the chat, and the same button brings them back', async () => {
+    await open();
+    pickOption('Project', 'Diary');
+    type('Half a thought');
+    hide();
+    await saveForLater();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(KEY)).toMatchObject({
+      text: 'Half a thought',
+      picks: { project: 'personal/diary', client: '@none' },
+    });
+    await reopen();
+    expect(box().value).toBe('Half a thought');
+    expect(pickerText('Project')).toBe('Diary');
+    expect(pickerText('Chat for')).toBe('No client');
+    expect(
+      screen.getByText('Your message was saved for later. Nothing is sent until you press Send.'),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(box());
+  });
+
+  it('carries on to the page that was asked for', async () => {
+    await open();
+    type('Half a thought');
+    act(() => store.openView('settings'));
+    expect(store.view).toBe(PROJECTS);
+    await saveForLater();
+    await waitFor(() => expect(store.view).toBe('settings'));
+    expect(keptDrafts.get(KEY)?.text).toBe('Half a thought');
+  });
+
+  it('brought back and left unchanged, it is not asked about again and stays kept', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    expect(box().value).toBe('Half a thought');
+    hide();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(screen.queryByRole('group', { name: ASK })).toBeNull();
+    expect(keptDrafts.get(KEY)?.text).toBe('Half a thought');
+  });
+
+  it('changed words, or a changed pick, ask again; Save for later keeps the new version', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    pickOption('Chat for', 'Northwind');
+    hide();
+    const ask = await screen.findByRole('group', { name: ASK });
+    fireEvent.click(within(ask).getByRole('button', { name: 'Keep writing' }));
+    type('A whole thought');
+    hide();
+    await saveForLater();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(KEY)).toMatchObject({
+      text: 'A whole thought',
+      picks: { project: '', client: 'northwind' },
+    });
+  });
+
+  it('Discard message lets go of the kept message too', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    type('Something else');
+    hide();
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: ASK })).getByRole('button', {
+        name: 'Discard message',
+      }),
+    );
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(KEY)).toBeNull();
+  });
+
+  it('a box emptied by hand lets go of it when the chat closes, not before', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    type('');
+    // Still kept while the chat is open: a cut can be put back.
+    expect(keptDrafts.get(KEY)).not.toBeNull();
+    type('Half a thought');
+    type('');
+    hide();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(KEY)).toBeNull();
+  });
+
+  it("an opener's own text, left as it is, is neither asked about nor kept", async () => {
+    await open({ draft: 'Show me the checklist in notes/old.md', slot: 'checklist' });
+    expect(box().value).toBe('Show me the checklist in notes/old.md');
+    hide();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(screen.queryByRole('group')).toBeNull();
+    expect(keptDrafts.get(`${KEY}#checklist`)).toBeNull();
+    // Added to, it is theirs: asked about, and kept in the checklist button's own place.
+    await reopen({ draft: 'Show me the checklist in notes/old.md', slot: 'checklist' });
+    type('Show me the checklist in notes/old.md and what is late');
+    hide();
+    await saveForLater();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(`${KEY}#checklist`)?.text).toBe(
+      'Show me the checklist in notes/old.md and what is late',
+    );
+    expect(keptDrafts.get(KEY)).toBeNull();
+  });
+
+  it('is used up by Send', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(store.chatDrawer).toBe('s9'));
+    expect(keptDrafts.get(KEY)).toBeNull();
+  });
+
+  it('is not offered with files attached: they cannot be kept, so the question keeps its two answers', async () => {
+    await open();
+    type('Half a thought');
+    // A file chip in the message box, as Composer shows one.
+    const row = document.createElement('div');
+    row.className = 'chip-row';
+    row.appendChild(document.createElement('span')).className = 'chip';
+    await act(async () => {
+      (document.querySelector('.composer') as HTMLElement).appendChild(row);
+      await new Promise((r) => setTimeout(r, 5));
+    });
+    hide();
+    const ask = await screen.findByRole('group', { name: 'Discard your message' });
+    expect(within(ask).queryByRole('button', { name: 'Save for later' })).toBeNull();
+    expect(keptDrafts.get(KEY)).toBeNull();
+  });
+
+  it('only the person emptying the box lets go of a kept message, not the box being empty for any other reason', async () => {
+    keptDrafts.save(KEY, { text: 'Half a thought', picks: { project: 'acme/site', client: 'acme' } });
+    await open();
+    // The box is emptied without a key press (nothing the person did), and the drawer reads it again.
+    await act(async () => {
+      box().value = '';
+      (document.querySelector('.composer') as HTMLElement).appendChild(document.createElement('i'));
+      await new Promise((r) => setTimeout(r, 5));
+    });
+    hide();
+    await waitFor(() => expect(store.newChatDrawer).toBeNull());
+    expect(keptDrafts.get(KEY)?.text).toBe('Half a thought');
+  });
+
+  it('is not offered when the chat has no task or project to come back by', async () => {
+    await open({ project: undefined, client: undefined });
+    type('Half a thought');
+    hide();
+    const ask = await screen.findByRole('group', { name: 'Discard your message' });
+    expect(
+      within(ask)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Discard message', 'Keep writing']);
   });
 });

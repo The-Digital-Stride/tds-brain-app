@@ -623,6 +623,21 @@ describe('closing and focus', () => {
     expect(newChat).toHaveBeenCalledWith(expect.objectContaining({ todoId: 'a.md', in: 'drawer' }));
   });
 
+  it("on a project's page a message saved for later renames the button; elsewhere it stays Start a chat", async () => {
+    const { keptDrafts } = await import('../state/kept-drafts.ts');
+    keptDrafts.save('todo:a.md', { text: 'Half a thought', picks: null });
+    mount();
+    await open('First');
+    expect(screen.getByRole('button', { name: 'Start a chat' })).toBeTruthy();
+    cleanup();
+    (store.current as { view: string }).view = 'app:projects';
+    mount();
+    await open('First');
+    fireEvent.click(screen.getByRole('button', { name: 'Open saved message' }));
+    expect(newChat).toHaveBeenCalledWith(expect.objectContaining({ todoId: 'a.md', in: 'drawer' }));
+    keptDrafts.drop('todo:a.md');
+  });
+
   it('starts a chat from the panel and closes it', async () => {
     mount();
     await open('First');

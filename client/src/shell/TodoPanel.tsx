@@ -25,6 +25,7 @@ import { dueInWords, isOverdue } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatProject } from '../state/chat-project.ts';
 import { todoChatClient } from '../state/client-choice.ts';
+import { keptDraftKey, keptDrafts, useKeptDraft } from '../state/kept-drafts.ts';
 import { todoPlaceParts, useProjects } from '../state/projects.ts';
 import { type ChangeTodosResult, useStore } from '../store.tsx';
 import { isFaithful, setTask } from '../todo-doc/index.ts';
@@ -404,11 +405,17 @@ function useChat(todo: TodoItem) {
   const place = view === 'app:projects' ? ({ in: 'drawer' } as const) : undefined;
   const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
+  // A message saved for later from this task's chat (only a chat beside a project's page can be kept).
+  const keepKey = keptDraftKey({ todoId: todo.key });
+  const waiting = useKeptDraft(place ? keepKey : null) !== null && !chat;
   return {
     has: chat !== null,
+    /** The button's words: its chat, a message saved for later, or a new chat. */
+    label: chat ? 'Open chat' : waiting ? 'Open saved message' : 'Start a chat',
     go: () => {
       // Unsaved changes: the panel asks first and the press is dropped (as the row's chat button does).
       if (state.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
+      if (chat) keptDrafts.drop(keepKey);
       if (chat) place ? openChat(chat.id, place) : openChat(chat.id);
       else {
         const client = todoChatClient(todo, boot?.clients ?? []);
@@ -504,7 +511,7 @@ function ReadView({
       <footer className="todo-foot">
         <div className="todo-foot-group">
           <button type="button" className="btn" data-variant="primary" onClick={chat.go}>
-            {chat.has ? 'Open chat' : 'Start a chat'}
+            {chat.label}
           </button>
           {p.canEdit || p.canTick ? (
             <button
@@ -936,7 +943,7 @@ function EditView({
       <footer className="todo-foot">
         <div className="todo-foot-group">
           <button type="button" className="btn" onClick={chat.go}>
-            {chat.has ? 'Open chat' : 'Start a chat'}
+            {chat.label}
           </button>
           <button
             type="button"

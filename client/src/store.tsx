@@ -51,6 +51,7 @@ import { type ChatAction, type ChatState, chatReducer, initialChatState } from '
 import { needsCloseConfirm } from './state/close.ts';
 import { useFavouriteList } from './state/favourite-list.ts';
 import type { ListState } from './state/health.ts';
+import { type KeptDraft, keptDraftKey, keptDrafts } from './state/kept-drafts.ts';
 import { type PrefListField, prefStamp, usePrefList } from './state/pref-list.ts';
 import { projectsStore } from './state/projects.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
@@ -278,6 +279,18 @@ export interface NewChat {
   scope: 'app' | 'chat';
   /** The Project and Chat for picks carried over by Open full screen, so "No project" doesn't turn back into a project. */
   picks?: { project: ProjectKey | ''; client: string };
+  /**
+   * Where "Save for later" keeps this chat's unsent message (`state/kept-drafts.ts`): its task, else its project.
+   * Null when it has neither (no button would bring it back) or it never opened in the drawer.
+   */
+  keepKey: string | null;
+  /** The kept message this chat opened with, when one was waiting: unchanged, it needn't be asked about again. */
+  kept?: KeptDraft;
+  /**
+   * The text the opener itself put in the box (a task's chat, the checklist button), '' when none. Text that still
+   * equals it isn't the person's writing, so it is neither asked about nor kept.
+   */
+  preset: string;
 }
 export interface LiveChat {
   kind: 'live';
@@ -336,6 +349,11 @@ export interface Store {
     in?: ChatPlace;
     /** Picks to start the scope row on (Open full screen). */
     picks?: { project: ProjectKey | ''; client: string };
+    /**
+     * For an opener that puts its own text in the box (the checklist button): its own place for a message saved for
+     * later, so it and the project's plain new chat don't bring back each other's.
+     */
+    slot?: string;
   }) => void;
   startSkill: (skill: SkillInfo) => void;
   /** Shows a live chat: on the chat screen, or with `in: 'drawer'` in the right-hand drawer over the tool on the sheet. */
@@ -602,6 +620,7 @@ function freshNewChat(
   place: ChatPlace = 'sheet',
   picks?: { project: ProjectKey | ''; client: string },
   scope?: 'app' | 'chat',
+  keep: { key: string | null; kept?: KeptDraft | null; preset?: string } = { key: null },
 ): NewChat {
   newChatKey += 1;
   return {
@@ -615,6 +634,9 @@ function freshNewChat(
     in: place,
     scope: scope ?? (project || place === 'drawer' ? 'chat' : 'app'),
     ...(picks ? { picks } : {}),
+    keepKey: keep.key,
+    ...(keep.kept ? { kept: keep.kept } : {}),
+    preset: keep.preset ?? '',
   };
 }
 
@@ -692,6 +714,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatNotice(null);
     }, ms);
   }, []);
+  // Messages saved for later are kept per person: tell that store who is signed in.
+  const person = boot?.identity.slug;
+  useEffect(() => {
+    if (person) keptDrafts.use(person);
+  }, [person]);
   const activeRef = useRef(activeChat);
   activeRef.current = activeChat;
   const sessionsRef = useRef(sessions);
@@ -966,19 +993,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       project?: ProjectKey | null;
       in?: ChatPlace;
       picks?: { project: ProjectKey | ''; client: string };
+      slot?: string;
     }) => {
       // In the drawer only beside a tool or Projects; anywhere else it is Home's chat, as ever.
       const inDrawer = opts?.in === 'drawer' && drawerView(viewRef.current);
-      const make = () =>
-        freshNewChat(
-          opts?.draft ?? '',
+      const make = () => {
+        // A message saved for later from this same button comes back: its words and picks, not the opener's.
+        const keepKey = inDrawer
+          ? keptDraftKey({
+              todoId: opts?.todoId ?? null,
+              project: opts?.project,
+              ...(opts?.slot ? { slot: opts.slot } : {}),
+            })
+          : null;
+        const kept = keptDrafts.get(keepKey);
+        return freshNewChat(
+          kept?.text ?? opts?.draft ?? '',
           opts?.skill ?? null,
           opts?.todoId ?? null,
           opts?.client,
           opts?.project,
           inDrawer ? 'drawer' : 'sheet',
-          opts?.picks,
+          kept?.picks ?? opts?.picks,
+          undefined,
+          { key: keepKey, kept, preset: inDrawer ? (opts?.draft ?? '') : '' },
         );
+      };
       if (inDrawer) {
         // The view stays; a second unsent chat asks before it takes the drawer. A live drawer chat keeps running.
         const open = () => {
@@ -1242,7 +1282,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         'chat',
         () => {
           setActiveChat(
-            freshNewChat(draft, cur.skill, cur.todoId, cur.client, cur.project, 'sheet', picks, 'chat'),
+            // The kept message (if any) stays where it is until this one is sent: Home's box doesn't ask.
+            freshNewChat(draft, cur.skill, cur.todoId, cur.client, cur.project, 'sheet', picks, 'chat', {
+              key: cur.keepKey,
+            }),
           );
           setView('chat');
           setActionError(null);
@@ -1417,6 +1460,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               .catch(() => {});
           }
           void loadSessions();
+          // Sent, so a message saved for later from this chat's button has been used.
+          keptDrafts.drop(activeChat.keepKey);
           // The chat has begun and is in Chats. It takes the screen unless the person has moved on in a way it must
           // not undo: a drawer chat they have since hidden or left never pulls them back or opens over where they
           // went, and no start ever replaces a different unsent chat in the drawer (its text would go unasked).

@@ -33,10 +33,17 @@ A chat you start from a project opens beside the project's page. You stay in the
 
 On the project's **Tasks** tab, a task's chat button opens its chat the same way.
 
+To finish a message later, leave the chat. When Cortex asks about your text, press **Save for later**. The button you started from changes its name to **Open saved message**. Press it and your message is back.
+
+![The question Cortex asks when you leave an unfinished message, with Save for later in the middle.](images/project-chat-save.webp)
+
 ## Good to know
 
 - Nothing is sent until you press **Send**.
-- If you have typed something and then hide the chat or leave Projects, Cortex asks first. Press **Keep writing** to stay. Press **Discard message** to throw the text away.
+- Leave with text typed and Cortex asks first. **Keep writing** stays. **Discard message** throws the text away.
+- A saved message keeps its project and client. It stays until you send it, discard it or clear the box.
+- It is kept in this browser, for you only. Attached files can't be saved.
+- On a task's chat button, point at it to see **Open saved message**.
 - Changing tab inside the project keeps the chat and your text.
 - Pick another client in **Chat for** and **Project** changes to **No project**. The chat is then not for the project.
 - On a narrow window the chat sits over the page, not beside it.

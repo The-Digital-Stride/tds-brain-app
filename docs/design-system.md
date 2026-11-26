@@ -613,6 +613,20 @@ project: `newChat({ …, in: 'drawer' })` opens the drawer with nothing sent.
   chat taking the drawer all ask with the inline `Confirm` ("Keep writing" / "Discard message", safe option
   focused), inset like the task panel's (`.chat-drawer .confirm`). A tab or project-page change inside Projects
   doesn't ask; the drawer stays. Open full screen moves the text and both picks to Home.
+- **Save for later** (`client/src/state/kept-drafts.ts`). A chat opened by a project's or a task's button can
+  keep its unsent message: the strip then has three answers, "Discard message" (danger), "Save for later"
+  (standard, `Confirm`'s `extra`) and "Keep writing" (focused, Esc), named "Save or discard your message", the
+  question on its own line above them (`.chat-drawer .confirm > span:first-child`). Saving keeps the text and
+  both picks, per person in this browser's localStorage (`tds.chatDrafts.v1:<identity slug>`, newest 20), never
+  in the brain, then goes where the person was going. Nothing shows; the app's status line says "Message saved
+  for later." and **the opener changes its name**: "Open saved message" (header button, the task panel's
+  button, and "Open saved message: {title}" on a task row) or "Open saved checklist message". No dot, chip or
+  badge. Reopened, the box holds the message, the lede reads "Your message was saved for later. Nothing is
+  sent until you press Send.", and leaving it unchanged doesn't ask again. It lasts until it is sent,
+  discarded, or the chat closes with the box emptied by hand; a changed message or pick asks again. Text the
+  opener itself put in the box (a task's prompt, the checklist prompt) isn't the person's writing: it is
+  neither asked about nor kept. Attached files can't be kept, so with any attached the strip has its two
+  answers. A task's live chat wins over its saved message ("Open chat").
 - **Between Send and the chat starting** the message has gone, so nothing asks about it, and Open full screen
   waits with the header's status note ("Your message is sending. Try again in a moment.").
 - A start that is refused (four chats already running) is repeated in the box's status line, because an

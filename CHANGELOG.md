@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.92.0 — 2026-11-26
+
+- **feat**: save an unsent project chat for later
+
 ## v0.91.1 — 2026-11-26
 
 - **fix**: help page and What's new note for chats beside a project

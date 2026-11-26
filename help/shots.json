@@ -150,6 +150,10 @@
       {
         "n": 1,
         "target": ".lib-tools .seg[aria-label=\"Layout\"]"
+      },
+      {
+        "n": 2,
+        "target": ".lib-tools .btn[data-variant=\"primary\"]"
       }
     ],
     "alt": "Documents in a grid, filtered to one client."
@@ -162,6 +166,10 @@
       {
         "n": 1,
         "target": ".img-tile .tick-hit"
+      },
+      {
+        "n": 2,
+        "target": ".lib-tools .btn[data-variant=\"primary\"]"
       }
     ],
     "alt": "Images in a grid, with one picture selected."

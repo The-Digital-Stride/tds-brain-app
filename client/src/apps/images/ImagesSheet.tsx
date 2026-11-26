@@ -14,7 +14,8 @@ export function ImagesSheet() {
   const { state, dispatch } = useShell();
   const { newChat } = useStore();
   const data = useLibraryData(imagesStore, 'image');
-  const up = useSheetUpload(data);
+  // A file just uploaded is chosen (its details show in the panel) and brought into view.
+  const up = useSheetUpload(data, (item) => imagesStore.set({ current: item }), s.current?.id);
   useKeepCurrent(imagesStore, data);
 
   const open = (image: LibraryItem) => {

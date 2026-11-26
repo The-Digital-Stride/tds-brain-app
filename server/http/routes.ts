@@ -2133,6 +2133,9 @@ async function libraryUploadRoute(
     ctx.log('Adding a file to the library failed unexpectedly.');
     throw new HttpError(500, 'internal', LIBRARY_UPLOAD_MESSAGES.saveFailed);
   }
+  // The link changed the project's files after the first publish: say so again, or a list narrowed to this
+  // project (Documents, Images) reloads too early and never shows the new file.
+  if (saved.linked === true) ctx.hub.publish({ type: 'brain-changed', area: 'library' });
   ctx.log('project' in request ? 'Added a file to a project.' : 'Added a file to the library.');
   sendJson(
     res,

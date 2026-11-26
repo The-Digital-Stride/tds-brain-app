@@ -1,5 +1,5 @@
 import { type ReactElement, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
-import { MAX_UPLOAD_BYTES } from '../../../../shared/contract.ts';
+import { type LibraryItem, MAX_UPLOAD_BYTES } from '../../../../shared/contract.ts';
 import {
   LIBRARY_UPLOAD_MESSAGES,
   LIBRARY_UPLOAD_TYPES,
@@ -27,13 +27,14 @@ export type UploadTarget =
   | { kind: 'library'; scope: string; name: string }
   | { kind: 'project'; card: ProjectCard };
 
-/** What the upload says: `info` is progress or success, `warn` is saved-but-not-linked, `error` is a refusal. */
+/** What the upload says: `info` is progress or success, `warn` is saved-but-not-linked or some files turned away, `error` is a refusal. */
 export interface UploadStatus {
   text: string;
   level: 'info' | 'warn' | 'error';
 }
 
 const QUIET: UploadStatus = { text: '', level: 'info' };
+const NO_PATHS: readonly string[] = [];
 
 /** The extension of a file name, lower case, no dot ('' when there is none). */
 function extOf(name: string): string {
@@ -69,9 +70,11 @@ function whereWords(
  */
 export function useLibraryUpload() {
   const { boot } = useStore();
-  const { apply } = useProjects();
+  const { apply, refresh } = useProjects();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<UploadStatus>(QUIET);
+  // Where the last run's files were saved (brain-relative), so a screen can show the first of them.
+  const [savedPaths, setSavedPaths] = useState<readonly string[]>(NO_PATHS);
   const running = useRef(false);
   const clients = boot?.clients ?? [];
 
@@ -104,6 +107,7 @@ export function useLibraryUpload() {
 
       running.current = true;
       setBusy(true);
+      setSavedPaths(NO_PATHS);
       let expect = target.kind === 'project' ? target.card.version : '';
       const saved: LibraryUploadResponse[] = [];
       let failure: { name: string; message: string } | null = null;
@@ -151,6 +155,11 @@ export function useLibraryUpload() {
       }
       running.current = false;
       setBusy(false);
+      if (saved.length > 0) setSavedPaths(saved.map((r) => r.path));
+      // A project upload that stopped (refused, or saved but not linked) usually means the project changed
+      // under us: reload the list, so "Try again" and Add files send its fresh version (it otherwise reloads
+      // only when the window regains focus).
+      if (target.kind === 'project' && (failure || notLinked !== null)) void refresh();
 
       if (notLinked !== null) {
         const before = saved.length - 1;
@@ -178,17 +187,23 @@ export function useLibraryUpload() {
       const last = saved[saved.length - 1];
       const what =
         saved.length === 1 && last ? (last.path.split('/').pop() ?? 'file') : `${saved.length} files`;
+      // The project by name: the person may be looking at another one by the time the run ends.
       const text =
         target.kind === 'project'
-          ? `Added ${what} to this project. Saved in ${where}.${tail}`
+          ? `Added ${what} to ${target.card.title || 'this project'}. Saved in ${where}.${tail}`
           : `Added ${what} to ${where}.${tail}`;
-      setStatus({ text: `${text}${rejected}`, level: 'info' });
+      // Some files were turned away before sending: a warning, so it doesn't read as plain good news.
+      setStatus({ text: `${text}${rejected}`, level: rejected ? 'warn' : 'info' });
     },
-    [apply, clients],
+    [apply, refresh, clients],
   );
 
-  const clear = useCallback(() => setStatus(QUIET), []);
-  return { busy, status, upload, clear };
+  const clear = useCallback(() => {
+    setStatus(QUIET);
+    setSavedPaths(NO_PATHS);
+  }, []);
+  const shown = useCallback(() => setSavedPaths(NO_PATHS), []);
+  return { busy, status, upload, clear, savedPaths, shown };
 }
 
 export interface FilePicker {
@@ -294,12 +309,40 @@ export function canUploadToProject(
  * picker) it uploads to that project and never uses the Library picker's scope; otherwise to the library on
  * screen, when the listing says the person may.
  */
-export function useSheetUpload(data: Pick<LibraryData, 'canUpload' | 'project' | 'scope' | 'scopeName'>): {
+export function useSheetUpload(
+  data: Pick<LibraryData, 'canUpload' | 'project' | 'scope' | 'scopeName' | 'items' | 'status'>,
+  /** Called once with the first uploaded file this screen lists, when the reloaded list has it (to choose it). */
+  onShow?: (item: LibraryItem) => void,
+  /** The id of the file chosen on this screen now, so a choice made while the upload ran is left alone. */
+  currentId?: string | null,
+): {
   actions: ReactElement | null;
   status: UploadStatus;
 } {
   const { list } = useProjects();
-  const { busy, status, upload, clear } = useLibraryUpload();
+  const { busy, status, upload, clear, savedPaths, shown } = useLibraryUpload();
+  // After an upload the new file may sit in a card below the fold: choose it and bring it into view, once,
+  // when the reloaded list has it. Focus stays on Upload. A file of the other kind is never in this list.
+  const show = useRef(onShow);
+  show.current = onShow;
+  const chosen = useRef(currentId);
+  chosen.current = currentId;
+  const chosenAtPick = useRef(currentId);
+  useEffect(() => {
+    if (savedPaths.length === 0 || data.status !== 'ready') return;
+    const item = data.items.find((i) => savedPaths.includes(i.path));
+    if (!item) return;
+    shown();
+    // The person chose another file while the upload ran: leave their choice, and the page, where they are.
+    if ((chosen.current ?? null) !== (chosenAtPick.current ?? null)) return;
+    show.current?.(item);
+    requestAnimationFrame(() => {
+      const el = [...document.querySelectorAll<HTMLElement>('[data-open-id]')].find(
+        (e) => e.dataset.openId === item.id,
+      );
+      el?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }, [savedPaths, data.items, data.status, shown]);
   // Another library's or project's words don't carry over (a run still going keeps its own).
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the library or project on screen changes.
   useEffect(() => {
@@ -318,7 +361,14 @@ export function useSheetUpload(data: Pick<LibraryData, 'canUpload' | 'project' |
     destination = data.scope === 'personal' ? 'your personal files' : `${data.scopeName}'s library`;
   }
   const actions = target ? (
-    <UploadAction destination={destination} busy={busy} onFiles={(files) => void upload(files, target)} />
+    <UploadAction
+      destination={destination}
+      busy={busy}
+      onFiles={(files) => {
+        chosenAtPick.current = chosen.current;
+        void upload(files, target);
+      }}
+    />
   ) : null;
   return { actions, status };
 }

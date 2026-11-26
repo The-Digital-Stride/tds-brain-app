@@ -130,6 +130,59 @@ describe('Upload in Documents', () => {
     await waitFor(() => expect(button.getAttribute('aria-disabled')).toBeNull());
   });
 
+  it('chooses the uploaded file once the list has it, so the person sees where it went', async () => {
+    const fresh = doc({ id: 'client:acme.d9', title: 'a', name: 'a.pdf', path: 'clients/acme/files/a.pdf' });
+    api.library.mockImplementation(async (scope: string) => ({
+      ...listing(scope, [audit, fresh], ['Reports']),
+      canUpload: true,
+    }));
+    render(<DocumentsSheet />);
+    await screen.findByRole('button', { name: /^Upload/ });
+    expect(docsStore.get().current).toBeNull();
+    pick(pdf('a.pdf'));
+    await waitFor(() => expect(docsStore.get().current?.id).toBe('client:acme.d9'));
+    // Once only: choosing another file afterwards is not undone.
+    act(() => docsStore.set({ current: audit }));
+    expect(docsStore.get().current?.id).toBe(audit.id);
+  });
+
+  it('leaves the choice alone when the person chose another file while the upload ran', async () => {
+    const fresh = doc({ id: 'client:acme.d9', title: 'a', name: 'a.pdf', path: 'clients/acme/files/a.pdf' });
+    api.library.mockImplementation(async (scope: string) => ({
+      ...listing(scope, [audit, fresh], ['Reports']),
+      canUpload: true,
+    }));
+    let release: () => void = () => {};
+    api.libraryUpload.mockImplementation(
+      () =>
+        new Promise((r) => {
+          release = () => r(saved());
+        }),
+    );
+    render(<DocumentsSheet />);
+    const button = await screen.findByRole('button', { name: /^Upload/ });
+    pick(pdf('a.pdf'));
+    await waitFor(() => expect(button.getAttribute('aria-disabled')).toBe('true'));
+    act(() => docsStore.set({ current: audit }));
+    await act(async () => release());
+    await waitFor(() => expect(button.getAttribute('aria-disabled')).toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('.lib-note')?.textContent).toBe(
+        "Added a.pdf to Acme Heating Ltd's Documents.",
+      ),
+    );
+    expect(docsStore.get().current?.id).toBe(audit.id);
+  });
+
+  it('chooses nothing when the uploaded file is not in this list (a picture sent from Documents)', async () => {
+    api.libraryUpload.mockResolvedValue(saved({ path: 'clients/acme/images/a.png', kind: 'image' }));
+    render(<DocumentsSheet />);
+    await screen.findByRole('button', { name: /^Upload/ });
+    pick(new File(['x'], 'a.png', { type: 'image/png' }));
+    await waitFor(() => expect(document.querySelector('.lib-note')?.textContent).toContain('Images'));
+    expect(docsStore.get().current).toBeNull();
+  });
+
   it('keeps sending to the library chosen when the files were picked, even if the picker moves', async () => {
     const releases: (() => void)[] = [];
     api.libraryUpload.mockImplementation(
@@ -171,7 +224,7 @@ describe('Documents narrowed to a project', () => {
     expect(api.libraryUpload.mock.calls[0]?.[0]).not.toHaveProperty('scope');
     await waitFor(() =>
       expect(document.body.textContent).toContain(
-        "Added a.pdf to this project. Saved in Acme Heating Ltd's Documents.",
+        "Added a.pdf to Website rebuild. Saved in Acme Heating Ltd's Documents.",
       ),
     );
   });

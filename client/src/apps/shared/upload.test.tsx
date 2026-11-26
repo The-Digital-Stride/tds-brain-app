@@ -21,10 +21,11 @@ const api = vi.hoisted(() => ({ libraryUpload: vi.fn() }));
 const uploadFile = vi.hoisted(() => vi.fn());
 const discardUpload = vi.hoisted(() => vi.fn());
 const apply = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => vi.fn());
 vi.mock('../../api.ts', () => ({ api, uploadFile, discardUpload }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../state/projects.ts', () => ({
-  useProjects: () => ({ list: null, error: null, refresh: vi.fn(), apply }),
+  useProjects: () => ({ list: null, error: null, refresh, apply }),
 }));
 
 const { useLibraryUpload, LIBRARY_ACCEPT } = await import('./upload.tsx');
@@ -80,6 +81,8 @@ describe('checks before sending', () => {
     expect(result.current.status.text).toContain('"x.svg" wasn\'t added: that type can\'t be added.');
     expect(result.current.status.text).toContain('Only PNG, JPG, WebP, GIF, PDF, Word');
     expect(result.current.status.text).toContain("Added a.pdf to Acme Heating's Documents.");
+    // Some files were turned away, so it is a warning, not plain good news.
+    expect(result.current.status.level).toBe('warn');
   });
 
   it('names a file over 32 MB and sends the rest', async () => {
@@ -260,7 +263,7 @@ describe('a project upload', () => {
     expect(apply).toHaveBeenCalledTimes(2);
     expect(apply).toHaveBeenLastCalledWith(listWith('v3'));
     expect(result.current.status.text).toBe(
-      "Added 2 files to this project. Saved in Acme Heating's Documents.",
+      "Added 2 files to Website rebuild. Saved in Acme Heating's Documents.",
     );
   });
 
@@ -282,6 +285,25 @@ describe('a project upload', () => {
     expect(apply).not.toHaveBeenCalled();
     expect(result.current.status).toEqual({ text: problem, level: 'warn' });
     expect(result.current.busy).toBe(false);
+    // The project changed under us: reload the list, so "Add files" and a later upload use its fresh version.
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads the projects list when a project upload is refused, so Try again sends the fresh version', async () => {
+    const { result } = setup();
+    api.libraryUpload.mockRejectedValue(new Error(LIBRARY_UPLOAD_MESSAGES.projectChanged));
+    await act(() => result.current.upload([f('a.pdf')], { kind: 'project', card: base }));
+    expect(result.current.status.level).toBe('error');
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload the projects list for a library upload that fails, or a project upload that works', async () => {
+    const { result } = setup();
+    api.libraryUpload.mockRejectedValueOnce(new Error('no'));
+    await act(() => result.current.upload([f('a.pdf')], LIB));
+    api.libraryUpload.mockResolvedValueOnce(saved({ linked: true, list: projectList([base]) }));
+    await act(() => result.current.upload([f('a.pdf')], { kind: 'project', card: base }));
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('stops when the project is not in the fresh list', async () => {

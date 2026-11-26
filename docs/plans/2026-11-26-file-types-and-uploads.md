@@ -235,4 +235,32 @@ both briefs, so no file has two owners.
 
 ## Review outcomes
 
-(Filled at the end.)
+Every finding was checked in code before it was acted on.
+
+- **Overseer pre-review (Fable).** One blocking item, applied: a file saved but not linked answers 200 with
+  `linked: false` and `problem`, never an error. Its ten rulings are above.
+- **Security expert (Opus).** No blocking or should findings. One nice, not done here: a file's contents are
+  not checked against its extension (task uploads have the same gap; files are served `nosniff` and
+  sandboxed; the fix belongs in the brain's `tdsapp-files` `add`). Follow-up.
+  Plain: a file named like a picture that isn't one would be saved; the app never runs it.
+- **Correctness (Opus).** Should, fixed: Documents or Images narrowed to a project reloaded before the link
+  was written, so a new file could be missing; the route now publishes `brain-changed` again after a
+  successful link. Nice, fixed: the done line said "this project" after the person had moved on; it now names
+  the project.
+- **UI, accessibility and copy (Sonnet).** Should, fixed: the saved-but-not-linked words named a button that
+  Documents and Images don't have; a run with some files turned away now shows as a warning. Three nice items
+  dropped: the wording matches the task panel's, and no listed extension is longer than four letters.
+- **UX/UI expert (Opus, from real-browser screenshots).** Signed off. Fixed: the project status line uses
+  `.lib-note` (on the gutter, 12px); under 480px a document row drops its kind icon so titles keep their room;
+  the first uploaded file a screen lists is chosen and scrolled into view; wrapped action buttons stay
+  right-aligned. Noted, unchanged: on Images the badge repeats the file name's ending (ruling 1).
+- **Correctness re-check of the fix round (Opus).** Nothing blocking. Nice, fixed: a file the person chose
+  while a slow upload ran is no longer replaced by the uploaded one.
+- **Overseer sign-off (Fable).** Signed off; no fix contradicts a ruling. Should, fixed: a project upload that
+  stops (refused, or saved but not linked) now reloads the projects list, so "Try again" sends the fresh
+  version instead of relying on the window regaining focus.
+- **Browser check.** Real Chrome on a demo brain with the real `tdsapp-files` and projects scripts: upload
+  from Documents, Images and a project's Files tab, a refused type, a rename on a name clash, a cross-kind
+  upload, the narrowed case, and a 390px window.
+- **Help.** `help/documents.md`, `help/images.md`, `help/projects.md`, both grid pictures retaken,
+  `help/whats-new/0.94.0.md`, Upload and badge rules in `docs/design-system.md`.

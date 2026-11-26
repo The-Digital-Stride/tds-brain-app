@@ -86,5 +86,5 @@ export const LIBRARY_UPLOAD_MESSAGES = {
   saveFailed: "The file couldn't be saved. Try again.",
   /** `{where}` is "Acme Heating's Documents" or "your personal files". */
   savedNotLinked: (where: string) =>
-    `The file was saved in ${where}, but couldn't be added to the project. Use Add files to add it.`,
+    `The file was saved in ${where}, but couldn't be added to the project. Add it from the project's Files tab with Add files.`,
 } as const;

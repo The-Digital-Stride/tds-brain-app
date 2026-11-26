@@ -188,6 +188,10 @@
     .doc-date {
       display: none;
     }
+    /* The type badge already says what the file is: the kind icon gives its room to the title. */
+    .lib-row .doc-glyph {
+      display: none;
+    }
   }
 
   /* Rows: the tray's own (Home's hover and pressed states apply). */

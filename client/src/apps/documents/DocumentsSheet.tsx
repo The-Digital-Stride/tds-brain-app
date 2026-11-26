@@ -11,7 +11,8 @@ export function DocumentsSheet() {
   const s = useDocs();
   const { state, dispatch } = useShell();
   const data = useLibraryData(docsStore, 'document');
-  const up = useSheetUpload(data);
+  // A file just uploaded is chosen (its details show in the panel) and brought into view.
+  const up = useSheetUpload(data, (item) => docsStore.set({ current: item }), s.current?.id);
   useKeepCurrent(docsStore, data);
 
   const open = (doc: LibraryItem) => {

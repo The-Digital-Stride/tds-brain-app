@@ -474,7 +474,8 @@ export function ProjectFiles({
           {upload.text}
         </p>
       ) : null}
-      <p className={status ? 'proj-note' : 'visually-hidden'} role="status">
+      {/* `.lib-note`: on the gutter at 12px, as the same line in Documents and Images (Alignment). */}
+      <p className={status ? 'lib-note' : 'visually-hidden'} role="status">
         {status}
       </p>
       {linking && canChange ? (

@@ -402,7 +402,12 @@ describe('POST ROUTES.libraryUpload', () => {
         expect: VERSION,
       },
     ]);
-    expect(s.published).toEqual([{ type: 'brain-changed', area: 'library' }]);
+    // Once when the file is saved and again once it is linked: a list narrowed to the project reloads on the
+    // first, before the link has been written, and would miss the file without the second.
+    expect(s.published).toEqual([
+      { type: 'brain-changed', area: 'library' },
+      { type: 'brain-changed', area: 'library' },
+    ]);
     expect(s.logs).toEqual(['Added a file to a project.']);
   });
 

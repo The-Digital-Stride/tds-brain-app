@@ -135,7 +135,24 @@ function freshDemo(): void {
  * Scene-specific starting data, written before the demo app starts. The token ledger goes through the app's own
  * store module (never a hand-written file), into the demo data folder only.
  */
+/** The repo's own files skill, so the library tools show their Upload button (it needs the skill's `add`). */
+function copyFilesSkill(): void {
+  cpSync(
+    join(ROOT, 'brain-skills', 'tdsapp-files'),
+    inDemo(join(BRAIN, '.claude', 'skills', 'tdsapp-files')),
+    {
+      recursive: true,
+    },
+  );
+}
+
 const SEEDERS: Record<string, () => Promise<void>> = {
+  async 'documents-grid'() {
+    copyFilesSkill();
+  },
+  async 'images-grid'() {
+    copyFilesSkill();
+  },
   async 'tokens-saved'() {
     const store = createTokenSavingsStore(inDemo(DATA));
     const day = '2026-10-20';

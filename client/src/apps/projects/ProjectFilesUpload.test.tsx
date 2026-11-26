@@ -131,13 +131,13 @@ describe("Upload on a project's Files tab", () => {
     await screen.findByRole('button', { name: UPLOAD });
     pick(pdf('a.pdf'));
     await waitFor(() =>
-      expect(document.querySelector('.proj-note')?.textContent).toBe(
-        "Added a.pdf to this project. Saved in Skyseal's Documents.",
+      expect(document.querySelector('.lib-note[role="status"]')?.textContent).toBe(
+        "Added a.pdf to Sky site. Saved in Skyseal's Documents.",
       ),
     );
     expect(api.libraryUpload).toHaveBeenCalledWith({ upload: 'u1', project: KEY, expect: 'v1' });
     expect(projectsStore.get().list).toBe(fresh);
-    expect(document.querySelector('.proj-note')?.getAttribute('role')).toBe('status');
+    expect(document.querySelector('.lib-note[role="status"]')?.getAttribute('role')).toBe('status');
   });
 
   it('keeps the button aria-disabled while it works, and keeps focus there', async () => {
@@ -159,7 +159,7 @@ describe("Upload on a project's Files tab", () => {
     button.focus();
     pick(pdf('a.pdf'));
     await waitFor(() => expect(button.getAttribute('aria-disabled')).toBe('true'));
-    expect(document.querySelector('.proj-note')?.textContent).toBe('Adding a.pdf…');
+    expect(document.querySelector('.lib-note[role="status"]')?.textContent).toBe('Adding a.pdf…');
     expect(document.activeElement).toBe(button);
     await act(async () => release());
     await waitFor(() => expect(button.getAttribute('aria-disabled')).toBeNull());

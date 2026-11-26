@@ -62,8 +62,9 @@ hidden with Hide chat can only be found again in the Chats drawer among every ot
    more. No age limit. `unsaved()` and its route are not changed.
    Plain: the tab shows every chat for the project, not just the last month's five.
 3. **Each row says whether the chat is saved to the project**, by the contract's saved rule (the same counting
-   as the Overview card): `never`, `saved`, `new` (more messages since the save), or unknown. Messages are
-   counted only for a saved chat that was active after its save, so a long list stays quick.
+   as the Overview card): `never`, `saved`, `new` (more messages since the save), or unknown. Every saved
+   chat's messages are counted (a time check would miss messages sent while the summary was being checked:
+   correctness review); a count is kept in memory until the chat is active again, so a long list stays quick.
    Plain: you can see at a glance which chats the team has a summary of and which they don't.
 4. **Who may read it.** The project must be one this person can see (`list.call(ctx.brain, who)`; unknown →
    `not-found`). An archived project, or one this person can't change, still lists its chats with
@@ -84,8 +85,9 @@ hidden with Hide chat can only be found again in the Chats drawer among every ot
    still offers it). A chat that can't be opened shows "That chat can't be opened on this Mac."
    Plain: chat rows look and press like the Chats drawer's; press one to pick it up with the project in view.
 6. **States, with `StateNote`.** Loading: "Loading chats…". Empty: "No chats for this project on this Mac
-   yet." plus, when the project isn't archived (`canStart`), "Press **New chat for this project** to start
-   one." (the button already sits in the page's head; none is added). Failed: "The chats couldn't be read."
+   yet." plus, when the project isn't archived, "Press New chat for this project to start one." (the button
+   already sits in the page's head; none is added; the line uses the name the button has at that moment,
+   `startLabel`, so it reads "Open saved message" while a saved message waits). Failed: "The chats couldn't be read."
    with Try again. `more`: "Showing the newest 100 chats. Older ones are in the Chats drawer." On a re-read
    the rows stay on screen and an out-of-date answer is ignored. No chat service answers an error, not an
    empty list.
@@ -138,7 +140,7 @@ the contract and type-checks once A's line is in.
 | `server/engine/chat-summary.test.ts` | `forProject`: only the project's keys (a `movedFrom` key counts, another project's chat doesn't); newest first; capped at `PROJECT_CHATS_MAX` with `more`; a live replying chat is listed with `busy`; each saved state (`never`, `saved` without counting when not active since, `new` when the count grew, `saved` when the count can't be read, `saved` from an entry with no record, `null` when `entries` rejects); `entries` is called at most once and not at all when every chat has a record; the newest record wins across keys | Builder A |
 | `server/brain/project-updates.test.ts` | `myChatEntries`: only this person's `chat` entries, newest `at` per chat, empty for an unknown project | Builder A |
 | `server/http/chat-summary-routes.test.ts` | the route through the real request gate: 200 with rows; `bad-request` without a key; `not-found` for an unknown project; an archived project answers its chats with `canSave: false`; no chat service answers an error; non-GET refused | Builder A |
-| `client/src/apps/projects/ProjectChats.test.tsx` | rows and their details words for each saved state (nothing about saving when `canSave` is false); the row is `li.line` > `button.line-main`; Save to project shown only when `canSave`, not `busy`, not `saved`; pressing it calls `onSave` with key, chat, title; a row press opens a live chat with `openChat(live.id)` (the live session's `id`, not `chat`) and a past one with `openPast(chat)`, both in the drawer; a row the store no longer lists is hidden; the empty text names the button only when `canStart`; rows stay during a re-read; the can't-open words; empty, failed (Try again reads again) and `more` states; reads again when the project's chats in `sessions` change | Builder B |
+| `client/src/apps/projects/ProjectChats.test.tsx` | rows and their details words for each saved state (nothing about saving when `canSave` is false); the row is `li.line` > `button.line-main`; Save to project shown only when `canSave`, not `busy`, not `saved`; pressing it calls `onSave` with key, chat, title; a row press opens a live chat with `openChat(live.id)` (the live session's `id`, not `chat`) and a past one with `openPast(chat)`, both in the drawer; a row the store no longer lists is hidden; the empty text names the head's button by its current name (`startLabel`), and not at all when archived; rows stay during a re-read; the can't-open words; empty, failed (Try again reads again) and `more` states; reads again when the project's chats in `sessions` change | Builder B |
 | an existing projects app test (or `ProjectsApp.test.tsx`) | the Chats tab is in the row, last, and shows the card | Builder B |
 
 ## Gates
@@ -152,4 +154,31 @@ the contract and type-checks once A's line is in.
 
 ## Review outcomes
 
-(Filled at the end.)
+Reviews ran on commit `aefec21`; fixes are in the follow-up commit.
+
+- **Correctness (opus), 1 confirmed, fixed.** A chat with a record and no activity after its save was called
+  `saved` without counting, but the record holds the count from when the draft was taken, so messages sent
+  while the summary was being checked were never seen: the tab said "saved" (and hid Save to project) while
+  the Overview card listed the chat. Now every chat with a record is counted, with the count kept in memory
+  until the chat is active again; the contract's rule 2 says so. Tests: the mid-save case (agreeing with
+  `unsaved()`), and the count cache.
+  Plain: carry on talking while a summary is being saved and the tab now shows the new messages, as the
+  Overview does.
+  Probed and held: the cap and `more`, records across moved-from keys, one read of entries, route statuses
+  through `projectsFailure`, `canSave` equal to the unsaved route's, the request gate, out-of-date answers,
+  live and past opening, no other code keyed on the tab value.
+- **UI and accessibility (sonnet), 3 confirmed, fixed.** The empty line named "New chat for this project"
+  even while that button reads "Open saved message": the tab is now handed the button's current name
+  (`startLabel`) and the one-off `<strong>` is gone. The help page now says a chat still replying has no Save
+  to project, and its summary no longer says "every chat" (the list holds the newest 100).
+- **UX/UI expert (opus): SIGN-OFF, nothing blocking.** Should, fixed: the row of the chat open beside the
+  page is `aria-current`. Nice, fixed: 4px between the hint and the first row; an open chat that isn't ready
+  says what it is doing in the drawer's words ("Open now · working · not saved yet"), so a row without Save to
+  project explains itself. Nice, kept as it is: the help picture's callout 2 sits at the top-left corner of
+  the second chat's name, where every callout sits on its target.
+- **Lead, found in the browser check:** the card wasn't in the `.tray.lib-tray` the other tabs use, so the
+  hint didn't line up with the heading; fixed before the reviews. A copied `data-past-open` attribute removed.
+- **Gates:** type-check, lint, build pass; all tests pass except `Shell.test.tsx` "an Esc already handled",
+  the known flaky one (passes alone; not touched here). Browser check in demo mode: the tab, a past chat
+  opening beside the project and turning "Open now", Save to project leading to the review form on Updates,
+  720px and 420px.

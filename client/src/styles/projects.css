@@ -108,6 +108,10 @@
   .proj-more {
     padding: var(--sp-4) var(--sp-8) 0;
   }
+  /* The Chats tab's note sits a step clear of the first row, so a lifted row doesn't touch it (as Home's Meetings). */
+  .tray .card.proj-chats > .hint {
+    margin-bottom: var(--sp-4);
+  }
   .proj-card .kv {
     padding: 0 var(--sp-8);
   }

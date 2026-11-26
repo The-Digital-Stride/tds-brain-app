@@ -873,7 +873,9 @@ export function ProjectPage({
           <ProjectChats
             projectKey={card.key}
             movedFrom={card.movedFrom ?? []}
-            canStart={!card.archived}
+            startLabel={
+              card.archived ? null : chatWaiting ? 'Open saved message' : 'New chat for this project'
+            }
             onSave={saveChat}
           />
         ) : null}

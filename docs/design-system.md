@@ -638,9 +638,11 @@ Plan: `docs/plans/2026-11-26-project-chats-tab.md`. The last page tab on a proje
 Files, Chats), with no `.count`: a count means "waiting". One `.card.proj-card` in the usual `.tray.lib-tray`,
 headed "Your chats for this project" with a `.hint` saying whose they are ("Only you can see these. They stay on
 this Mac."). Rows are the Chats drawer's (`li.line` > `button.line-main`, so they lift), and the row opens the
-chat in the chat drawer beside the project (Actions rule 1). The details line is "Open now" or "Last active
-{date}", then " · " and "not saved yet", "saved {date}" or "new messages since you saved on {date}"; nothing about
-saving where the person can't save. The one action is the small **Save to project** at the row's end, hidden
+chat in the chat drawer beside the project (Actions rule 1); the row of the chat that is beside the page is
+`aria-current`, as the drawer marks the chat on screen. The details line is "Open now" or "Last active {date}",
+then for an open chat that isn't ready the drawer's own state word ("working", "needs your answer"), then
+"not saved yet", "saved {date}" or "new messages since you saved on {date}", joined by " · "; nothing about
+saving where the person can't save. The hint keeps 4px clear of the first row (as Home's Meetings card). The one action is the small **Save to project** at the row's end, hidden
 on a saved chat with nothing new and on a chat that is replying. No star, bin or rename here: those stay in the
 Chats drawer. Loading, empty and failed lines are `StateNote`; a re-read keeps the rows on screen.
 

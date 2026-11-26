@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { LiveSession } from '../../../../shared/contract.ts';
 import {
   PROJECT_CHATS_MAX,
   type ProjectChat,
@@ -7,12 +8,17 @@ import {
 } from '../../../../shared/project-chats-contract.ts';
 import { api } from '../../api.ts';
 import { StateNote } from '../../shell/StateNote.tsx';
+import { STATE_WORDS } from '../../shell/words.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords } from './logic.ts';
 
-/** The details line: when, then (only when saving is possible and known) whether it is saved here. */
-function detailsWords(c: ProjectChat, open: boolean, canSave: boolean): string {
-  const parts = [open ? 'Open now' : `Last active ${dateWords(c.lastActive)}`];
+/**
+ * The details line: when, then (only when saving is possible and known) whether it is saved here. An open chat that
+ * isn't ready says what it is doing, in the Chats drawer's words, so a row without Save to project explains itself.
+ */
+function detailsWords(c: ProjectChat, live: LiveSession | undefined, canSave: boolean): string {
+  const parts = [live ? 'Open now' : `Last active ${dateWords(c.lastActive)}`];
+  if (live && live.state !== 'idle') parts.push(STATE_WORDS[live.state].toLowerCase());
   if (canSave && c.saved) {
     const on = c.savedAt ? dateWords(c.savedAt) : '';
     if (c.saved === 'never') parts.push('not saved yet');
@@ -26,8 +32,8 @@ function detailsWords(c: ProjectChat, open: boolean, canSave: boolean): string {
  * A project's Chats tab (plan 2026-11-26-project-chats-tab): this person's chats for the project on this Mac, each
  * opening beside the project, with Save to project where it makes sense. Read-only: nothing is saved here.
  */
-export function ProjectChats({ projectKey, movedFrom, canStart, onSave }: ProjectChatsProps) {
-  const { sessions, openChat, openPast } = useStore();
+export function ProjectChats({ projectKey, movedFrom, startLabel, onSave }: ProjectChatsProps) {
+  const { sessions, openChat, openPast, chatDrawer } = useStore();
   const [got, setGot] = useState<{ key: string; data: ProjectChatsResponse } | null>(null);
   const [failed, setFailed] = useState(false);
   const [openError, setOpenError] = useState('');
@@ -78,17 +84,17 @@ export function ProjectChats({ projectKey, movedFrom, canStart, onSave }: Projec
   }, [projectKey]);
 
   const data = got && got.key === projectKey ? got.data : null;
-  const liveById = new Map(
-    (sessions?.live ?? []).flatMap((s) => (s.sdkSessionId ? [[s.sdkSessionId, s.id]] : [])),
+  const liveById = new Map<string, LiveSession>(
+    (sessions?.live ?? []).flatMap((s) => (s.sdkSessionId ? [[s.sdkSessionId, s] as const] : [])),
   );
   const known = sessions ? new Set([...liveById.keys(), ...sessions.past.map((p) => p.sdkSessionId)]) : null;
   const rows = data ? data.chats.filter((c) => !known || known.has(c.chat)) : [];
 
   const open = async (c: ProjectChat) => {
     setOpenError('');
-    const liveId = liveById.get(c.chat);
-    if (liveId) {
-      openChat(liveId, { in: 'drawer' });
+    const live = liveById.get(c.chat);
+    if (live) {
+      openChat(live.id, { in: 'drawer' });
       return;
     }
     if (!(await openPast(c.chat, { in: 'drawer' }))) setOpenError("That chat can't be opened on this Mac.");
@@ -102,7 +108,7 @@ export function ProjectChats({ projectKey, movedFrom, canStart, onSave }: Projec
   // In the tray, like the other tabs' cards: it gives the card its backing and lines the hint up with the heading.
   return (
     <div className="tray lib-tray">
-      <section className="card proj-card" aria-labelledby="proj-chats">
+      <section className="card proj-card proj-chats" aria-labelledby="proj-chats">
         <div className="card-head">
           <h3 id="proj-chats">Your chats for this project</h3>
         </div>
@@ -121,20 +127,20 @@ export function ProjectChats({ projectKey, movedFrom, canStart, onSave }: Projec
         ) : rows.length === 0 ? (
           <StateNote kind="empty">
             No chats for this project on this Mac yet.
-            {canStart ? (
-              <>
-                {' '}
-                Press <strong>New chat for this project</strong> to start one.
-              </>
-            ) : null}
+            {startLabel ? ` Press ${startLabel} to start one.` : ''}
           </StateNote>
         ) : (
           <>
             <ul className="lib-list">
               {rows.map((c) => {
-                const liveNow = liveById.has(c.chat);
+                const liveNow = liveById.get(c.chat);
                 return (
-                  <li className="line" key={c.chat}>
+                  // The chat beside the page stays marked, as the Chats drawer marks the one on screen.
+                  <li
+                    className="line"
+                    key={c.chat}
+                    aria-current={liveNow && chatDrawer === liveNow.id ? 'true' : undefined}
+                  >
                     <button type="button" className="line-main" onClick={() => void open(c)}>
                       <span className="line-text">
                         <span className="line-title">{c.title}</span>

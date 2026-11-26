@@ -3,7 +3,7 @@ id: project-chat-list
 title: Finding a project's chats
 area: files
 order: 5
-summary: A project's Chats tab lists every chat you had for it, ready to open again.
+summary: A project's Chats tab lists your chats for it, ready to open again.
 benefit: Pick up any project chat where you left it, without hunting for it.
 roles: all
 related: [project-chats, saving-chats-to-projects, projects, chats-drawer]
@@ -36,7 +36,7 @@ Every project has a **Chats** tab. It lists each chat you had for that project o
 - Teammates see their own chats here, not yours. They read your summaries under **Updates**.
 - A chat is listed when you started it from the project, or chose the project in the message box.
 - "New messages since you saved" means the chat has moved on. Save it again to add what is new.
-- A saved chat with nothing new has no **Save to project** button.
+- A saved chat with nothing new has no **Save to project** button. Nor has a chat that is still replying.
 - The tab shows your newest 100 chats. Older ones are in the Chats drawer.
 - To delete or star a chat, use the Chats drawer.
 

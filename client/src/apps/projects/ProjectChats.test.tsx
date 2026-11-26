@@ -8,6 +8,7 @@ const store = vi.hoisted(() => ({
   openChat: vi.fn(),
   openPast: vi.fn(),
   sessions: null as unknown,
+  chatDrawer: null as string | null,
   boot: { identity: { slug: 'me' }, clients: [], prefs: { favouriteTodos: [] } },
   todos: { mine: [], open: [], othersCount: 0, team: [{ slug: 'me', name: 'Me' }], canProject: true },
 }));
@@ -61,7 +62,7 @@ const live = (id: string, sdk: string | null, over: Record<string, unknown> = {}
 const props = (over: Partial<Parameters<typeof ProjectChats>[0]> = {}) => ({
   projectKey: 'skyseal/site',
   movedFrom: [],
-  canStart: true,
+  startLabel: 'New chat for this project',
   onSave: vi.fn(),
   ...over,
 });
@@ -147,6 +148,24 @@ describe('ProjectChats', () => {
     await waitFor(() => expect(store.openPast).toHaveBeenCalledWith('pastSdk', { in: 'drawer' }));
   });
 
+  it('marks the row of the chat that is open beside the page, and says what a busy chat is doing', async () => {
+    store.sessions = {
+      live: [live('app-1', 'liveSdk', { state: 'working' }), live('app-2', 'otherSdk', { title: 'Other' })],
+      past: [],
+    };
+    store.chatDrawer = 'app-2';
+    api.projectChats.mockResolvedValue(
+      reply([chat({ chat: 'liveSdk', busy: true }), chat({ chat: 'otherSdk', title: 'Other' })]),
+    );
+    render(<ProjectChats {...props()} />);
+    // The drawer's own word for the state, so the missing Save to project explains itself.
+    expect(await screen.findByText('Open now · working · not saved yet')).toBeTruthy();
+    expect(screen.getByText('Open now · not saved yet')).toBeTruthy();
+    expect(screen.getByText('Other').closest('li')?.getAttribute('aria-current')).toBe('true');
+    expect(screen.getByText('Fix the redirects').closest('li')?.hasAttribute('aria-current')).toBe(false);
+    store.chatDrawer = null;
+  });
+
   it("says so when a chat can't be opened", async () => {
     store.openPast.mockResolvedValue(false);
     api.projectChats.mockResolvedValue(reply([chat()]));
@@ -169,16 +188,23 @@ describe('ProjectChats', () => {
     expect(await screen.findByText(/No chats for this project on this Mac yet\./)).toBeTruthy();
   });
 
-  it('names New chat for this project in the empty text only when the project can start one', async () => {
+  it("names the head's chat button, by the name it has now, in the empty text", async () => {
     api.projectChats.mockResolvedValue(reply([]));
     const { unmount } = render(<ProjectChats {...props()} />);
     const note = await screen.findByText(/No chats for this project on this Mac yet\./);
     expect(note.textContent).toBe(
       'No chats for this project on this Mac yet. Press New chat for this project to start one.',
     );
-    expect(within(note).getByText('New chat for this project').tagName).toBe('STRONG');
     unmount();
-    render(<ProjectChats {...props({ canStart: false })} />);
+    // A message saved for later renames the button, and the line follows it.
+    const waiting = render(<ProjectChats {...props({ startLabel: 'Open saved message' })} />);
+    const renamed = await screen.findByText(/No chats for this project on this Mac yet\./);
+    expect(renamed.textContent).toBe(
+      'No chats for this project on this Mac yet. Press Open saved message to start one.',
+    );
+    waiting.unmount();
+    // An archived project has no such button.
+    render(<ProjectChats {...props({ startLabel: null })} />);
     const plain = await screen.findByText(/No chats for this project on this Mac yet\./);
     expect(plain.textContent).toBe('No chats for this project on this Mac yet.');
   });

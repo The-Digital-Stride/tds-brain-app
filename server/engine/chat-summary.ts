@@ -480,6 +480,17 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
   // this, not the count at Save, so messages sent while the form was open still count as not saved.
   const draftedAt = new Map<string, number>();
   const draftKey = (chat: string, key: string) => `${chat}\u0000${key}`;
+  // The Chats tab's counts, kept while the chat's last activity is unchanged (a message can't arrive without
+  // moving it), so a list read again on every chat event doesn't re-read every saved chat's history.
+  const counts = new Map<string, { at: number; n: number }>();
+  const countOnce = async (chat: string, at: number): Promise<number | null> => {
+    const kept = counts.get(chat);
+    if (kept && kept.at === at) return kept.n;
+    const n = await opts.port.messages(chat).catch(() => null);
+    if (n === null) counts.delete(chat);
+    else counts.set(chat, { at, n });
+    return n;
+  };
 
   return {
     owns: (chat) =>
@@ -609,11 +620,10 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
         if (rec) {
           savedAt = rec.savedAt;
           saved = 'saved';
-          // Same counting rule as the Overview card: only a chat active since the save is counted.
-          if (lastActive > rec.savedAt) {
-            const count = await opts.port.messages(p.chat).catch(() => null);
-            if (count !== null && count > rec.messages) saved = 'new';
-          }
+          // Counted, never timed, as the Overview card does: the record holds the count when the draft was taken,
+          // so messages sent while the summary was being checked are new even though the save came after them.
+          const count = await countOnce(p.chat, p.lastModified);
+          if (count !== null && count > rec.messages) saved = 'new';
         } else {
           const mine = await readEntries();
           const at = mine?.get(p.chat);

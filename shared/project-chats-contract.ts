@@ -43,9 +43,11 @@ export interface ProjectChat {
  *
  * The saved rule, per chat (the same counting rule as UnsavedChat, so the tab and the Overview card agree):
  * 1. `rec` = the newest record in chat-summaries.json for this chat under any of the project's keys.
- * 2. With a `rec`: `savedAt = rec.savedAt`. When the chat's last activity is not after `rec.savedAt`, it is
- *    `saved` without counting. Otherwise its messages are counted (`ChatSourcePort.messages`): more than
- *    `rec.messages` → `new`; the same, fewer, or uncountable → `saved`.
+ * 2. With a `rec`: `savedAt = rec.savedAt`, and its messages are counted (`ChatSourcePort.messages`): more than
+ *    `rec.messages` → `new`; the same, fewer, or uncountable → `saved`. Counted, never timed: the record holds the
+ *    count from when the draft was taken, so a message sent while the summary was being checked is `new` even
+ *    though the save came after it (correctness review). A count is kept in memory while the chat's last activity
+ *    is unchanged, so reading the list again doesn't read every saved chat's history again.
  * 3. Without a `rec`: this person's `chat` entries on the project are read once (`entries`). One for this chat →
  *    `saved`, `savedAt` = its newest `at`. None → `never`. The read failing → `saved: null`.
  *
@@ -97,8 +99,11 @@ export interface ProjectChatsProps {
   projectKey: ProjectKey;
   /** The card's `movedFrom` keys, so the tab can tell from the store's chat list when to read again. */
   movedFrom: readonly ProjectKey[];
-  /** The project isn't archived, so the page's head has New chat for this project: the empty text may name it. */
-  canStart: boolean;
+  /**
+   * The name the page's head button has right now ("New chat for this project", or "Open saved message" while a
+   * message saved for later waits), so the empty text names a button the person can find. Null: archived, no button.
+   */
+  startLabel: string | null;
   /** Opens the Save to project form on the Updates tab (ProjectPage's `saveChat`). */
   onSave(req: { key: ProjectKey; chat: string; title: string }): void;
 }

@@ -704,17 +704,15 @@ describe('chat summary service: forProject', () => {
     );
   });
 
-  it('record: saved without counting when not active since, new when the count grew, saved otherwise', async () => {
-    const t = service({
-      script: () => 'hang',
-      messages: 9,
-      placed: [
-        at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'),
-        at(id('b'), 'acme/web', '2026-11-22T10:00:00Z'),
-        at(id('c'), 'acme/web', '2026-11-21T10:00:00Z'),
-      ],
-    });
-    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 1 });
+  it('record: every saved chat is counted, so messages sent between the draft and the save still show as new', async () => {
+    const placed = [
+      // Last active BEFORE its save, yet two more messages than the draft counted (the record holds the draft's count).
+      at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'),
+      at(id('b'), 'acme/web', '2026-11-22T10:00:00Z'),
+      at(id('c'), 'acme/web', '2026-11-21T10:00:00Z'),
+    ];
+    const t = service({ script: () => 'hang', messages: 9, placed });
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 7 });
     await t.store.record(id('b'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 5 });
     await t.store.record(id('c'), 'acme/web', { savedAt: '2026-11-20T00:00:00.000Z', messages: 9 });
     const entries = async () => {
@@ -722,10 +720,30 @@ describe('chat summary service: forProject', () => {
     };
     const r = await t.svc.forProject({ keys: ['acme/web'], entries });
     const by = Object.fromEntries(r.chats.map((c) => [c.chat[0], c]));
-    expect(by.a).toMatchObject({ saved: 'saved', savedAt: '2026-11-21T00:00:00.000Z' });
+    expect(by.a).toMatchObject({ saved: 'new', savedAt: '2026-11-21T00:00:00.000Z' });
     expect(by.b).toMatchObject({ saved: 'new', savedAt: '2026-11-21T00:00:00.000Z' });
     expect(by.c).toMatchObject({ saved: 'saved' });
+    expect(t.counted.n).toBe(3);
+    // The Overview card's list agrees about the chat saved mid-conversation.
+    const nudge = await t.svc.unsaved({ keys: ['acme/web'], since: 0, hasEntry: async () => true });
+    expect(nudge.map((c) => c.chat)).toContain(id('a'));
+  });
+
+  it('record: a chat is counted again only once it has been active since the last count', async () => {
+    const placed = [
+      at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'),
+      at(id('b'), 'acme/web', '2026-11-22T10:00:00Z'),
+    ];
+    const t = service({ script: () => 'hang', messages: 9, placed });
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 9 });
+    await t.store.record(id('b'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 9 });
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
     expect(t.counted.n).toBe(2);
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(t.counted.n).toBe(2);
+    placed[1] = at(id('b'), 'acme/web', '2026-11-23T10:00:00Z');
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(t.counted.n).toBe(3);
   });
 
   it('record: an uncountable chat is saved; the newest record across keys wins', async () => {
@@ -770,7 +788,8 @@ describe('chat summary service: forProject', () => {
         at(id('b'), 'acme/web', '2026-11-21T10:00:00Z'),
       ],
     });
-    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-23T00:00:00.000Z', messages: 1 });
+    // The helper's chats hold 4 messages: a record of 4 is a chat with nothing new.
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-23T00:00:00.000Z', messages: 4 });
     let reads = 0;
     const failing = async () => {
       reads++;

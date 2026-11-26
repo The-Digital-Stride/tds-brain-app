@@ -206,6 +206,15 @@ export type ShellAction =
   | { type: 'keep-sheet' }
   /** "Discard changes": the form's work is dropped and the held-back page change runs. Handled by the shell provider. */
   | { type: 'discard-sheet' }
+  /**
+   * The unsent chat in the chat drawer says whether its box holds typed work, kept in `ShellApi.drawerHold`: a hold of
+   * its own, not the sheet's (plan 2026-11-26-project-chat-in-place, decision 8). Not part of `ShellState`.
+   */
+  | { type: 'set-drawer-dirty'; dirty: boolean }
+  /** "Keep writing": drops what the drawer hold held back. Handled by the shell provider. */
+  | { type: 'keep-drawer' }
+  /** "Discard": the unsent text is dropped and what was held back runs. Handled by the shell provider. */
+  | { type: 'discard-drawer' }
   | { type: 'set-single-keys'; on: boolean }
   /** The viewer's width in px, or null for its default. */
   | { type: 'set-viewer-width'; width: number | null }
@@ -258,7 +267,14 @@ export interface ShellApi {
    * One question at a time, in this order: the to-do panel (it covers the sheet and the right panel, so it shuts
    * first, through its own hold), then the right panel, then the sheet form.
    */
-  guardLeave: (go: () => void) => void;
+  guardLeave: (go: () => void, opts?: { skipDrawer?: boolean }) => void;
+  /** The unsent drawer chat's hold (a sibling of the panel and sheet holds): `dirty` is what the drawer last reported. */
+  drawerHold?: PanelHold;
+  /**
+   * Runs `go` now when the unsent drawer chat is clean (or there is none), else asks first and runs it on "Discard".
+   * Chained at the end of `guardLeave`; the store also calls it before anything replaces an unsent drawer chat.
+   */
+  guardDrawer?: (go: () => void, cancel?: () => void) => void;
   /**
    * Home is on the sheet (a new chat with nothing live, or a page that falls back to Home). There the sheet bar's panel
    * toggle opens Customise Home, never This chat.
@@ -302,6 +318,8 @@ export interface KeyContext {
   sectionKeys?: Record<string, string>;
   /** The chat drawer is open over the tool (plan 2026-11-16-run-chat-drawer). Missing means no. */
   chatDrawer?: boolean;
+  /** What the drawer shows is an unsent chat: Esc then always goes to the drawer hold, which asks when it holds text. */
+  unsentDrawer?: boolean;
   /** Focus is in the chat drawer's message box and it holds text: Esc then does nothing, so no typing is lost. */
   chatDraft?: boolean;
 }

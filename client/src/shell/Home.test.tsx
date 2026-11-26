@@ -460,6 +460,57 @@ describe('Home', () => {
         project: 'personal/diary',
       });
     });
+
+    // A task that belongs to a project opens Home's chat for that project: its own Project picker (plan decision 3).
+    const projectTask = () => ({
+      ...todo('t-a.md', 'Northwind thing', dayOffset(0), 'northwind'),
+      projectMatch: { how: 'key' as const, key: 'northwind/site' },
+    });
+
+    // The chat's own Project picker, inside the message box (Home's cards have a Project filter too).
+    const chatProject = () =>
+      (
+        within(document.querySelector('.home-composer') as HTMLElement).getByRole('combobox', {
+          name: 'Project',
+        }) as HTMLInputElement
+      ).value;
+    it('a chat for a project shows a filled Project picker and no loose text', async () => {
+      withProjects();
+      api.todos.mockResolvedValue({ ...todoList, mine: [projectTask()] });
+      await renderHome();
+      await waitFor(() => expect(api.projects).toHaveBeenCalled());
+      await act(async () => {});
+      await startChatFromPanel(/^Northwind thing/);
+      await waitFor(() => expect(chatProject()).toBe('Site rebuild'));
+      expect(select().value).toBe('Northwind');
+      expect(screen.queryByRole('combobox', { name: 'Working on' })).toBeNull();
+      expect(document.querySelector('[data-testid="home-project"]')).toBeNull();
+      expect(screen.queryByText(/^Project:/)).toBeNull();
+      // Picking another client says so in view: Project goes to No project, and nothing is sent for it.
+      pickOption('Chat for', 'Acme Heating');
+      expect(chatProject()).toBe('No project');
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+      expect(api.startSession.mock.calls[0]?.[0]).not.toHaveProperty('project');
+    });
+
+    it('with Working on set, the chat for a project keeps its Working on line under the box', async () => {
+      withProjects();
+      api.todos.mockResolvedValue({ ...todoList, mine: [projectTask()] });
+      await renderHome();
+      await waitFor(() => expect(api.projects).toHaveBeenCalled());
+      await act(async () => {});
+      await startChatFromPanel(/^Northwind thing/);
+      await waitFor(() => expect(chatProject()).toBe('Site rebuild'));
+      expect(document.querySelector('.home-scope')).toBeNull();
+      act(() => projectChoice.set('personal/diary'));
+      const working = await screen.findByRole('combobox', { name: 'Working on' });
+      expect(working.closest('.home-scope')).toBeTruthy();
+      expect(working.closest('.composer-scope')).toBeNull();
+      // Starting the chat never wrote it: the project's own pick is the chat's.
+      expect(chatProject()).toBe('Site rebuild');
+      expect(projectChoice.get().project).toBe('personal/diary');
+    });
   });
 
   it('a personal project starts Chat for on No client; a client not in the list leaves Auto', async () => {

@@ -201,15 +201,29 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     boot,
     chatDrawer,
     hideChatDrawer,
+    newChatDrawer,
+    dropNewChatDrawer,
     settingsTab,
     skillLevels,
     setLeaveGuard,
+    setDrawerGuard,
   } = useStore();
   const snap = useToolSnapshot();
   // Read by the key listener and dispatch, which are made once.
   // A store without the drawer (an older test double) reads as closed.
-  const chatDrawerRef = useRef({ open: chatDrawer != null, hide: hideChatDrawer });
-  chatDrawerRef.current = { open: chatDrawer != null, hide: hideChatDrawer };
+  // An unsent chat in the drawer counts as the drawer being open; hiding it drops the chat (through the drawer hold).
+  const chatDrawerRef = useRef({
+    open: chatDrawer != null || newChatDrawer != null,
+    unsent: newChatDrawer != null,
+    hide: hideChatDrawer,
+    drop: dropNewChatDrawer,
+  });
+  chatDrawerRef.current = {
+    open: chatDrawer != null || newChatDrawer != null,
+    unsent: newChatDrawer != null,
+    hide: hideChatDrawer,
+    drop: dropNewChatDrawer,
+  };
   const role = boot?.identity.role ?? 'unknown';
   const helpOn = helpVisible(role);
   const helpOnRef = useRef(helpOn);
@@ -276,6 +290,39 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     setSheetHoldState(next);
   }, []);
 
+  // The unsent drawer chat's hold: the sheet hold's sibling, with its own slot (the sheet's is shared by the forms on
+  // the page). Held: a page change (`guardLeave`) and whatever would replace or close the unsent chat (`guardDrawer`).
+  const [drawerHold, setDrawerHoldState] = useState<PanelHold>({ dirty: false, asking: false });
+  const drawerRef = useRef(drawerHold);
+  const drawerRun = useRef<(() => void) | null>(null);
+  // Told when what was held back is dropped unrun (Keep writing, or the text went), so a waiting caller can stop.
+  const drawerCancel = useRef<(() => void) | null>(null);
+  const dropDrawerRun = useCallback(() => {
+    const cancel = drawerCancel.current;
+    drawerRun.current = null;
+    drawerCancel.current = null;
+    cancel?.();
+  }, []);
+  const setDrawer = useCallback((next: PanelHold) => {
+    if (drawerRef.current.dirty === next.dirty && drawerRef.current.asking === next.asking) return;
+    drawerRef.current = next;
+    setDrawerHoldState(next);
+  }, []);
+  const guardDrawer = useCallback(
+    (run: () => void, cancel?: () => void) => {
+      if (!drawerRef.current.dirty) {
+        run();
+        return;
+      }
+      // A second question replaces the one held.
+      dropDrawerRun();
+      drawerRun.current = run;
+      drawerCancel.current = cancel ?? null;
+      setDrawer({ dirty: true, asking: true });
+    },
+    [setDrawer, dropDrawerRun],
+  );
+
   // A page change waiting on the to-do panel's question (see `guardLeave`): run on its Discard, dropped on its Keep or
   // when another question replaces it.
   const afterTodo = useRef<(() => void) | null>(null);
@@ -286,7 +333,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       const now = layoutRef.current;
       // The chat drawer is the store's (it goes with the active chat), so hiding it is handed over there.
       if (action.type === 'close-chat-drawer') {
-        chatDrawerRef.current.hide?.();
+        // An unsent chat is dropped, but only once the drawer hold has been through (it asks when there is text).
+        if (chatDrawerRef.current.unsent) guardDrawer(() => chatDrawerRef.current.drop?.());
+        else chatDrawerRef.current.hide?.();
         return;
       }
       // The right panel's unsaved-work hold (its state is the provider's own, not the reducer's).
@@ -323,6 +372,28 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         const run = sheetRun.current;
         sheetRun.current = null;
         setSheet({ dirty: false, asking: false });
+        run?.();
+        return;
+      }
+      // The unsent drawer chat's hold, the same way.
+      if (action.type === 'set-drawer-dirty') {
+        if (!action.dirty) dropDrawerRun();
+        setDrawer({ dirty: action.dirty, asking: action.dirty && drawerRef.current.asking });
+        return;
+      }
+      if (action.type === 'keep-drawer') {
+        dropDrawerRun();
+        setDrawer({ ...drawerRef.current, asking: false });
+        return;
+      }
+      if (action.type === 'discard-drawer') {
+        const run = drawerRun.current;
+        drawerRun.current = null;
+        drawerCancel.current = null;
+        setDrawer({ dirty: false, asking: false });
+        // Discard means the message goes, whatever was held back: the unsent chat is dropped first, so its box can't
+        // stay on screen (and take more text) while a chat is still starting or the page changes to a tool.
+        chatDrawerRef.current.drop?.();
         run?.();
         return;
       }
@@ -440,7 +511,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       else if (opensPanel) focusIntent.current = 'right';
       rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
     },
-    [setHold, setSheet],
+    [setHold, setSheet, setDrawer, guardDrawer, dropDrawerRun],
   );
 
   // Opening an app or a tool (from the rail, a drawer, the palette or a search result) closes the open drawer, so it
@@ -527,6 +598,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         // Under a floating left drawer the sheet (and the chat drawer in it) is out of reach: Esc is the drawer's.
         chatDrawer: chatDrawerRef.current.open && !layoutRef.current.drawerModal,
         chatDraft: draftInChatDrawer(document.activeElement),
+        unsentDrawer: chatDrawerRef.current.unsent,
       });
       if (!action) return;
       e.preventDefault();
@@ -569,12 +641,17 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   //     With nothing else held the to-do panel is left to its own rule: the page changes and the panel then asks.
   //  2. The right panel's hold (`guardPanel`: a shut panel opens to ask).
   //  3. The sheet form's hold.
+  //  4. The unsent drawer chat's hold (`opts.skipDrawer`: Open full screen moves the text, so it doesn't ask).
   //  Then the page changes. A second page change while one is asking replaces the one held.
   const guardLeave = useCallback(
-    (go: () => void) => {
-      const unsaved = () => guardPanel(() => guardSheet(go));
+    (go: () => void, opts?: { skipDrawer?: boolean }) => {
+      const last = opts?.skipDrawer ? go : () => guardDrawer(go);
+      const unsaved = () => guardPanel(() => guardSheet(last));
       const s = stateRef.current;
-      if (s.todoPanel === null || !(holdRef.current.dirty || sheetRef.current.dirty)) {
+      if (
+        s.todoPanel === null ||
+        !(holdRef.current.dirty || sheetRef.current.dirty || (drawerRef.current.dirty && !opts?.skipDrawer))
+      ) {
         unsaved();
         return;
       }
@@ -586,7 +663,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         unsaved();
       }
     },
-    [guardPanel, guardSheet, dispatch],
+    [guardPanel, guardSheet, guardDrawer, dispatch],
   );
 
   // The store sends every page change through the guard (it sits outside this provider, so it can't `useShell`).
@@ -595,6 +672,12 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     setLeaveGuard?.(guardLeave);
     return () => setLeaveGuard?.(null);
   }, [setLeaveGuard, guardLeave]);
+
+  // The store calls it before anything replaces an unsent drawer chat (a second new chat, a chat opened in the drawer).
+  useEffect(() => {
+    setDrawerGuard?.(guardDrawer);
+    return () => setDrawerGuard?.(null);
+  }, [setDrawerGuard, guardDrawer]);
 
   const { modes } = layout;
   const api = useMemo<ShellApi>(
@@ -606,6 +689,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       guardPanel,
       sheetHold,
       guardLeave,
+      drawerHold,
+      guardDrawer,
       onHome,
       homeCustomiseOpen: state.homeCustomiseOpen,
       openCustomiseHome,
@@ -619,6 +704,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       guardPanel,
       sheetHold,
       guardLeave,
+      drawerHold,
+      guardDrawer,
       onHome,
       openCustomiseHome,
       closeCustomiseHome,

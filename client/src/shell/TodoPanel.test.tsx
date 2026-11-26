@@ -615,6 +615,14 @@ describe('closing and focus', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Title')));
   });
 
+  it("on a project's page the chat opens in the drawer, beside the project", async () => {
+    (store.current as { view: string }).view = 'app:projects';
+    mount();
+    await open('First');
+    fireEvent.click(screen.getByRole('button', { name: 'Start a chat' }));
+    expect(newChat).toHaveBeenCalledWith(expect.objectContaining({ todoId: 'a.md', in: 'drawer' }));
+  });
+
   it('starts a chat from the panel and closes it', async () => {
     mount();
     await open('First');

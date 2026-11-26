@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChatView } from '../components/Chat.tsx';
 import { useStore } from '../store.tsx';
+import { NewChatDrawer } from './NewChatDrawer.tsx';
 import { ResizeHandle } from './ResizeHandle.tsx';
 import { CHAT_DRAWER_PAD, CONTENT_MIN, maxBesideContent, useLayerWidth } from './useLayerWidth.ts';
 
@@ -11,9 +12,9 @@ import { CHAT_DRAWER_PAD, CONTENT_MIN, maxBesideContent, useLayerWidth } from '.
  * view changes); Hide, Esc and Open full screen close it.
  */
 export function ChatDrawer() {
-  const { chatDrawer } = useStore();
-  if (chatDrawer == null) return null;
-  return <ChatDrawerBody key={chatDrawer} />;
+  const { chatDrawer, newChatDrawer } = useStore();
+  if (chatDrawer == null && newChatDrawer == null) return null;
+  return <ChatDrawerBody />;
 }
 
 /** The sheet's width, kept up to date as the docks and the window change it. */
@@ -30,7 +31,7 @@ function useSheetWidth(): number | undefined {
 }
 
 function ChatDrawerBody() {
-  const { view } = useStore();
+  const { view, chatDrawer, newChatDrawer, requestComposerFocus } = useStore();
   const sheetWidth = useSheetWidth();
   const onProjects = view === 'app:projects';
   // On Projects the drawer is held narrower (this session only) so the page keeps room for its review form.
@@ -68,10 +69,20 @@ function ChatDrawerBody() {
       }, 0);
     };
   }, []);
+  // Send turns the unsent chat into a live one inside this same frame: the message box is new, so focus goes to it.
+  const wasNew = useRef(newChatDrawer != null);
+  useEffect(() => {
+    if (wasNew.current && newChatDrawer == null) requestComposerFocus();
+    wasNew.current = newChatDrawer != null;
+  }, [newChatDrawer, requestComposerFocus]);
   return (
     <div className="chat-drawer glass" style={layer.style}>
       {layer.resizable ? <ResizeHandle layer={layer} label="Resize chat" /> : null}
-      <ChatView placement="drawer" />
+      {newChatDrawer != null ? (
+        <NewChatDrawer key={newChatDrawer} />
+      ) : (
+        <ChatView key={chatDrawer} placement="drawer" />
+      )}
     </div>
   );
 }

@@ -398,8 +398,10 @@ function Facts({
 
 /** Start or open the chat for a to-do, as the row's chat button does; the panel then closes. */
 function useChat(todo: TodoItem) {
-  const { boot, newChat, openChat, sessions } = useStore();
+  const { boot, newChat, openChat, sessions, view } = useStore();
   const { state, dispatch, modes } = useShell();
+  // Opened from a project's page: its chat stays beside it.
+  const place = view === 'app:projects' ? ({ in: 'drawer' } as const) : undefined;
   const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   return {
@@ -407,7 +409,7 @@ function useChat(todo: TodoItem) {
     go: () => {
       // Unsaved changes: the panel asks first and the press is dropped (as the row's chat button does).
       if (state.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
-      if (chat) openChat(chat.id);
+      if (chat) place ? openChat(chat.id, place) : openChat(chat.id);
       else {
         const client = todoChatClient(todo, boot?.clients ?? []);
         const project = todoChatProject(todo, projectList?.projects);
@@ -416,6 +418,7 @@ function useChat(todo: TodoItem) {
           todoId: todo.key,
           ...(client !== undefined ? { client } : {}),
           ...(project ? { project } : {}),
+          ...place,
         });
       }
       dispatch({ type: 'close-todo', force: true });

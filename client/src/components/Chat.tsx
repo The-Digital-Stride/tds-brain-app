@@ -4,6 +4,7 @@ import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
 import { engineLine } from '../format.ts';
+import { ChatDrawerHead } from '../shell/ChatDrawerHead.tsx';
 import { Confirm } from '../shell/Confirm.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { SearchSelect } from '../shell/SearchSelect.tsx';
@@ -258,34 +259,15 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     ) : null;
 
   const drawerHead = (
-    <header className="panel-head chat-drawer-head">
-      <div className="chat-drawer-name">
-        <h2 id={headingId}>{title}</h2>
-        {clientName ? <span className="chip">{clientName}</span> : null}
-      </div>
-      {sdkId !== null && savingNow === sdkId ? null : saveButton}
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label="Open full screen"
-        data-tip="Open full screen"
-        onClick={toFullScreen}
-      >
-        <Icon name="expand" />
-      </button>
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label="Hide chat"
-        data-tip="Hide chat"
-        onClick={hideChatDrawer}
-      >
-        <Icon name="close" />
-      </button>
-      <p className="chat-drawer-note" role="status">
-        {held ? FILES_FIRST : ''}
-      </p>
-    </header>
+    <ChatDrawerHead
+      headingId={headingId}
+      title={title}
+      chip={clientName}
+      save={sdkId !== null && savingNow === sdkId ? null : saveButton}
+      onFullScreen={toFullScreen}
+      onHide={hideChatDrawer}
+      note={held ? FILES_FIRST : ''}
+    />
   );
 
   return (

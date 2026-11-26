@@ -511,9 +511,9 @@ an `<a class="btn" download>` to `ROUTES.libraryFile`, named "Download <file nam
 the server sends the file as an attachment, so it is saved and the app stays where it is.
 
 The client chosen in an app is shared between the apps. Home no longer shares it (and no longer
-pre-fills the last client a chat used): its Client picker sits in the composer's foot (`tools` slot),
-a search select (180px) with a visible small "Client" label: "Auto" (default), "No client", then the
-clients. With auto, Send works the client out from the first message (`POST /api/client-guess`); a short
+pre-fills the last client a chat used): its client picker sits in the message box's scope row (`tools` slot,
+`.composer-scope`), a search select in a `.scope-field` (200 to 300px) with a visible small "Chat for" label:
+"Auto" (default), "No client", then the clients. With auto, Send works the client out from the first message (`POST /api/client-guess`); a short
 "Working out the client…" note (`aria-live="polite"`) shows after 400 ms, and when the app can't tell,
 a `.pending` card above the composer asks "Which client is this for?" (`ClientAsk`: a `.btn` per likely
 client, "No client", an "Another client…" search select, "Cancel"; Escape cancels and the text
@@ -593,6 +593,46 @@ Plan: `docs/plans/2026-11-16-run-chat-drawer.md`.
   changes or the sheet leaves a tool. Esc hides it, after the palette, viewer, task panel and a floating panel,
   but never while its message box holds text.
 - A floating right panel closes before a tool opens its chat in the drawer; a pushing one stays beside it.
+
+### A new chat in the drawer (not sent yet)
+
+Plan: `docs/plans/2026-11-26-project-chat-in-place.md`. A chat started from a project's page stays beside the
+project: `newChat({ …, in: 'drawer' })` opens the drawer with nothing sent.
+
+- **One frame.** The same `.chat-drawer` stays mounted from unsent to live; only its inside changes, so the
+  slide-in never replays and focus stays in the message box across Send.
+- **Header** (`ChatDrawerHead`, shared with the live drawer): `h2` "New chat", one `.chip` with the project's
+  title (cut with an ellipsis, the full "Client · Project" in `data-tip`), Open full screen, Hide chat. Once
+  live the chip is the client, as on the chat screen.
+- **Middle:** the `.thread-empty` block, its heading an `h3`, and "Nothing is sent until you press Send."
+- **Bottom:** `NewChatBox`, the same message box as Home (`client/src/components/NewChatBox.tsx`), in the usual
+  `.floater`, with focus in it. There is no second message box anywhere, and none on the project page.
+- **The button that opened it** has no pressed look; pressing it again puts focus back in the box.
+- **Only Send or Discard removes typed text.** The unsent drawer has a hold of its own (`useDrawerHold`, not
+  the sheet form's `useSheetHold`): Hide chat, Esc from anywhere in the drawer, leaving Projects and another
+  chat taking the drawer all ask with the inline `Confirm` ("Keep writing" / "Discard message", safe option
+  focused), inset like the task panel's (`.chat-drawer .confirm`). A tab or project-page change inside Projects
+  doesn't ask; the drawer stays. Open full screen moves the text and both picks to Home.
+- **Between Send and the chat starting** the message has gone, so nothing asks about it, and Open full screen
+  waits with the header's status note ("Your message is sending. Try again in a moment.").
+- A start that is refused (four chats already running) is repeated in the box's status line, because an
+  overlaying drawer can cover the sheet's notices.
+
+### The message box's scope row
+
+`.composer-scope` holds pickers only, never loose text. Each is a `.scope-field`: a small visible label and a
+`SearchSelect`.
+
+- **Home's own new chat:** "Working on" (app-wide: it narrows Home, Tasks, Images, Documents and search) then
+  "Chat for".
+- **A chat opened for a project** (a project's page, a task in a project, anything in the drawer): "Project"
+  in the first place, filled in and bound to that chat only ("No project", then every live project under its
+  client), then "Chat for". Starting a chat never sets "Working on". When such a chat is on Home and
+  "Working on" is set, the `.home-scope` line shows it below the box, so a filter is never hidden.
+- The two stay in step in view: picking a project moves Chat for to its client; picking another client sets
+  Project to "No project". What is sent is what the pickers show.
+- Under 560px of box (`@container` on `.composer`) the row is a two-column grid: labels in one column, the
+  selects filling the rest, no 300px cap. Wider, they sit side by side.
 
 ## Category colours
 

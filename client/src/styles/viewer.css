@@ -356,6 +356,11 @@
     /* Fixed padding, so the buttons stay put when the note wraps onto a second line (47px at rest, as before). */
     padding-block: calc(var(--sp-6) + 1px) var(--sp-8);
   }
+  /* "Discard what you have written?" on an unsent chat: the shared Confirm strip, inset as in the task panel. */
+  .chat-drawer .confirm {
+    flex: none;
+    margin: 0 var(--sp-12) var(--sp-6);
+  }
   .chat-drawer-name {
     flex: 1;
     min-width: 0;
@@ -370,6 +375,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A long project name is cut with an ellipsis (its full name is in the tooltip). */
+  .chat-drawer-name .chip {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   /* "Send or remove the attached files first": its own line under the header, empty (and no height) otherwise. */
   .chat-drawer-note {

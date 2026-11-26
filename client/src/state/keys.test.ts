@@ -74,6 +74,21 @@ describe('keyAction: Esc does one thing per press', () => {
     });
   });
 
+  it('an unsent chat in the drawer always sends Esc to the drawer hold, which asks when there is text', () => {
+    const drawer = { typing: true, state: state({ drawer: 'todos' }), chatDrawer: true, unsentDrawer: true };
+    expect(keyAction(key('Escape'), drawer)).toEqual({ type: 'close-chat-drawer' });
+    // Whatever the focused element says: the hold's own flag decides, not `chatDraft`.
+    expect(keyAction(key('Escape'), { ...drawer, chatDraft: true })).toEqual({ type: 'close-chat-drawer' });
+    expect(keyAction(key('Escape'), { ...drawer, typing: false })).toEqual({ type: 'close-chat-drawer' });
+    // Layers above it still go first.
+    expect(keyAction(key('Escape'), { ...drawer, panelFloating: true })).toEqual({
+      type: 'set-panel',
+      open: false,
+    });
+    // Not open: the rule is not reached.
+    expect(keyAction(key('Escape'), { ...drawer, chatDrawer: false })).toEqual({ type: 'close-drawer' });
+  });
+
   it('hides the chat drawer before closing a left drawer, but never while its message box holds text', () => {
     const drawer = { typing: false, state: state({ drawer: 'todos' }), chatDrawer: true };
     expect(keyAction(key('Escape'), drawer)).toEqual({ type: 'close-chat-drawer' });

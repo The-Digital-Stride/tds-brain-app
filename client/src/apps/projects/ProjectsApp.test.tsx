@@ -6,6 +6,11 @@ import { card, projectList } from './testing.ts';
 
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
+  openChat: vi.fn(),
+  requestComposerFocus: vi.fn(),
+  newChatDrawer: null as number | null,
+  activeChat: { kind: 'new', key: 1, project: null } as { kind: string; key: number; project: string | null },
+  sessions: null as { live: unknown[]; past: unknown[] } | null,
   changeTodos: vi.fn(),
   boot: { identity: { slug: 'me' }, clients: [] as { slug: string; name: string }[] },
   todos: {
@@ -42,8 +47,12 @@ vi.mock('../../api.ts', () => ({
   },
 }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
+vi.mock('../../shell/ShellProvider.tsx', () => ({
+  useShell: () => ({ dispatch: vi.fn(), state: {}, modes: {} }),
+}));
 
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
+const { ProjectTodos } = await import('./ProjectTodos.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
 
 const SKY = card({ slug: 'site', title: 'Sky site', owner: 'someone' });
@@ -270,5 +279,95 @@ describe('the tidy-up', () => {
     });
     expect(api.applyTidy).toHaveBeenLastCalledWith({ label: 'sky-site', do: 'skip' });
     expect(await screen.findByRole('button', { name: 'Bring back sky-site' })).toBeTruthy();
+  });
+});
+
+describe('a chat started from a project stays on the project page', () => {
+  it('the header button opens the unsent chat in the drawer', async () => {
+    await show(projectList([ACME]));
+    fireEvent.click(screen.getByRole('button', { name: /Boiler leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'New chat for this project' }));
+    expect(store.newChat).toHaveBeenCalledWith({ project: 'acme/boiler', client: 'acme', in: 'drawer' });
+  });
+
+  it('pressing the header button again, with the box untouched, only puts focus back in it', async () => {
+    const drawer = document.body.appendChild(document.createElement('div'));
+    drawer.className = 'chat-drawer';
+    const area = drawer.appendChild(document.createElement('textarea'));
+    area.className = 'composer-input';
+    store.newChatDrawer = 4;
+    store.activeChat = { kind: 'new', key: 4, project: 'acme/boiler' };
+    await show(projectList([ACME]));
+    fireEvent.click(screen.getByRole('button', { name: /Boiler leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'New chat for this project' }));
+    expect(store.requestComposerFocus).toHaveBeenCalledTimes(1);
+    expect(store.newChat).not.toHaveBeenCalled();
+    // With text in it, the press goes to the store (which asks before replacing it).
+    area.value = 'half a thought';
+    fireEvent.click(screen.getByRole('button', { name: 'New chat for this project' }));
+    expect(store.newChat).toHaveBeenCalledTimes(1);
+    drawer.remove();
+    store.newChatDrawer = null;
+  });
+
+  it('the checklist button opens it in the drawer; an archived project passes its client and no project', async () => {
+    await show(projectList([card({ ...ACME, checklist: 'notes/old.md' })]));
+    fireEvent.click(screen.getByRole('button', { name: /Boiler leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Claude about the checklist' }));
+    expect(store.newChat).toHaveBeenLastCalledWith({
+      draft: 'Show me the checklist in notes/old.md',
+      project: 'acme/boiler',
+      client: 'acme',
+      in: 'drawer',
+    });
+    cleanup();
+    projectsStore.reset();
+    await show(projectList([card({ ...ACME, checklist: 'notes/old.md', archived: true })]));
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'archived' } });
+    fireEvent.click(screen.getByRole('button', { name: /Boiler leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Claude about the checklist' }));
+    expect(store.newChat).toHaveBeenLastCalledWith({
+      draft: 'Show me the checklist in notes/old.md',
+      client: 'acme',
+      in: 'drawer',
+    });
+  });
+
+  it("the Tasks tab's chat button starts or reopens a task's chat in the drawer", () => {
+    const row = {
+      key: 'a.md',
+      id: 'a.md',
+      scope: 'tds',
+      title: 'Job a',
+      assignee: 'me',
+      stage: null,
+      due: null,
+      mine: true,
+    };
+    const props = { card: ACME, team: [], rows: [row], failed: false, reload: async () => {} };
+    render(<ProjectTodos {...(props as unknown as Parameters<typeof ProjectTodos>[0])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start a chat on this: Job a' }));
+    expect(store.newChat).toHaveBeenCalledWith(
+      expect.objectContaining({ todoId: 'a.md', project: 'acme/boiler', in: 'drawer' }),
+    );
+    cleanup();
+    store.sessions = {
+      live: [
+        {
+          id: 's1',
+          todoId: 'a.md',
+          state: 'waiting',
+          title: 'x',
+          client: null,
+          startedAt: '',
+          lastActivityAt: '',
+        },
+      ],
+      past: [],
+    };
+    render(<ProjectTodos {...(props as unknown as Parameters<typeof ProjectTodos>[0])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open chat: Job a' }));
+    expect(store.openChat).toHaveBeenCalledWith('s1', { in: 'drawer' });
+    store.sessions = null;
   });
 });

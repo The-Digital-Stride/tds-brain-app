@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -268,6 +269,15 @@ export interface NewChat {
   client?: string | null;
   /** The project this chat was opened for (to-do, project page): a ProjectKey, or null. Absent = none. */
   project?: ProjectKey | null;
+  /** Where this chat opened: 'drawer' is the unsent chat in the chat drawer beside a tool or Projects. Fixed when made. */
+  in: ChatPlace;
+  /**
+   * Which row the message box shows: 'chat' (Project, this chat's own) when it was opened with a project or in the
+   * drawer; 'app' (Home's own chat, Working on). Fixed when made, never worked out again.
+   */
+  scope: 'app' | 'chat';
+  /** The Project and Chat for picks carried over by Open full screen, so "No project" doesn't turn back into a project. */
+  picks?: { project: ProjectKey | ''; client: string };
 }
 export interface LiveChat {
   kind: 'live';
@@ -293,7 +303,12 @@ export type ChatPlace = 'sheet' | 'drawer';
  * Asked before a page change a person makes (plan 2026-11-23-ux-follow-ups, decision 1): runs `go` now, or later, or
  * never, once any unsaved work has been asked about. The shell registers its `guardLeave` (`ShellProvider`).
  */
-export type LeaveGuard = (go: () => void) => void;
+export type LeaveGuard = (go: () => void, opts?: { skipDrawer?: boolean }) => void;
+/**
+ * Asked before anything replaces an unsent chat in the drawer: runs `go` now, or after "Discard". `cancel` runs
+ * when the person keeps writing (or the question goes away unanswered), so a waiting caller isn't left hanging.
+ */
+export type DrawerGuard = (go: () => void, cancel?: () => void) => void;
 
 export interface Store {
   gate: Gate;
@@ -317,6 +332,10 @@ export interface Store {
     todoId?: string | null;
     client?: string | null;
     project?: ProjectKey | null;
+    /** 'drawer': the unsent chat opens in the chat drawer and the view stays (only while `drawerView(view)`). */
+    in?: ChatPlace;
+    /** Picks to start the scope row on (Open full screen). */
+    picks?: { project: ProjectKey | ''; client: string };
   }) => void;
   startSkill: (skill: SkillInfo) => void;
   /** Shows a live chat: on the chat screen, or with `in: 'drawer'` in the right-hand drawer over the tool on the sheet. */
@@ -326,6 +345,24 @@ export interface Store {
    * the sheet (plan 2026-11-16-run-chat-drawer).
    */
   chatDrawer: string | null;
+  /**
+   * The key of the unsent chat shown in the drawer, or null: non-null only while `drawerView(view)` and the active
+   * chat is a new one with `in: 'drawer'`. `chatDrawer` (a live session id) is unchanged.
+   */
+  newChatDrawer: number | null;
+  /**
+   * The key of the new chat whose first message is on its way, from Send until its session has started (or the
+   * start failed); else null. That message has gone, so the drawer hold doesn't ask about that chat: Discard could
+   * no longer stop it. Any other unsent chat still asks.
+   */
+  newChatStarting: number | null;
+  /** Hide chat on an unsent drawer chat: a fresh sheet chat replaces it, nothing is sent. The caller has been through the drawer hold. */
+  dropNewChatDrawer: () => void;
+  /**
+   * Open full screen on an unsent drawer chat: the same chat (to-do, skill, client, project) on Home with `draft` and
+   * `picks`. The text moves, so the drawer hold does not ask.
+   */
+  expandNewChatDrawer: (draft: string, picks: { project: ProjectKey | ''; client: string }) => void;
   /** Hides the drawer; the chat keeps running and stays in Chats. */
   hideChatDrawer: () => void;
   /** Moves the drawer's chat to the chat screen. */
@@ -520,6 +557,11 @@ export interface Store {
    * one (outside the shell), page changes happen at once.
    */
   setLeaveGuard: (guard: LeaveGuard | null) => void;
+  /**
+   * Registers the drawer hold's guard (`ShellProvider`), asked before anything replaces an unsent drawer chat:
+   * `openChat` / `openPast` with `in: 'drawer'` and a second `newChat({ in: 'drawer' })`. Without one, they happen at once.
+   */
+  setDrawerGuard: (guard: DrawerGuard | null) => void;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -557,6 +599,9 @@ function freshNewChat(
   todoId: string | null = null,
   client?: string | null,
   project?: ProjectKey | null,
+  place: ChatPlace = 'sheet',
+  picks?: { project: ProjectKey | ''; client: string },
+  scope?: 'app' | 'chat',
 ): NewChat {
   newChatKey += 1;
   return {
@@ -567,6 +612,9 @@ function freshNewChat(
     todoId,
     ...(client === undefined ? {} : { client }),
     ...(project ? { project } : {}),
+    in: place,
+    scope: scope ?? (project || place === 'drawer' ? 'chat' : 'app'),
+    ...(picks ? { picks } : {}),
   };
 }
 
@@ -884,10 +932,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const viewRef = useRef(view);
   viewRef.current = view;
   /** Runs `go`, a change to page `next`, through the leave guard. `refills`: it changes the page even when `next` is the page shown. */
-  const leave = useCallback((next: View, go: () => void, refills = false) => {
-    const guard = leaveGuard.current;
-    if (!guard || (next === viewRef.current && !refills)) go();
-    else guard(go);
+  const leave = useCallback(
+    (next: View, go: () => void, refills = false, opts?: { skipDrawer?: boolean }) => {
+      const guard = leaveGuard.current;
+      if (!guard || (next === viewRef.current && !refills)) go();
+      else guard(go, opts);
+    },
+    [],
+  );
+  // The drawer hold's guard, registered the same way: asked before an unsent drawer chat is replaced.
+  const drawerGuard = useRef<DrawerGuard | null>(null);
+  const setDrawerGuard = useCallback((guard: DrawerGuard | null) => {
+    drawerGuard.current = guard;
   }, []);
 
   const openView = useCallback((v: View) => leave(v, () => setView(v)), [leave]);
@@ -908,21 +964,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       todoId?: string | null;
       client?: string | null;
       project?: ProjectKey | null;
-    }) =>
-      leave('chat', () => {
-        setActiveChat(
-          freshNewChat(
-            opts?.draft ?? '',
-            opts?.skill ?? null,
-            opts?.todoId ?? null,
-            opts?.client,
-            opts?.project,
-          ),
+      in?: ChatPlace;
+      picks?: { project: ProjectKey | ''; client: string };
+    }) => {
+      // In the drawer only beside a tool or Projects; anywhere else it is Home's chat, as ever.
+      const inDrawer = opts?.in === 'drawer' && drawerView(viewRef.current);
+      const make = () =>
+        freshNewChat(
+          opts?.draft ?? '',
+          opts?.skill ?? null,
+          opts?.todoId ?? null,
+          opts?.client,
+          opts?.project,
+          inDrawer ? 'drawer' : 'sheet',
+          opts?.picks,
         );
+      if (inDrawer) {
+        // The view stays; a second unsent chat asks before it takes the drawer. A live drawer chat keeps running.
+        const open = () => {
+          setActiveChat(make());
+          setActionError(null);
+          requestFocus();
+        };
+        const cur = activeRef.current;
+        if (cur.kind === 'new' && cur.in === 'drawer' && drawerGuard.current) drawerGuard.current(open);
+        else open();
+        return;
+      }
+      leave('chat', () => {
+        setActiveChat(make());
         setView('chat');
         setActionError(null);
-      }),
-    [leave],
+      });
+    },
+    [leave, requestFocus],
   );
 
   const closeChat = useCallback(
@@ -1098,12 +1173,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openChat = useCallback(
     (sessionId: string, opts?: { in?: ChatPlace }) => {
       if (opts?.in === 'drawer') {
-        // The tool stays on the sheet (no page change); the drawer's message box takes focus.
-        setActiveChat({ kind: 'live', sessionId });
-        setActionError(null);
-        setCloseRequest(null);
-        setDrawerChat(sessionId);
-        requestFocus();
+        // The tool stays on the sheet (no page change); the drawer's message box takes focus. An unsent drawer chat
+        // is replaced only after the drawer hold has asked.
+        const open = () => {
+          setActiveChat({ kind: 'live', sessionId });
+          setActionError(null);
+          setCloseRequest(null);
+          setDrawerChat(sessionId);
+          requestFocus();
+        };
+        const cur = activeRef.current;
+        if (cur.kind === 'new' && cur.in === 'drawer' && drawerGuard.current) drawerGuard.current(open);
+        else open();
         return;
       }
       leave('chat', () => {
@@ -1132,6 +1213,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!drawerView(view) || activeChat.kind !== 'live' || activeChat.sessionId !== drawerChat)
       setDrawerChat(null);
   }, [drawerChat, view, activeChat]);
+  // An unsent chat in the drawer goes with the view it opened on: on any other view (a tool included, though the
+  // drawer may sit beside one) it is a fresh sheet chat. The leave guard has already asked about its text. Before
+  // paint, so Home never shows it.
+  const unsentView = useRef<View | null>(null);
+  useLayoutEffect(() => {
+    if (activeChat.kind !== 'new' || activeChat.in !== 'drawer') {
+      unsentView.current = null;
+      return;
+    }
+    if (unsentView.current === null) unsentView.current = view;
+    if (unsentView.current !== view || !drawerView(view)) {
+      unsentView.current = null;
+      setActiveChat(freshNewChat());
+    }
+  }, [activeChat, view]);
+  const newChatDrawer =
+    activeChat.kind === 'new' && activeChat.in === 'drawer' && drawerView(view) ? activeChat.key : null;
+  const dropNewChatDrawer = useCallback(
+    () => setActiveChat((cur) => (cur.kind === 'new' && cur.in === 'drawer' ? freshNewChat() : cur)),
+    [],
+  );
+  const expandNewChatDrawer = useCallback(
+    (draft: string, picks: { project: ProjectKey | ''; client: string }) => {
+      const cur = activeRef.current;
+      if (cur.kind !== 'new' || cur.in !== 'drawer') return;
+      leave(
+        'chat',
+        () => {
+          setActiveChat(
+            freshNewChat(draft, cur.skill, cur.todoId, cur.client, cur.project, 'sheet', picks, 'chat'),
+          );
+          setView('chat');
+          setActionError(null);
+        },
+        false,
+        { skipDrawer: true },
+      );
+    },
+    [leave],
+  );
   const chatDrawer =
     drawerChat !== null &&
     drawerView(view) &&
@@ -1140,10 +1261,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ? drawerChat
       : null;
 
+  /**
+   * Before a chat is STARTED for the drawer: asks the drawer hold about an unsent chat's text first, so "Keep
+   * writing" starts nothing. True to carry on. (`openChat` asks again; by then the hold is clean.)
+   */
+  const clearUnsentDrawer = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const cur = activeRef.current;
+        const guard = drawerGuard.current;
+        if (cur.kind !== 'new' || cur.in !== 'drawer' || !guard) resolve(true);
+        else
+          guard(
+            () => resolve(true),
+            () => resolve(false),
+          );
+      }),
+    [],
+  );
+
   const openPast = useCallback(
     async (sdkSessionId: string, opts?: { in?: ChatPlace }): Promise<boolean> => {
       // A chat being deleted is out of every list; a stale press (or search result) must not bring it back.
       if (hiddenChatRef.current.has(sdkSessionId)) return false;
+      // Kept writing: nothing is reopened, and that is not a failure.
+      if (opts?.in === 'drawer' && !(await clearUnsentDrawer())) return true;
       try {
         const { session } = await api.startSession({ resume: sdkSessionId });
         void loadSessions();
@@ -1163,7 +1305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [loadSessions, openChat],
+    [loadSessions, openChat, clearUnsentDrawer],
   );
 
   const startChat = useCallback(
@@ -1172,6 +1314,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       client: string | null,
       opts: { open: boolean; in?: ChatPlace; project?: ProjectKey | null },
     ) => {
+      // Kept writing: no chat is started (null, with no error to show).
+      if (opts.open && opts.in === 'drawer' && !(await clearUnsentDrawer())) return null;
       try {
         const { session } = await api.startSession({
           prompt,
@@ -1186,7 +1330,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    [loadSessions, openChat],
+    [loadSessions, openChat, clearUnsentDrawer],
   );
 
   /**
@@ -1230,6 +1374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions],
   );
 
+  const [newChatStarting, setNewChatStarting] = useState<number | null>(null);
   const send = useCallback(
     async (text: string, client: string | null, attachments: string[] = [], project?: ProjectKey | null) => {
       const body = text.trim();
@@ -1251,14 +1396,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : `todo/${link}`;
           const todoId = link && body.includes(path) ? link : null;
           // The to-do's project goes with its link: a message that no longer names the to-do isn't about it.
-          const sendProject = link && !todoId && project === activeChat.project ? null : project;
-          const { session } = await api.startSession({
-            prompt: body,
-            client,
-            ...(sendProject ? { project: sendProject } : {}),
-            ...(todoId ? { todoId } : {}),
-            ...files,
-          });
+          // Only for Home's own chat (scope 'app'): a chat that was opened for a project sends what its row shows.
+          const sendProject =
+            activeChat.scope === 'app' && link && !todoId && project === activeChat.project ? null : project;
+          const key = activeChat.key;
+          setNewChatStarting(key);
+          const { session } = await api
+            .startSession({
+              prompt: body,
+              client,
+              ...(sendProject ? { project: sendProject } : {}),
+              ...(todoId ? { todoId } : {}),
+              ...files,
+            })
+            .finally(() => setNewChatStarting((k) => (k === key ? null : k)));
           if (client && boot && boot.prefs.lastClient !== client) {
             void api
               .updatePrefs({ lastClient: client })
@@ -1266,7 +1417,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               .catch(() => {});
           }
           void loadSessions();
-          setActiveChat({ kind: 'live', sessionId: session.id });
+          // The chat has begun and is in Chats. It takes the screen unless the person has moved on in a way it must
+          // not undo: a drawer chat they have since hidden or left never pulls them back or opens over where they
+          // went, and no start ever replaces a different unsent chat in the drawer (its text would go unasked).
+          const cur = activeRef.current;
+          const same = cur.kind === 'new' && cur.key === key;
+          const gone = !same && (activeChat.in === 'drawer' || (cur.kind === 'new' && cur.in === 'drawer'));
+          if (!gone) {
+            // From the drawer the new session takes the drawer in the same update, so it never closes and reopens.
+            if (activeChat.in === 'drawer' && drawerView(viewRef.current)) setDrawerChat(session.id);
+            setActiveChat({ kind: 'live', sessionId: session.id });
+          }
         } else {
           const id = activeChat.sessionId;
           const woken =
@@ -1747,6 +1908,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startSkill,
       openChat,
       chatDrawer,
+      newChatDrawer,
+      newChatStarting,
+      dropNewChatDrawer,
+      expandNewChatDrawer,
       hideChatDrawer,
       expandChatDrawer,
       openPast,
@@ -1821,6 +1986,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       fileNotice,
       run,
       setLeaveGuard,
+      setDrawerGuard,
     }),
     [
       gate,
@@ -1840,6 +2006,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startSkill,
       openChat,
       chatDrawer,
+      newChatDrawer,
+      newChatStarting,
+      dropNewChatDrawer,
+      expandNewChatDrawer,
       hideChatDrawer,
       expandChatDrawer,
       openPast,
@@ -1910,6 +2080,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       fileNotice,
       run,
       setLeaveGuard,
+      setDrawerGuard,
     ],
   );
 

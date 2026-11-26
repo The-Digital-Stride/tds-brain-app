@@ -247,3 +247,8 @@ the message box (B), then a Sonnet builder for the drawer state and wiring (C); 
   deletions: only `Home.tsx` (263 lines, the planned move to `NewChatBox.tsx`).
 - **One small visible change outside the drawer.** Home's two pickers now stack as a tidy two-column grid when
   the message box is under 560px wide (a narrow window); before, they wrapped.
+- **Follow-up, same day (Ian: the help and the What's new text were missing).** The build changed three help
+  lines but skipped `docs/help-standard.md` section 6. Added: the help page `help/project-chats.md` with its
+  picture (`project-chat` scene in `scripts/help-shots.ts`), `help/whats-new/0.91.0.md`, `reviewed` dates and
+  `related` links on the three pages touched. The two Home pictures were retaken and compared: the message box is
+  unchanged, so they stay as they were.

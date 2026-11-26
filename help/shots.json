@@ -45,6 +45,31 @@
     "alt": "The Chats drawer with two open chats and the Earlier switch."
   },
   {
+    "id": "project-chat",
+    "scene": "project-chat",
+    "crop": ".chat-drawer",
+    "pad": 0,
+    "callouts": [
+      {
+        "n": 1,
+        "target": ".chat-drawer .project-select"
+      },
+      {
+        "n": 2,
+        "target": ".chat-drawer .client-select"
+      },
+      {
+        "n": 3,
+        "target": ".chat-drawer [aria-label=\"Open full screen\"]"
+      },
+      {
+        "n": 4,
+        "target": ".chat-drawer [aria-label=\"Hide chat\"]"
+      }
+    ],
+    "alt": "A new chat open beside a project, with Project and Chat for already filled in."
+  },
+  {
     "id": "chat-reply",
     "scene": "chat-reply",
     "crop": ".thread-col",

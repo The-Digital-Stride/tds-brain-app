@@ -83,6 +83,7 @@ import type {
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
 import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
+import type { ProjectChatsResponse } from '../../shared/project-chats-contract.ts';
 import type {
   EmailDraftApproveRequest,
   EmailDraftDismissRequest,
@@ -268,6 +269,9 @@ export const api = {
   /** This Mac's chats for a project that have new messages since they were last saved there. */
   projectUnsavedChats: (key: string) =>
     request<UnsavedChatsResponse>('GET', `${ROUTES.projectUnsavedChats}?key=${encodeURIComponent(key)}`),
+  /** Every chat this Mac has for a project, with whether each was saved there (plan 2026-11-26-project-chats-tab). */
+  projectChats: (key: string) =>
+    request<ProjectChatsResponse>('GET', `${ROUTES.projectChats}?key=${encodeURIComponent(key)}`),
   changeProject: (action: ProjectAction) => request<ProjectList>('POST', ROUTES.projectsChange, action),
   checkProjectMove: (req: Omit<ProjectMoveRequest, 'check' | 'dropPersonal'>) =>
     request<ProjectMoveCheckResponse>('POST', ROUTES.projectsMove, { ...req, check: true }),

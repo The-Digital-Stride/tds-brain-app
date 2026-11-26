@@ -39,6 +39,7 @@ import {
   showsBusiness,
   useProjectBusiness,
 } from './ProjectBusiness.tsx';
+import { ProjectChats } from './ProjectChats.tsx';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { type MeetingsState, ProjectMeetings, useProjectMeetings } from './ProjectMeetings.tsx';
 import { ProjectRef } from './ProjectRef.tsx';
@@ -49,7 +50,7 @@ import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useProjectTodos } from './useProjectTodos.ts';
 
-export type ProjectTab = 'overview' | 'todos' | 'updates' | 'files';
+export type ProjectTab = 'overview' | 'todos' | 'updates' | 'files' | 'chats';
 
 /** What the Overview needs to archive, unarchive and delete this project. */
 interface Removal {
@@ -547,7 +548,7 @@ function Overview({
   );
 }
 
-/** One project: its title and tabs (Overview, To-dos, Updates, Files). */
+/** One project: its title and tabs (Overview, Tasks, Updates, Files, Chats). */
 export function ProjectPage({
   card,
   list,
@@ -765,6 +766,7 @@ export function ProjectPage({
             { id: 'todos', label: 'Tasks', count: projectTodos.data?.count ?? card.openTodos },
             { id: 'updates', label: 'Updates' },
             { id: 'files', label: 'Files' },
+            { id: 'chats', label: 'Chats' },
           ]}
         />
         {tab === 'todos' && canAddTodo ? (
@@ -865,6 +867,16 @@ export function ProjectPage({
             onLinking={setLinking}
             addingArtifact={addingArtifact && canAddArtifact}
             onAddingArtifact={setAddingArtifact}
+          />
+        ) : null}
+        {tab === 'chats' ? (
+          <ProjectChats
+            projectKey={card.key}
+            movedFrom={card.movedFrom ?? []}
+            startLabel={
+              card.archived ? null : chatWaiting ? 'Open saved message' : 'New chat for this project'
+            }
+            onSave={saveChat}
           />
         ) : null}
       </div>

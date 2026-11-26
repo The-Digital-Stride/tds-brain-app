@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { composeChatSummary } from '../../shared/chat-summary.ts';
 import type { ChatSummaryDraft, UnsavedChat } from '../../shared/chat-summary-contract.ts';
 import { type Identity, ROUTES, sessionCookieName } from '../../shared/contract.ts';
+import type { ProjectChat, ProjectChatsInput } from '../../shared/project-chats-contract.ts';
 import type { ProjectCard, ProjectList } from '../../shared/projects-contract.ts';
 import { ChatDraftError, type ChatDraftInput, type UnsavedInput } from '../engine/chat-summary.ts';
 import { SessionError } from '../engine/session-manager.ts';
@@ -63,6 +64,9 @@ interface State {
   entries: { path: string; at: string; summary: string }[];
   library: Record<string, 'client' | 'personal'>;
   unsaved: UnsavedChat[];
+  chats: ProjectChat[];
+  myEntries: Map<string, string> | 'fail';
+  noService: boolean;
 }
 let state: State;
 const seen = {
@@ -70,6 +74,9 @@ const seen = {
   changes: [] as unknown[],
   recorded: [] as [string, string][],
   unsaved: [] as UnsavedInput[],
+  projectChats: [] as ProjectChatsInput[],
+  myEntriesFor: [] as [string, string][],
+  entriesRead: [] as (Map<string, string> | 'fail')[],
   hasEntry: [] as boolean[],
   holds: [] as ((id: string) => Promise<boolean>)[],
 };
@@ -98,6 +105,18 @@ function freshState(): State {
       'personal/scratch.md': 'personal',
     },
     unsaved: [{ chat: CHAT, title: 'Launch chat', lastActive: '2026-11-24T10:00:00.000Z', savedAt: null }],
+    chats: [
+      {
+        chat: CHAT,
+        title: 'Launch chat',
+        lastActive: '2026-11-24T10:00:00.000Z',
+        busy: false,
+        saved: 'never',
+        savedAt: null,
+      },
+    ],
+    myEntries: new Map([[CHAT, '2026-11-20T10:00:00Z']]),
+    noService: false,
   };
 }
 
@@ -126,12 +145,38 @@ beforeAll(async () => {
         : null;
     },
     chatEntries: async () => state.entries,
+    myChatEntries: async (key: string, who: Identity) => {
+      seen.myEntriesFor.push([key, who.slug]);
+      if (state.myEntries === 'fail') throw new Error('unreadable');
+      return state.myEntries;
+    },
     setHoldsChat: (fn: (id: string) => Promise<boolean>) => {
       seen.holds.push(fn);
     },
     projectUpdates: async () => ({ items: [], unreadable: 0, more: false, canAdd: true }),
   };
   const owns = async (id: string) => state.owns.has(id);
+  const summaries = {
+    owns,
+    draft: async (input: ChatDraftInput) => {
+      seen.drafts.push(input);
+      if (state.draftFail) throw state.draftFail;
+      return { ...DRAFT, project: input.project.key };
+    },
+    recordSaved: async (chat: string, key: string) => {
+      seen.recorded.push([chat, key]);
+    },
+    unsaved: async (input: UnsavedInput) => {
+      seen.unsaved.push(input);
+      seen.hasEntry.push(await input.hasEntry(CHAT));
+      return state.unsaved;
+    },
+    forProject: async (input: ProjectChatsInput) => {
+      seen.projectChats.push(input);
+      seen.entriesRead.push(await input.entries().catch(() => 'fail' as const));
+      return { chats: state.chats, more: false };
+    },
+  };
   app = createAppServer({
     port: PORT,
     clientDir: '/nonexistent',
@@ -147,21 +192,8 @@ beforeAll(async () => {
         throw new SessionError('not-found', 'no such chat');
       },
       ownsChat: owns,
-      chatSummaries: {
-        owns,
-        draft: async (input: ChatDraftInput) => {
-          seen.drafts.push(input);
-          if (state.draftFail) throw state.draftFail;
-          return { ...DRAFT, project: input.project.key };
-        },
-        recordSaved: async (chat: string, key: string) => {
-          seen.recorded.push([chat, key]);
-        },
-        unsaved: async (input: UnsavedInput) => {
-          seen.unsaved.push(input);
-          seen.hasEntry.push(await input.hasEntry(CHAT));
-          return state.unsaved;
-        },
+      get chatSummaries() {
+        return state.noService ? undefined : summaries;
       },
     } as never,
     thumbs: {} as never,
@@ -445,6 +477,74 @@ describe('GET projectUnsavedChats', () => {
   it('a bad key is bad-request; an unknown project not-found', async () => {
     expect((await get(`${ROUTES.projectUnsavedChats}?key=../x`)).status).toBe(400);
     expect((await get(`${ROUTES.projectUnsavedChats}?key=acme/gone`)).status).toBe(404);
+  });
+});
+
+describe('GET projectChats', () => {
+  const URL_OK = `${ROUTES.projectChats}?key=acme/web`;
+
+  it('answers the rows through the real gate; asks with the live and moved_from keys', async () => {
+    const r = await get(URL_OK);
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ chats: state.chats, canSave: true, more: false });
+    expect(seen.projectChats[0]?.keys).toEqual(['acme/web', 'acme/old-web']);
+    expect(seen.entriesRead).toEqual([state.myEntries]);
+    expect(seen.myEntriesFor).toEqual([['acme/web', 'sam-example']]);
+  });
+
+  it('is refused without the launch cookie, like the other project routes', async () => {
+    const r = await send(URL_OK);
+    expect(r.status).not.toBe(200);
+    expect(seen.projectChats).toHaveLength(0);
+  });
+
+  it('only GET: other methods are refused', async () => {
+    for (const method of ['POST', 'PUT', 'PATCH']) {
+      const r = await send(URL_OK, { method, headers: JSON_POST, body: {} });
+      expect([method, r.status]).toEqual([method, 405]);
+    }
+    expect(seen.projectChats).toHaveLength(0);
+  });
+
+  it('a bad or missing key is bad-request; an unknown project not-found', async () => {
+    expect((await get(`${ROUTES.projectChats}?key=../x`)).status).toBe(400);
+    expect((await get(ROUTES.projectChats)).status).toBe(400);
+    const gone = await get(`${ROUTES.projectChats}?key=acme/gone`);
+    expect(gone.status).toBe(404);
+    expect(gone.json.error?.code).toBe('not-found');
+  });
+
+  it('finds the project by a moved_from key', async () => {
+    const r = await get(`${ROUTES.projectChats}?key=acme/old-web`);
+    expect(r.status).toBe(200);
+    expect(seen.projectChats[0]?.keys).toEqual(['acme/web', 'acme/old-web']);
+  });
+
+  it('an archived project, or one this person cannot save to, still lists chats with canSave false', async () => {
+    const archived = await get(`${ROUTES.projectChats}?key=acme/old`);
+    expect(archived.json).toEqual({ chats: state.chats, canSave: false, more: false });
+    state.list = { ...state.list, canSaveChat: false };
+    expect((await get(URL_OK)).json).toEqual({ chats: state.chats, canSave: false, more: false });
+    state = freshState();
+    state.access = 'restricted';
+    expect((await get(URL_OK)).json).toEqual({ chats: state.chats, canSave: false, more: false });
+    state = freshState();
+    state.list = { ...state.list, canChange: false };
+    expect((await get(URL_OK)).json).toMatchObject({ canSave: false });
+  });
+
+  it('unreadable updates reach the service as a rejecting entries, not an empty one', async () => {
+    state.myEntries = 'fail';
+    expect((await get(URL_OK)).status).toBe(200);
+    expect(seen.entriesRead).toEqual(['fail']);
+  });
+
+  it('no chat service is an error, never an empty list', async () => {
+    state.noService = true;
+    const r = await get(URL_OK);
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(r.json.error?.code).toBeTruthy();
+    expect(r.json.chats).toBeUndefined();
   });
 });
 

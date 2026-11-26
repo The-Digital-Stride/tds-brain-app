@@ -8,6 +8,7 @@ import {
   CHAT_OUTCOME_MAX,
 } from '../../shared/chat-summary-contract.ts';
 import type { ChatFile, ChatFilesSnapshot } from '../../shared/contract.ts';
+import { PROJECT_CHATS_MAX } from '../../shared/project-chats-contract.ts';
 import { createChatSummaryStore } from '../store/chat-summaries.ts';
 import {
   buildDraftPrompt,
@@ -313,6 +314,7 @@ function service(opts: {
   const logs: string[] = [];
   const store = createChatSummaryStore(null);
   let messages = opts.messages === undefined ? 4 : opts.messages;
+  const counted = { n: 0 };
   const port: ChatSourcePort = {
     owns: async () => opts.owns ?? true,
     source: async () =>
@@ -326,7 +328,10 @@ function service(opts: {
             emailTool: false,
             ...opts.source,
           },
-    messages: async () => messages,
+    messages: async () => {
+      counted.n++;
+      return messages;
+    },
     placed: async () => opts.placed ?? [],
   };
   const svc = createChatSummaryService({
@@ -345,6 +350,7 @@ function service(opts: {
     calls: fake.calls,
     logs,
     store,
+    counted,
     setMessages: (n: number | null) => {
       messages = n;
     },
@@ -642,5 +648,159 @@ describe('chat summary service: saved and unsaved', () => {
     expect(
       await t.svc.unsaved({ keys: ['acme/web'], since: SINCE, hasEntry: async () => false }),
     ).toHaveLength(5);
+  });
+});
+
+describe('chat summary service: forProject', () => {
+  const at = (chat: string, project: string, time: string, replying = false): PlacedChat => ({
+    chat,
+    title: `Chat ${chat.slice(0, 2)}`,
+    project,
+    lastModified: Date.parse(time),
+    replying,
+  });
+  const id = (c: string) => `${c}1111111-2222-4333-8444-555555555555`;
+  const never = async () => new Map<string, string>();
+
+  it('lists only the project keys, newest first, live ones busy', async () => {
+    const t = service({
+      script: () => 'hang',
+      placed: [
+        at(id('a'), 'acme/web', '2026-10-01T10:00:00Z'),
+        at(id('b'), 'acme/old-web', '2026-11-23T10:00:00Z', true),
+        at(id('c'), 'acme/other', '2026-11-25T10:00:00Z'),
+        at(id('d'), 'acme/web', '2026-11-20T10:00:00Z'),
+      ],
+    });
+    const r = await t.svc.forProject({ keys: ['acme/web', 'acme/old-web'], entries: never });
+    expect(r.more).toBe(false);
+    expect(r.chats.map((c) => [c.chat[0], c.busy, c.lastActive])).toEqual([
+      ['b', true, '2026-11-23T10:00:00.000Z'],
+      ['d', false, '2026-11-20T10:00:00.000Z'],
+      ['a', false, '2026-10-01T10:00:00.000Z'],
+    ]);
+  });
+
+  it('caps at PROJECT_CHATS_MAX and says there are more', async () => {
+    const placed = Array.from({ length: PROJECT_CHATS_MAX + 3 }, (_, i) =>
+      at(`${String(i).padStart(8, '0')}-2222-4333-8444-555555555555`, 'acme/web', `2026-11-01T10:00:00Z`),
+    ).map((p, i) => ({ ...p, lastModified: p.lastModified + i * 1000 }));
+    const t = service({ script: () => 'hang', placed });
+    const r = await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(r.chats).toHaveLength(PROJECT_CHATS_MAX);
+    expect(r.more).toBe(true);
+    expect(r.chats[0]?.chat.startsWith(String(PROJECT_CHATS_MAX + 2).padStart(8, '0'))).toBe(true);
+    const exact = service({ script: () => 'hang', placed: placed.slice(0, PROJECT_CHATS_MAX) });
+    expect((await exact.svc.forProject({ keys: ['acme/web'], entries: never })).more).toBe(false);
+  });
+
+  it('untitled chats get a placeholder title', async () => {
+    const t = service({
+      script: () => 'hang',
+      placed: [{ ...at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'), title: '  \n ' }],
+    });
+    expect((await t.svc.forProject({ keys: ['acme/web'], entries: never })).chats[0]?.title).toBe(
+      'Untitled chat',
+    );
+  });
+
+  it('record: every saved chat is counted, so messages sent between the draft and the save still show as new', async () => {
+    const placed = [
+      // Last active BEFORE its save, yet two more messages than the draft counted (the record holds the draft's count).
+      at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'),
+      at(id('b'), 'acme/web', '2026-11-22T10:00:00Z'),
+      at(id('c'), 'acme/web', '2026-11-21T10:00:00Z'),
+    ];
+    const t = service({ script: () => 'hang', messages: 9, placed });
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 7 });
+    await t.store.record(id('b'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 5 });
+    await t.store.record(id('c'), 'acme/web', { savedAt: '2026-11-20T00:00:00.000Z', messages: 9 });
+    const entries = async () => {
+      throw new Error('not needed');
+    };
+    const r = await t.svc.forProject({ keys: ['acme/web'], entries });
+    const by = Object.fromEntries(r.chats.map((c) => [c.chat[0], c]));
+    expect(by.a).toMatchObject({ saved: 'new', savedAt: '2026-11-21T00:00:00.000Z' });
+    expect(by.b).toMatchObject({ saved: 'new', savedAt: '2026-11-21T00:00:00.000Z' });
+    expect(by.c).toMatchObject({ saved: 'saved' });
+    expect(t.counted.n).toBe(3);
+    // The Overview card's list agrees about the chat saved mid-conversation.
+    const nudge = await t.svc.unsaved({ keys: ['acme/web'], since: 0, hasEntry: async () => true });
+    expect(nudge.map((c) => c.chat)).toContain(id('a'));
+  });
+
+  it('record: a chat is counted again only once it has been active since the last count', async () => {
+    const placed = [
+      at(id('a'), 'acme/web', '2026-11-20T10:00:00Z'),
+      at(id('b'), 'acme/web', '2026-11-22T10:00:00Z'),
+    ];
+    const t = service({ script: () => 'hang', messages: 9, placed });
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 9 });
+    await t.store.record(id('b'), 'acme/web', { savedAt: '2026-11-21T00:00:00.000Z', messages: 9 });
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(t.counted.n).toBe(2);
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(t.counted.n).toBe(2);
+    placed[1] = at(id('b'), 'acme/web', '2026-11-23T10:00:00Z');
+    await t.svc.forProject({ keys: ['acme/web'], entries: never });
+    expect(t.counted.n).toBe(3);
+  });
+
+  it('record: an uncountable chat is saved; the newest record across keys wins', async () => {
+    const t = service({
+      script: () => 'hang',
+      messages: null,
+      placed: [at(id('a'), 'acme/old-web', '2026-11-22T10:00:00Z')],
+    });
+    await t.store.record(id('a'), 'acme/old-web', { savedAt: '2026-11-10T00:00:00.000Z', messages: 1 });
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-15T00:00:00.000Z', messages: 1 });
+    const r = await t.svc.forProject({ keys: ['acme/web', 'acme/old-web'], entries: never });
+    expect(r.chats[0]).toMatchObject({ saved: 'saved', savedAt: '2026-11-15T00:00:00.000Z' });
+  });
+
+  it('no record: never, or saved from an entry; entries read once', async () => {
+    const t = service({
+      script: () => 'hang',
+      placed: [
+        at(id('a'), 'acme/web', '2026-11-22T10:00:00Z'),
+        at(id('b'), 'acme/web', '2026-11-21T10:00:00Z'),
+      ],
+    });
+    let reads = 0;
+    const r = await t.svc.forProject({
+      keys: ['acme/web'],
+      entries: async () => {
+        reads++;
+        return new Map([[id('b'), '2026-11-21T12:00:00Z']]);
+      },
+    });
+    expect(reads).toBe(1);
+    expect(r.chats[0]).toMatchObject({ saved: 'never', savedAt: null });
+    expect(r.chats[1]).toMatchObject({ saved: 'saved', savedAt: '2026-11-21T12:00:00Z' });
+    expect(t.counted.n).toBe(0);
+  });
+
+  it('entries is not read when every chat has a record; a failed read gives null', async () => {
+    const t = service({
+      script: () => 'hang',
+      placed: [
+        at(id('a'), 'acme/web', '2026-11-22T10:00:00Z'),
+        at(id('b'), 'acme/web', '2026-11-21T10:00:00Z'),
+      ],
+    });
+    // The helper's chats hold 4 messages: a record of 4 is a chat with nothing new.
+    await t.store.record(id('a'), 'acme/web', { savedAt: '2026-11-23T00:00:00.000Z', messages: 4 });
+    let reads = 0;
+    const failing = async () => {
+      reads++;
+      throw new Error('unreadable');
+    };
+    const r = await t.svc.forProject({ keys: ['acme/web'], entries: failing });
+    expect(reads).toBe(1);
+    expect(r.chats[0]).toMatchObject({ saved: 'saved' });
+    expect(r.chats[1]).toMatchObject({ saved: null, savedAt: null });
+    await t.store.record(id('b'), 'acme/web', { savedAt: '2026-11-23T00:00:00.000Z', messages: 1 });
+    await t.svc.forProject({ keys: ['acme/web'], entries: failing });
+    expect(reads).toBe(1);
   });
 });

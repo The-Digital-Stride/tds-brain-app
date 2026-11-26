@@ -78,6 +78,11 @@ export interface ProjectUpdatesService {
    * this person wrote, newest first. Empty for an unknown project.
    */
   chatEntries(key: ProjectKey, chatId: string, identity: Identity): Promise<ChatEntryRef[]>;
+  /**
+   * Chat id → the newest `at` of this person's `chat` entries on the project, from one read of the log (the
+   * Chats tab's saved state). Empty for an unknown project.
+   */
+  myChatEntries(key: ProjectKey, identity: Identity): Promise<Map<string, string>>;
 }
 
 /** An entry file bigger than this is counted unreadable. */
@@ -549,5 +554,20 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
       .map((e) => ({ path: e.item.path, at: e.item.at, summary: e.item.summary }));
   };
 
-  return { read, change, chatEntries };
+  const myChatEntries: ProjectUpdatesService['myChatEntries'] = async (key, identity) => {
+    const out = new Map<string, string>();
+    const index = await opts.index();
+    const card = index.byKey(key);
+    if (!card) return out;
+    const all = await listing(card, index);
+    for (const e of all.entries) {
+      if (e.item.kind !== 'chat' || e.item.chatId === undefined) continue;
+      if (!(e.item.by === identity.slug || (card.space === 'personal' && e.item.by === 'me'))) continue;
+      const seen = out.get(e.item.chatId);
+      if (seen === undefined || e.item.at > seen) out.set(e.item.chatId, e.item.at);
+    }
+    return out;
+  };
+
+  return { read, change, chatEntries, myChatEntries };
 }

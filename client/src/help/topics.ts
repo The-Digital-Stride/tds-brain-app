@@ -11,6 +11,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'images',
   'projects',
   'project-chats',
+  'project-chat-list',
   'project-codes',
   'project-emails',
   'saving-chats-to-projects',

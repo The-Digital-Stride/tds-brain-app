@@ -96,6 +96,7 @@ export type SearchableBrain = BrainReaders &
     teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
     /** Chat summaries: this person's `chat` entries for one chat on a project (whole log, newest first). */
     chatEntries?: ProjectUpdatesService['chatEntries'];
+    myChatEntries?: ProjectUpdatesService['myChatEntries'];
     /**
      * Chat summaries: which chats this Mac holds, for "Open chat" on a `chat` entry. The session manager is made
      * after the brain, so it is handed in later (routes.ts binds it); until then no entry is openable.
@@ -264,6 +265,7 @@ export function createBrainReaders(
     homeMeetings: projectMeetings.home,
     emailDrafts,
     chatEntries: (key, chatId, identity) => projectUpdates.chatEntries(key, chatId, identity),
+    myChatEntries: (key, identity) => projectUpdates.myChatEntries(key, identity),
     setHoldsChat: (fn) => {
       holdsChat = fn;
     },

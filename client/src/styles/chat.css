@@ -53,7 +53,8 @@
     text-align: center;
     gap: var(--sp-6);
   }
-  .thread-empty h2 {
+  .thread-empty h2,
+  .thread-empty h3 {
     font-size: var(--fs-title);
   }
   .thread-empty .lede {
@@ -726,6 +727,8 @@
     border-radius: var(--r-14);
     background: var(--surface);
     box-shadow: var(--lift-1);
+    /* So the scope row can stack when the box is narrow (see .composer-scope below). */
+    container-type: inline-size;
   }
   .floater .composer {
     box-shadow: var(--lift-2);
@@ -807,6 +810,23 @@
     gap: var(--sp-8) var(--sp-16);
     padding-top: var(--sp-8);
     border-top: 1px solid var(--line);
+  }
+  /* A narrow box (the chat drawer): the pickers stack as a two-column grid, labels in one column and the selects
+   filling the rest, so a long project name fits. Wide boxes keep them side by side. */
+  @container (width < 560px) {
+    .composer-scope {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: var(--sp-8);
+    }
+    .composer-scope .scope-field {
+      display: contents;
+    }
+    .composer-scope .scope-field .client-select,
+    .composer-scope .scope-field .project-select {
+      min-width: 0;
+      width: auto;
+    }
   }
   /* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
   .engine-line {

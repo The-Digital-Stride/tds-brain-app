@@ -202,6 +202,7 @@ export function ProjectTodos({
                             client: card.client,
                             project: card.archived ? null : card.key,
                           }}
+                          in="drawer"
                         />
                       </div>
                     ) : null}

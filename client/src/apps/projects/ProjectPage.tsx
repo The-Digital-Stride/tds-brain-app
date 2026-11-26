@@ -518,12 +518,15 @@ function Overview({
               type="button"
               className="btn"
               data-size="small"
-              onClick={() =>
+              onClick={() => {
+                // An archived project is no chat's project, but its client still is (when it is listed).
+                const place = projectChatPlace(card, clients);
                 newChat({
                   draft: `Show me the checklist in ${card.checklist}`,
-                  ...(card.archived ? {} : projectChatPlace(card, clients)),
-                })
-              }
+                  ...(card.archived ? (place.client ? { client: place.client } : {}) : place),
+                  in: 'drawer',
+                });
+              }}
             >
               Ask Claude about the checklist
             </button>
@@ -567,7 +570,7 @@ export function ProjectPage({
   const editable = canChange && isEditable(card);
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
-  const { todos, newChat } = useStore();
+  const { todos, newChat, newChatDrawer, activeChat, requestComposerFocus } = useStore();
   // The list reloads when the project's count moves or the to-do lists change (an add in the To-dos panel).
   const todosStamp = useMemo(() => [card.openTodos, todos], [card.openTodos, todos]);
   const projectTodos = useProjectTodos(card.key, todosStamp);
@@ -682,7 +685,22 @@ export function ProjectPage({
             className="btn proj-head-end"
             data-size="small"
             data-focus="chat"
-            onClick={() => newChat(projectChatPlace(card, clients))}
+            onClick={() => {
+              // The unsent chat for this project is already beside the page and still empty: back into its box.
+              const box = document.querySelector<HTMLTextAreaElement>('.chat-drawer .composer-input');
+              if (
+                newChatDrawer != null &&
+                activeChat.kind === 'new' &&
+                activeChat.project === card.key &&
+                box &&
+                box.value.trim() === '' &&
+                !document.querySelector('.chat-drawer .composer .chip-row .chip')
+              ) {
+                requestComposerFocus();
+                return;
+              }
+              newChat({ ...projectChatPlace(card, clients), in: 'drawer' });
+            }}
           >
             <Icon name="chat" size={14} />
             New chat for this project

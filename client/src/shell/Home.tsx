@@ -1,8 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   attentionFor,
-  type ClientGuessResponse,
-  type ClientPickReported,
   type LibraryItemsResponse,
   type LibraryKind,
   type LibraryRecentResponse,
@@ -10,18 +8,10 @@ import {
   type TodoItem,
 } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
-import { Composer } from '../components/Composer.tsx';
+import { NewChatBox, ProjectPicker } from '../components/NewChatBox.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { homeOrderKey } from '../state/card-order.ts';
-import { projectIfClientMatches } from '../state/chat-project.ts';
-import {
-  clientForProject,
-  clientSlugOf,
-  projectChoice,
-  projectPageRequest,
-  useProjectChoice,
-} from '../state/client-choice.ts';
-import { isClearCommand } from '../state/close.ts';
+import { projectPageRequest, useProjectChoice } from '../state/client-choice.ts';
 import { greeting, summary } from '../state/home.ts';
 import { isShown, resolveShortcut } from '../state/home-layout.ts';
 import {
@@ -38,20 +28,17 @@ import {
   todoArrival,
 } from '../state/home-pins.ts';
 import { ASYNC_RETRIES, ASYNC_RETRY_MS } from '../state/palette.ts';
-import { filterOptions, projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
+import { projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
 import { todoProjectKey } from '../state/todo-filter.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
-import { ClientAsk } from './ClientAsk.tsx';
 import type { DrawerName } from './contract.ts';
 import { HomeMeetings } from './HomeMeetings.tsx';
-import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { ShowMore } from './ShowMore.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
-import { clientOptions } from './search-select.ts';
 import { useCardOrder } from './useCardOrder.tsx';
 import { useHomeShortcuts } from './useHomeShortcuts.ts';
 import { WhatsNewCard } from './WhatsNewCard.tsx';
@@ -72,8 +59,6 @@ function metaParts(
   return parts;
 }
 
-const ALL = 'all';
-
 /** "24 Nov" (with the year when it isn't this one): the day a project was last worked on. */
 function whenDate(iso: string): string {
   // A bare day ("2026-11-24") is read at midday so no time zone moves it to the day before.
@@ -85,42 +70,6 @@ function whenDate(iso: string): string {
     month: 'short',
     ...(sameYear ? {} : { year: 'numeric' }),
   });
-}
-
-/**
- * The app-wide picker (decision 11), as one control: "Working on [project]", every live project under its
- * client. Choosing a project narrows Home, the To-dos drawer, Images, Documents and search, and starts a new
- * chat's "Chat for" on that project's client. It sits in the message box beside Chat for, first because it
- * drives it (Ian, 2026-11-21). Shown once the brain has projects.
- */
-function ProjectPicker({
-  clients,
-  disabled = false,
-}: {
-  clients: { slug: string; name: string; aliases?: string[] }[];
-  /** While a client guess or question is pending, as Chat for: the project can't change the chat mid-send. */
-  disabled?: boolean;
-}) {
-  const { list } = useProjects();
-  const project = useProjectChoice();
-  const cards = list?.projects ?? [];
-  if (cards.length === 0 && !project) return null;
-  return (
-    <span className="scope-field">
-      <label className="client-label" htmlFor="pick-project">
-        Working on
-      </label>
-      <SearchSelect
-        id="pick-project"
-        className="project-select"
-        value={project || ALL}
-        options={[{ value: ALL, label: 'All projects' }, ...filterOptions(cards, clients)]}
-        recentKey="projects"
-        disabled={disabled}
-        onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
-      />
-    </span>
-  );
 }
 
 /** Every Home card that can show, in the default order (Ads approvals only while something waits). */
@@ -207,13 +156,6 @@ function useRecentFiles(kind: LibraryKind, project: string, hidden: boolean, lib
 /** How long a star in a Recent card holds its row in place while Pinned files catches up. */
 const HOLD_MS = 3000;
 
-const AUTO = '@auto';
-const NONE = '@none';
-/** How much of the first message is used to work out the client. */
-const GUESS_CHARS = 4000;
-/** The "Working out the client…" note only appears when the guess is slow. */
-const STATUS_DELAY_MS = 400;
-
 /** The light dashboard shown for a new chat: greeting, composer, and three cards of what needs you. */
 export function Home() {
   const {
@@ -221,8 +163,6 @@ export function Home() {
     todos,
     sessions,
     activeChat,
-    send,
-    composerFocus,
     startSkill,
     startChat,
     newChat,
@@ -246,8 +186,6 @@ export function Home() {
   const clients = boot?.clients ?? [];
   const project = useProjectChoice();
   const { list: projectList } = useProjects();
-  // The client picker's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
-  const [picked, setPicked] = useState<{ key: number; value: string } | null>(null);
   // Pinned cards opened with "Show N more". Not saved: Home starts compact each visit.
   const [expanded, setExpanded] = useState<Record<PinnedCard, boolean>>({
     todos: false,
@@ -261,56 +199,6 @@ export function Home() {
   });
   const toggleCard = (c: PinnedCard) => setExpanded((e) => ({ ...e, [c]: !e[c] }));
   const rowsShown = (c: PinnedCard) => (expanded[c] ? undefined : PINNED_ROWS);
-  const [ask, setAsk] = useState<{
-    options: string[];
-    choose: (slug: string | null) => void;
-    cancel: () => void;
-  } | null>(null);
-  const [status, setStatus] = useState('');
-  // True from Send (with auto) until the chat starts or the question is cancelled.
-  const [busy, setBusy] = useState(false);
-  const cancelAsk = useRef<(() => void) | null>(null);
-  // A pending question ends (as "not sent") when Home goes away.
-  useEffect(() => () => cancelAsk.current?.(), []);
-  // So does opening another new chat.
-  const chatKey = activeChat.kind === 'new' ? activeChat.key : -1;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the chat changes
-  useEffect(() => () => cancelAsk.current?.(), [chatKey]);
-  const listed = (slug: string) => clients.some((c) => c.slug === slug);
-  // Working on's project starts Chat for on its client (a personal project on No client); a client not in the list
-  // leaves it on Auto. Worked out here, never stored, and never written back: picking Chat for by hand changes
-  // nothing app-wide.
-  const fromProject = (() => {
-    if (!project) return null;
-    const slug = clientSlugOf(clientForProject(project));
-    if (slug === '') return NONE;
-    return slug && listed(slug) ? slug : null;
-  })();
-  // A chat opened with a client (palette, to-do) starts on it; else on Working on's client; else Auto.
-  const initial =
-    activeChat.kind === 'new' && activeChat.client !== undefined
-      ? (activeChat.client ?? NONE)
-      : (fromProject ?? AUTO);
-  // The project this chat is for: the one it was opened with (to-do, project page), else Working on's. It goes
-  // with the chat only while the final client is still that project's own (plan decision 2).
-  const presetProject = activeChat.kind === 'new' ? (activeChat.project ?? null) : null;
-  const candidateProject = presetProject ?? (project || null);
-  const projectFor = (client: string | null) =>
-    projectIfClientMatches(candidateProject, projectList?.projects, clients, client);
-  const presetCard = presetProject ? projectList?.projects.find((p) => p.key === presetProject) : undefined;
-  const byHand = activeChat.kind === 'new' && picked?.key === activeChat.key;
-  const choice = byHand ? (picked?.value ?? initial) : initial;
-  const presetByChat = activeChat.kind === 'new' && activeChat.client !== undefined;
-  // Said only when the project set it: not a hand pick, nor a to-do's or the palette's client that matches.
-  // A preset project is shown as text while it will still be sent (Chat for hasn't been hand-picked away from it).
-  const showPreset =
-    presetProject !== null && choice !== AUTO && projectFor(choice === NONE ? null : choice) !== null;
-  const setByProject = !byHand && !presetByChat && fromProject !== null;
-  // Counted in the app's own data folder so we can see how often people are asked; never in the way.
-  const report = (outcome: ClientPickReported) =>
-    void Promise.resolve()
-      .then(() => api.clientPickOutcome(outcome))
-      .catch(() => {});
 
   const filesHidden = !isShown('files', homeHidden);
   const fileFavs = boot?.prefs.favouriteFiles;
@@ -646,156 +534,18 @@ export function Home() {
           {isShown('whats-new', homeHidden) ? <WhatsNewCard /> : null}
 
           {activeChat.kind === 'new' ? (
-            <div className="home-composer">
-              {activeChat.skill ? (
-                <div className="notice home-skill" data-shape="box" data-level="info">
-                  <strong>{activeChat.skill.title}</strong>
-                  {activeChat.skill.description ? <span>{activeChat.skill.description}</span> : null}
-                  {activeChat.skill.argumentHint ? (
-                    <span className="meta">Add after the name: {activeChat.skill.argumentHint}</span>
-                  ) : null}
+            <>
+              <div className="home-composer">
+                <NewChatBox />
+              </div>
+              {/* A chat opened for a project has its own Project picker, so a live Working on filter would be hidden:
+                  it keeps its line under the box (plan decision 3a). */}
+              {activeChat.scope === 'chat' && project ? (
+                <div className="home-scope">
+                  <ProjectPicker clients={clients} />
                 </div>
               ) : null}
-              {ask ? (
-                <ClientAsk
-                  clients={clients}
-                  options={ask.options}
-                  onChoose={ask.choose}
-                  onCancel={ask.cancel}
-                />
-              ) : null}
-              <p className="home-status" role="status" aria-live="polite">
-                {status}
-              </p>
-              <Composer
-                key={`new-${activeChat.key}`}
-                initial={activeChat.draft}
-                skill={activeChat.skill}
-                disabledReason={null}
-                autoFocus={true}
-                focusSignal={composerFocus}
-                attention={null}
-                hint={ask ? 'Answer the question above, or Cancel to change your message.' : undefined}
-                tools={
-                  <>
-                    <ProjectPicker clients={clients} disabled={busy} />
-                    {/* Which client the new chat is about. "Chat for", not "Client", so it isn't read as a
-                        second Working on picker (Ian, 2026-11-21). */}
-                    <span className="scope-field">
-                      <label className="client-label" htmlFor="client-select">
-                        Chat for
-                      </label>
-                      <SearchSelect
-                        id="client-select"
-                        className="client-select"
-                        value={choice}
-                        options={[
-                          { value: AUTO, label: 'Auto' },
-                          { value: NONE, label: 'No client' },
-                          ...clientOptions(clients),
-                        ]}
-                        recentKey="clients"
-                        disabled={busy}
-                        aria-describedby={setByProject ? 'client-select-why' : undefined}
-                        onChange={(value) => setPicked({ key: activeChat.key, value })}
-                      />
-                      {setByProject ? (
-                        <span className="visually-hidden" id="client-select-why">
-                          Set by Working on
-                        </span>
-                      ) : null}
-                    </span>
-                    {showPreset ? (
-                      <span className="line-meta" data-testid="home-project">
-                        Project: {presetCard?.title || presetProject}
-                      </span>
-                    ) : null}
-                  </>
-                }
-                onSend={async (text, uploadIds) => {
-                  // "/clear" on Home just empties the box; it is never sent.
-                  if (isClearCommand(text)) return true;
-                  if (choice !== AUTO) {
-                    // Chosen in the select, or set by a to-do or a search result.
-                    report(
-                      activeChat.kind === 'new' && picked?.key === activeChat.key ? 'by-hand' : 'preset',
-                    );
-                    {
-                      const client = choice === NONE ? null : choice;
-                      return send(text, client, uploadIds, projectFor(client));
-                    }
-                  }
-                  // The skill's name alone is not something to read a client from.
-                  const name = activeChat.skill ? `/${activeChat.skill.name}` : null;
-                  const message =
-                    name && (text === name || text.startsWith(`${name} `))
-                      ? text.slice(name.length).trim()
-                      : text;
-                  if (message.trim() === '') {
-                    report('skill-only');
-                    return send(text, null, uploadIds, projectFor(null));
-                  }
-                  setBusy(true);
-                  try {
-                    const timer = setTimeout(() => setStatus('Working out the client…'), STATUS_DELAY_MS);
-                    // Leaving this chat (or Home) while the guess is out drops it: nothing is sent or shown.
-                    let gone = false;
-                    cancelAsk.current = () => {
-                      gone = true;
-                      cancelAsk.current = null;
-                      clearTimeout(timer);
-                      setStatus('');
-                      setAsk(null);
-                      setBusy(false);
-                    };
-                    let guess: ClientGuessResponse = { kind: 'ask', options: [] };
-                    try {
-                      guess = await api.clientGuess({ text: message.slice(0, GUESS_CHARS) });
-                    } catch {
-                      // Any failure is a question with nothing to suggest.
-                    }
-                    if (gone) return false;
-                    cancelAsk.current = null;
-                    clearTimeout(timer);
-                    setStatus('');
-                    if (guess?.kind === 'sure' && listed(guess.client))
-                      return await send(text, guess.client, uploadIds, projectFor(guess.client));
-                    if (guess?.kind === 'none') return await send(text, null, uploadIds, projectFor(null));
-                    const options =
-                      guess?.kind === 'ask' && Array.isArray(guess.options) ? guess.options : [];
-                    return await new Promise<boolean>((resolve) => {
-                      const done = () => {
-                        cancelAsk.current = null;
-                        setAsk(null);
-                      };
-                      const cancel = () => {
-                        done();
-                        report('ask-cancelled');
-                        resolve(false);
-                      };
-                      cancelAsk.current = cancel;
-                      setAsk({
-                        options,
-                        cancel,
-                        choose: (slug) => {
-                          done();
-                          report(
-                            slug === null
-                              ? 'ask-no-client'
-                              : options.includes(slug)
-                                ? 'ask-suggested'
-                                : 'ask-other',
-                          );
-                          resolve(send(text, slug, uploadIds, projectFor(slug)));
-                        },
-                      });
-                    });
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              />
-            </div>
+            </>
           ) : (
             <>
               <button type="button" className="btn" data-variant="primary" onClick={() => newChat()}>

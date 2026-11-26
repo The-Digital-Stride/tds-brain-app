@@ -370,6 +370,22 @@ function ProjectProbe({ todoChat }: { todoChat: boolean }) {
       <button type="button" onClick={() => void send('Hello', 'acme', [], 'acme/site')}>
         go
       </button>
+      <button type="button" onClick={() => void send('Look at todo/t1.md', 'acme', [], 'acme/site')}>
+        name
+      </button>
+    </>
+  );
+}
+function AppProbe() {
+  const { send, newChat } = useStore();
+  return (
+    <>
+      <button type="button" onClick={() => newChat({ client: 'acme', todoId: 't1.md' })}>
+        open
+      </button>
+      <button type="button" onClick={() => void send('Hello', 'acme', [], 'acme/site')}>
+        go
+      </button>
     </>
   );
 }
@@ -397,9 +413,42 @@ describe('send with a project', () => {
     );
   });
 
-  it("drops the task's project with its link when the message no longer names the task", async () => {
+  it('keeps the project the picker shows when the message no longer names the task (it drops only the link)', async () => {
     await run(true);
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
-    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello', client: 'acme' });
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello', client: 'acme', project: 'acme/site' });
+  });
+
+  it('sends the task link while the message names it, with the project', async () => {
+    render(
+      <StoreProvider>
+        <ProjectProbe todoChat />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    await act(async () => {});
+    fireEvent.click(await screen.findByText('open'));
+    fireEvent.click(await screen.findByText('name'));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({
+      prompt: 'Look at todo/t1.md',
+      client: 'acme',
+      project: 'acme/site',
+      todoId: 't1.md',
+    });
+  });
+
+  it("Home's own chat (scope app) sends a project picked with Working on, with or without a task link", async () => {
+    render(
+      <StoreProvider>
+        <AppProbe />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    await act(async () => {});
+    fireEvent.click(await screen.findByText('open'));
+    fireEvent.click(await screen.findByText('go'));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello', client: 'acme', project: 'acme/site' });
   });
 });

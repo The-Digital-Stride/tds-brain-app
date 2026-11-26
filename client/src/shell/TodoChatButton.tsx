@@ -28,11 +28,14 @@ export function TodoChatButton({
   todo,
   onOpened,
   describedBy,
+  in: place,
 }: {
   todo: ChatTodo;
   onOpened?: () => void;
   /** Ids of the row's details ("New to you", the details line), read after the button's name. */
   describedBy?: string;
+  /** 'drawer' keeps the chat beside the page (Projects); absent or 'sheet' opens it on the chat screen. */
+  in?: 'sheet' | 'drawer';
 }) {
   const { boot, newChat, sessions, openChat } = useStore();
   const { state: shellState, dispatch, modes } = useShell();
@@ -42,7 +45,7 @@ export function TodoChatButton({
     // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
     if (shellState.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
     onOpened?.();
-    if (chat) openChat(chat.id);
+    if (chat) place ? openChat(chat.id, { in: place }) : openChat(chat.id);
     else {
       const client = todoChatClient(todo, boot?.clients ?? []);
       const project = todo.project ?? todoChatProject(todo, projectList?.projects);
@@ -51,6 +54,7 @@ export function TodoChatButton({
         todoId: todo.key,
         ...(client !== undefined ? { client } : {}),
         ...(project ? { project } : {}),
+        ...(place ? { in: place } : {}),
       });
     }
     // The panel (if one is open) makes way for the chat.

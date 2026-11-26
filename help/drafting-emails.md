@@ -22,7 +22,7 @@ Ask Claude for an email in a project chat and the draft shows as a card. The car
 
 ## How to use it
 
-1. Open a chat for a project. On the project's page, press **New chat for this project**.
+1. Open a chat for a project. On the project's page, press **New chat for this project**. The chat opens beside the project.
 2. Ask for the email. Say who it is for: "Draft an email to Jo about the quote."
 3. Read the card. Ask Claude for changes, and it writes the email again.
 4. Press **Open in Gmail**. Check it there, then press Send.

@@ -17,6 +17,7 @@ export const keyAction: KeyAction = (
     sectionKeys,
     chatDrawer = false,
     chatDraft = false,
+    unsentDrawer = false,
   },
 ) => {
   const key = e.key.toLowerCase();
@@ -41,6 +42,8 @@ export const keyAction: KeyAction = (
         : { type: 'set-panel', open: false };
     }
     // The chat drawer over a tool; a message being typed in it is never thrown away by Esc.
+    // An unsent chat's text is held by the drawer hold: Esc closes it and the hold asks when there is text.
+    if (chatDrawer && unsentDrawer) return { type: 'close-chat-drawer' };
     if (chatDrawer) return chatDraft ? null : { type: 'close-chat-drawer' };
     // Closing Help puts back the drawer it replaced; closing any other drawer just closes it.
     if (state.drawer) return state.drawer === 'help' ? { type: 'close-help' } : { type: 'close-drawer' };

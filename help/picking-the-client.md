@@ -13,7 +13,7 @@ reviewed: 2026-11-24
 
 ## What it does
 
-Each new chat can be about one client. The **Chat for** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes. If **Working on** is set to a project, Chat for starts on that project's client, and the chat is for that project too. A chat started from a project or one of its tasks shows **Project:** beside Chat for. Pick a different client and the chat is no longer for that project.
+Each new chat can be about one client. The **Chat for** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes. If **Working on** is set to a project, Chat for starts on that project's client, and the chat is for that project too. A chat started from a project or one of its tasks has a **Project** picker in the message box, already set to that project. Pick a different client and Project changes to **No project**, so you can see the chat is no longer for it.
 
 ## Why it helps
 

@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.95.0 — 2026-11-27
+
+- **feat**: restricted projects, seen in Cortex only by the project's team
+- **fix**: review fixes for restricted projects
+- **fix**: say that linking a client file into a restricted project hides it
+- **fix**: keep the restricted projects page within its length
+
 ## v0.94.2 — 2026-11-27
 
 - **fix**: Ads tools are open to the whole team; match the brain's ads skill

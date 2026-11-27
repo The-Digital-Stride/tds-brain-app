@@ -56,3 +56,26 @@ describe('the saved order, per person', () => {
     expect(() => writeOrder(homeOrderKey('a'), ['x'], blocked)).not.toThrow();
   });
 });
+
+describe('arrange with near ids (UX gate R2)', () => {
+  const items = ['a', 'b', 'new', 'c', 'd'].map((id) => ({ id }));
+  const ids = (saved: string[], near: string[] = ['new']) => arrange(items, saved, near).map((i) => i.id);
+
+  it('puts an unsaved near id after its default neighbour, wherever that was dragged', () => {
+    expect(ids(['d', 'b', 'a', 'c'])).toEqual(['d', 'b', 'new', 'a', 'c']);
+  });
+  it('uses the nearest earlier card that is shown, and goes first when none is', () => {
+    expect(arrange([{ id: 'a' }, { id: 'new' }, { id: 'c' }], ['c', 'a'], ['new']).map((i) => i.id)).toEqual([
+      'c',
+      'a',
+      'new',
+    ]);
+    expect(arrange([{ id: 'new' }, { id: 'c' }], ['c'], ['new']).map((i) => i.id)).toEqual(['new', 'c']);
+  });
+  it('leaves a saved near id where it was put, other unsaved ids last, and no saved order alone', () => {
+    expect(ids(['new', 'd', 'b', 'a', 'c'])).toEqual(['new', 'd', 'b', 'a', 'c']);
+    expect(ids(['d', 'a'])).toEqual(['d', 'a', 'b', 'new', 'c']);
+    expect(ids([])).toEqual(['a', 'b', 'new', 'c', 'd']);
+    expect(ids(['d', 'b', 'a', 'c'], [])).toEqual(['d', 'b', 'a', 'c', 'new']);
+  });
+});

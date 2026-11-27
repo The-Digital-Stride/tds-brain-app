@@ -23,15 +23,34 @@ export function homeOrderKey(person: string): string {
   return `tds.home.cardOrder.v1:${person}`;
 }
 
-/** Saved ids first (those shown now), then the rest in their default order. */
-export function arrange<T extends { id: string }>(items: T[], saved: string[]): T[] {
+/**
+ * Saved ids first (those shown now), then the rest in their default order. An unsaved id named in `near` is
+ * placed straight after the card before it in the default order instead (first, when none comes before it), so a
+ * card added to the app later is not left at the bottom for everyone who has ever dragged a card.
+ */
+export function arrange<T extends { id: string }>(
+  items: T[],
+  saved: string[],
+  near: readonly string[] = [],
+): T[] {
   const byId = new Map(items.map((t) => [t.id, t]));
   const first = saved.flatMap((id) => {
     const t = byId.get(id);
     byId.delete(id);
     return t ? [t] : [];
   });
-  return [...first, ...items.filter((t) => byId.has(t.id))];
+  const rest = items.filter((t) => byId.has(t.id));
+  if (saved.length === 0 || near.length === 0) return [...first, ...rest];
+  const out = [...first, ...rest.filter((t) => !near.includes(t.id))];
+  for (const t of rest.filter((r) => near.includes(r.id))) {
+    // The nearest card before it in the default order that is shown; -1 (so it goes first) when there is none.
+    const neighbour = items
+      .slice(0, items.indexOf(t))
+      .reverse()
+      .find((i) => out.some((o) => o.id === i.id));
+    out.splice(neighbour ? out.findIndex((o) => o.id === neighbour.id) + 1 : 0, 0, t);
+  }
+  return out;
 }
 
 /** The shown order with one id moved to place `to` (clamped to the ends). */

@@ -31,6 +31,7 @@ import {
   VERSION_PATTERN,
 } from '../../shared/contract.ts';
 import type { LevelMode } from '../../shared/levels-contract.ts';
+import { isLookedMark, pruneLooked, TODO_LOOKED_MAX, type TodoLooked } from '../../shared/todo-changes.ts';
 
 const MAX_PINS = 100;
 const MAX_TEXT = 200;
@@ -130,6 +131,17 @@ function pruneSeen(seen: Record<string, string>, now: Date): Record<string, stri
   return out;
 }
 
+/** Valid "changed since you looked" markers only (task id keys), at most TODO_LOOKED_MAX. */
+function cleanLooked(v: unknown): TodoLooked | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: TodoLooked = {};
+  for (const [k, m] of Object.entries(v)) {
+    if (Object.keys(out).length >= TODO_LOOKED_MAX) break;
+    if (k !== '' && k.length <= SEEN_KEY_MAX && isLookedMark(m)) out[k] = m;
+  }
+  return out;
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -216,6 +228,7 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     todoPanelOpen: typeof o.todoPanelOpen === 'boolean' ? o.todoPanelOpen : base.todoPanelOpen,
     directWrites: typeof o.directWrites === 'boolean' ? o.directWrites : base.directWrites,
     todoSeen: cleanSeen(o.todoSeen) ?? { ...base.todoSeen },
+    todoLooked: cleanLooked(o.todoLooked) ?? { ...base.todoLooked },
     model:
       o.model === null ||
       (typeof o.model === 'string' && o.model.length <= MODEL_PREF_MAX && MODEL_PREF_PATTERN.test(o.model))
@@ -287,7 +300,11 @@ export function createAppStore(dataDir: string, now: () => Date = () => new Date
       serial(async () => {
         const current = await read();
         const merged = sanitise({ ...current, ...(patch as object) }, current);
-        const next = { ...merged, todoSeen: pruneSeen(merged.todoSeen, now()) };
+        const next = {
+          ...merged,
+          todoSeen: pruneSeen(merged.todoSeen, now()),
+          todoLooked: pruneLooked(merged.todoLooked ?? {}, now()),
+        };
         await write(next);
         return next;
       }),

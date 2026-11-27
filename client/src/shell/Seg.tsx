@@ -1,6 +1,13 @@
 import { type KeyboardEvent, useRef } from 'react';
 import type { SegProps } from './contract.ts';
 
+/** One choice. `dot` adds a small red dot after the label, with hidden words ("Asked, 2 has updates"). */
+export interface SegOption<T extends string> {
+  value: T;
+  label: string;
+  dot?: boolean;
+}
+
 /**
  * A segmented choice. Behaves as a radio group: one tab stop (the chosen option), and the arrow
  * keys, Home and End move the choice and the focus together.
@@ -12,7 +19,7 @@ export function Seg<T extends string>({
   value,
   options,
   onChange,
-}: SegProps<T>) {
+}: Omit<SegProps<T>, 'options'> & { options: SegOption<T>[] }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const current = Math.max(
     0,
@@ -65,6 +72,12 @@ export function Seg<T extends string>({
             onClick={() => onChange(o.value)}
           >
             {o.label}
+            {o.dot ? (
+              <>
+                <span className="dot seg-dot" aria-hidden="true" />
+                <span className="visually-hidden">, with updates</span>
+              </>
+            ) : null}
           </button>
         );
       })}

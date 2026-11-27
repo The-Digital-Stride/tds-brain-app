@@ -4,7 +4,7 @@ import { dueInWords, isOverdue } from '../format.ts';
 import { Fold } from './Fold.tsx';
 import { ProjectChip } from './ProjectChip.tsx';
 import { StateNote } from './StateNote.tsx';
-import { askedMeta, cap } from './words.ts';
+import { askedMeta, cap, updateWhen } from './words.ts';
 
 /** How the separate "asked of others" request is going. */
 export type AskedState = 'loading' | 'loaded' | 'failed';
@@ -15,9 +15,19 @@ export interface AskedPlace {
   places: string[];
 }
 
-/** The order previous and next walk in this tab: waiting first, then done. */
-export function askedOrder(list: AskedTodoList | null): string[] {
-  return list ? [...list.waiting, ...list.done].map((t) => t.key) : [];
+/** An asked task with something new, and the line that says the newest change (`changeLine`). */
+export interface AskedUpdate {
+  todo: AskedTodo;
+  line: { text: string; at: string; more: number };
+  /** Opened this visit and nothing newer since: the row stays, without its dot. */
+  seen?: boolean;
+}
+
+/** The order previous and next walk in this tab: the updated ones first, then waiting, then done. */
+export function askedOrder(list: AskedTodoList | null, updatedKeys: readonly string[] = []): string[] {
+  if (!list) return [];
+  const skip = new Set(updatedKeys);
+  return [...updatedKeys, ...[...list.waiting, ...list.done].map((t) => t.key).filter((k) => !skip.has(k))];
 }
 
 function AskedRow({
@@ -26,8 +36,14 @@ function AskedRow({
   onOpen,
   place,
   onProject,
+  line,
+  seen,
 }: {
   todo: AskedTodo;
+  /** Set in the Updated fold: the same dot as a new row, and the newest change. */
+  line?: AskedUpdate['line'];
+  /** The row's change has been seen this visit: no dot. */
+  seen?: boolean;
   open: boolean;
   onOpen: (t: AskedTodo) => void;
   place: AskedPlace | null;
@@ -39,7 +55,9 @@ function AskedRow({
   return (
     <li className="todo" data-panel-open={open ? 'true' : undefined}>
       <div className="todo-main">
+        {line && !seen ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
+          {line && !seen ? <span className="visually-hidden">Updated. </span> : null}
           <button
             type="button"
             className="line-title todo-open"
@@ -51,6 +69,13 @@ function AskedRow({
           </button>
         </span>
       </div>
+      {line ? (
+        <p className="line-meta todo-changed">
+          {line.text}
+          {updateWhen(line.at) ? ` · ${updateWhen(line.at)}` : ''}
+          {line.more > 0 ? ` and ${line.more} more` : ''}
+        </p>
+      ) : null}
       <div className="todo-foot">
         <span className="line-meta todo-meta">
           <span className="todo-meta-item">{askedMeta(todo)}</span>
@@ -90,6 +115,8 @@ export function AskedList({
   filteredBy = null,
   placeOf,
   onProject,
+  updated = [],
+  onMarkSeen,
   state,
   onRetry,
   openKey,
@@ -102,6 +129,10 @@ export function AskedList({
   placeOf?: (t: AskedTodo) => AskedPlace;
   /** Filters the drawer by a row's project; absent while a project filter is on. */
   onProject?: (key: string) => void;
+  /** The tasks with a change since the person looked (waiting and done), newest first: shown at the top. */
+  updated?: AskedUpdate[];
+  /** "Mark all as seen" on the Updated fold. */
+  onMarkSeen?: () => void;
   state: AskedState;
   onRetry: () => void;
   openKey: string | null;
@@ -109,18 +140,20 @@ export function AskedList({
 }) {
   // The folds are held here so the panel's to-do can be kept in view: moving the panel (previous, next, global
   // search) to a row in a closed fold opens that fold, so closing the panel returns focus to the row.
-  const [folds, setFolds] = useState({ waiting: true, done: false });
+  const [folds, setFolds] = useState({ updated: true, waiting: true, done: false });
   const [seenKey, setSeenKey] = useState<string | null>(null);
   if (seenKey !== openKey) {
     setSeenKey(openKey);
     const side =
       !openKey || !list
         ? null
-        : list.waiting.some((t) => t.key === openKey)
-          ? 'waiting'
-          : list.done.some((t) => t.key === openKey)
-            ? 'done'
-            : null;
+        : updated.some((u) => u.todo.key === openKey)
+          ? 'updated'
+          : list.waiting.some((t) => t.key === openKey)
+            ? 'waiting'
+            : list.done.some((t) => t.key === openKey)
+              ? 'done'
+              : null;
     if (side && !folds[side]) setFolds({ ...folds, [side]: true });
   }
   const intro = (
@@ -143,6 +176,9 @@ export function AskedList({
       </>
     );
   }
+  const updatedKeys = new Set(updated.map((u) => u.todo.key));
+  const waiting = list.waiting.filter((t) => !updatedKeys.has(t.key));
+  const finished = list.done.filter((t) => !updatedKeys.has(t.key));
   const rows = (items: AskedTodo[]) => (
     <ul className="drawer-list">
       {items.map((t) => (
@@ -173,39 +209,80 @@ export function AskedList({
           </button>
         </p>
       ) : null}
-      <Fold
-        title="Waiting"
-        count={list.waiting.length}
-        open={folds.waiting}
-        onToggle={(o) => setFolds((f) => ({ ...f, waiting: o }))}
-      >
-        {list.waiting.length === 0 ? (
-          <p className="dock-empty">
-            {filteredBy
-              ? `Nothing in ${filteredBy} is waiting.`
-              : "Nothing you've asked of others is waiting."}
-          </p>
-        ) : (
-          rows(list.waiting)
-        )}
-      </Fold>
+      {updated.length > 0 ? (
+        <Fold
+          title="Updated"
+          count={updated.length}
+          open={folds.updated}
+          onToggle={(o) => setFolds((f) => ({ ...f, updated: o }))}
+          action={
+            onMarkSeen ? (
+              <button
+                type="button"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
+                onClick={onMarkSeen}
+              >
+                Mark all as seen
+              </button>
+            ) : undefined
+          }
+        >
+          <ul className="drawer-list">
+            {updated.map(({ todo, line, seen }) => (
+              <AskedRow
+                key={todo.key}
+                todo={todo}
+                line={line}
+                seen={seen}
+                open={openKey === todo.key}
+                onOpen={onOpen}
+                place={placeOf ? placeOf(todo) : null}
+                onProject={onProject}
+              />
+            ))}
+          </ul>
+        </Fold>
+      ) : null}
+      {/* A side whose tasks are all in Updated has nothing left to list. */}
+      {waiting.length === 0 && list.waiting.length > 0 ? null : (
+        <Fold
+          title="Waiting"
+          count={waiting.length}
+          open={folds.waiting}
+          onToggle={(o) => setFolds((f) => ({ ...f, waiting: o }))}
+        >
+          {waiting.length === 0 ? (
+            <p className="dock-empty">
+              {filteredBy
+                ? `Nothing in ${filteredBy} is waiting.`
+                : "Nothing you've asked of others is waiting."}
+            </p>
+          ) : (
+            rows(waiting)
+          )}
+        </Fold>
+      )}
       {/* Reads "Done in the last 60 days" (the help page quotes it, so keep both in step). */}
-      <Fold
-        title={`Done in the last ${ASKED_DONE_DAYS} days`}
-        count={list.done.length}
-        open={folds.done}
-        onToggle={(o) => setFolds((f) => ({ ...f, done: o }))}
-      >
-        {list.done.length === 0 ? (
-          <p className="dock-empty">
-            {filteredBy
-              ? `Nothing in ${filteredBy} was finished recently.`
-              : "Nothing you've asked of others was finished recently."}
-          </p>
-        ) : (
-          rows(list.done)
-        )}
-      </Fold>
+      {finished.length === 0 && list.done.length > 0 ? null : (
+        <Fold
+          title={`Done in the last ${ASKED_DONE_DAYS} days`}
+          count={finished.length}
+          open={folds.done}
+          onToggle={(o) => setFolds((f) => ({ ...f, done: o }))}
+        >
+          {finished.length === 0 ? (
+            <p className="dock-empty">
+              {filteredBy
+                ? `Nothing in ${filteredBy} was finished recently.`
+                : "Nothing you've asked of others was finished recently."}
+            </p>
+          ) : (
+            rows(finished)
+          )}
+        </Fold>
+      )}
     </>
   );
 }

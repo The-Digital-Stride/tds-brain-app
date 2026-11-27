@@ -114,3 +114,14 @@ export const todoDocFake = {
   },
   isSafeHref: (href: string) => /^(https?:|mailto:)/i.test(href),
 };
+
+/**
+ * The store's task-change fields (`asked`, `askedState`, `reloadAsked`, `markTodosLooked`) with quiet defaults: no Asked
+ * list, loaded, and nothing happens. Spread into a fake store: `{ ...askedStoreFields, ...yourFields }`.
+ */
+export const askedStoreFields = {
+  asked: null,
+  askedState: 'loaded' as const,
+  reloadAsked() {},
+  markTodosLooked() {},
+};

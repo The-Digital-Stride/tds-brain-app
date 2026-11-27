@@ -32,6 +32,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { fakeShell } = await import('./todo-test-kit.tsx');
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
@@ -93,6 +94,7 @@ const fns = {
 
 function setStore(over: Record<string, unknown> = {}, directWrites = false, pins: string[] = []) {
   store.current = {
+    ...askedStoreFields,
     ...fns,
     view: 'chat',
     heldTodos: [],

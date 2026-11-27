@@ -9,7 +9,7 @@ export const greeting: HomeLogic['greeting'] = (now, fullName) => {
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export const summary: HomeLogic['summary'] = ({ overdue, dueToday, asking }) => {
+export const summary: HomeLogic['summary'] = ({ overdue, dueToday, asking, updates = 0 }) => {
   const parts: string[] = [];
   if (overdue > 0) parts.push(overdue === 1 ? 'one task is overdue' : `${overdue} tasks are overdue`);
   if (dueToday > 0) {
@@ -18,6 +18,7 @@ export const summary: HomeLogic['summary'] = ({ overdue, dueToday, asking }) => 
   }
   if (asking > 0)
     parts.push(asking === 1 ? 'one chat is waiting for you' : `${asking} chats are waiting for you`);
+  if (updates > 0) parts.push(updates === 1 ? 'one task has an update' : `${updates} tasks have updates`);
   if (parts.length === 0) return 'Nothing is waiting for you.';
   const joined =
     parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;

@@ -161,6 +161,37 @@ const SEEDERS: Record<string, () => Promise<void>> = {
     await store.add({ day, source: 'summary', measure: 'compacted', tokens: 184_000, dedupeKey: 'demo-a' });
     await store.add({ day, source: 'cache', measure: 'reused', tokens: 1_250_000, dedupeKey: 'demo-b' });
   },
+  // A task Sam has held for a while that Alex has since changed: old enough not to be "New to you", so it shows
+  // under Updated. Added here, so no other picture gets the section.
+  async 'todo-updated'() {
+    writeFileSync(
+      inDemo(join(BRAIN, 'todo', '20261110-check-landing-page.md')),
+      [
+        '---',
+        'assignee: sam-taylor',
+        'assigned_to: sam-taylor',
+        'assigned_at: 2026-11-10T09:00:00+00:00',
+        'assigned_by: alex-morgan',
+        'assigned_from: alex-morgan',
+        'assigned_via: TDS Cortex',
+        'title: "Check the Northwind landing page copy"',
+        'due: 2026-11-25',
+        'client: northwind',
+        '---',
+        'Read it through and fix anything that sounds off.',
+        '',
+        '## Updates',
+        '',
+        '- 18 Nov 2026, 15:12 UK: Alex Morgan (alex-morgan) changed the due date to 25 Nov 2026 (TDS Cortex).',
+        '- 19 Nov 2026, 16:40 UK: Alex Morgan (alex-morgan) wrote: Prices changed today. Please use the new sheet.',
+        '',
+        '## Handover history',
+        '',
+        '- 10 Nov 2026, 09:00 UK: Alex Morgan passed it from alex-morgan to sam-taylor (TDS Cortex).',
+        '',
+      ].join('\n'),
+    );
+  },
   // The demo's earlier Acme chat belongs to the demo project, so the project's Chats tab has a past chat to list.
   async 'restricted-projects'() {
     // A made-up restricted project beside the demo one. Added here, so no other picture gets a badge.
@@ -559,6 +590,14 @@ const SCENES: Record<string, Scene> = {
     await page.locator('#drawer button[aria-label^="Edit "]').first().click();
     // Editing happens in the task panel, beside the drawer.
     await page.locator('.todo-panel form[aria-label^="Edit "]').waitFor();
+    await sleep(300);
+  },
+
+  async 'todo-updated'(page) {
+    await enableTodoChanges(page);
+    await openDrawer(page, 'Tasks');
+    // "New to you" stays in the picture: the page explains how the two sections differ.
+    await page.locator('#drawer').getByText('Alex added an update', { exact: false }).first().waitFor();
     await sleep(300);
   },
 

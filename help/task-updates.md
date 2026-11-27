@@ -6,7 +6,7 @@ order: 4
 summary: Say what you did on a task, reply to a teammate, or hand the task back.
 benefit: The whole story of a job sits on the task, with who did what and when.
 roles: all
-related: [todos, passing-todos-on, asked-of-others, files-on-todos]
+related: [todos, passing-todos-on, asked-of-others, files-on-todos, task-notices]
 since: 0.96.0
 reviewed: 2026-11-27
 ---

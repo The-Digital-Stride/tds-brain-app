@@ -17,6 +17,7 @@ import {
   type TodoEvent,
   type TodoItem,
 } from '../../../shared/contract.ts';
+import type { TodoChange } from '../../../shared/todo-changes.ts';
 import { slugWords } from '../../../shared/words.ts';
 import type { Words } from './contract.ts';
 
@@ -109,10 +110,15 @@ export function chatsRailLabel(live: LiveSession[]): string {
   return `${open}, ${asking} ${asking === 1 ? 'needs' : 'need'} your answer`;
 }
 
-/** The To-dos rail button's accessible name: "To-dos, 5 of yours, 2 new". Undefined when there is nothing to add. */
+/**
+ * The Tasks rail button's accessible name: "Tasks, 5 of yours, 2 new or updated". The count is "New to you" plus the
+ * tasks with a change since the person looked, so it says both. Undefined when there is nothing to add.
+ */
 export function todosRailLabel(mine: number, fresh: number): string | undefined {
-  if (mine === 0) return undefined;
-  return `Tasks, ${mine} of yours${fresh > 0 ? `, ${fresh} new` : ''}`;
+  const news = fresh > 0 ? `, ${fresh} new or updated` : '';
+  // Someone who holds no task can still have news on the ones they asked for: the red count must be said too.
+  if (mine === 0) return fresh > 0 ? `Tasks${news}` : undefined;
+  return `Tasks, ${mine} of yours${news}`;
 }
 
 /** "SE" for "Sam Example": first and last names' first letters. */
@@ -214,7 +220,9 @@ export function shortDayTime(iso: string): string {
 }
 
 /** The asked-of-others row's second line: "With Ben McAdam · since 13 Nov", "Done by Ben McAdam · 14 Nov". */
-export function askedMeta(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done'>): string {
+export function askedMeta(
+  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack'>,
+): string {
   if (t.state === 'done') {
     const day = t.done ? shortDay(t.done.at) : '';
     const first = t.done?.name?.split(/\s+/)[0];
@@ -223,11 +231,15 @@ export function askedMeta(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' 
   }
   const day = shortDay(t.asked.at);
   const first = t.assigneeName.split(/\s+/)[0] || t.assigneeName;
+  // A task you handed back is the other person's again: it says so, not "With" them.
+  if (t.handedBack === true) return day ? `Handed back to ${first}, ${day}` : `Handed back to ${first}`;
   return day ? `With ${first} since ${day}` : `With ${first}`;
 }
 
 /** The panel's status line for an asked-of-others to-do. Names from git history say "(git history)". */
-export function askedStatusLine(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done'>): string {
+export function askedStatusLine(
+  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack'>,
+): string {
   if (t.state === 'done') {
     const day = t.done ? shortDay(t.done.at) : '';
     const who = t.done?.name ? `Done by ${t.done.name}` : 'Done';
@@ -236,6 +248,9 @@ export function askedStatusLine(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'a
   }
   const day = shortDay(t.asked.at);
   const tag = day && t.asked.source === 'history' ? ' (git history)' : '';
+  if (t.handedBack === true) {
+    return day ? `Handed back to ${t.assigneeName}, ${day}${tag}` : `Handed back to ${t.assigneeName}`;
+  }
   return day ? `With ${t.assigneeName} since ${day}${tag}` : `With ${t.assigneeName}`;
 }
 
@@ -375,4 +390,52 @@ export function updateWhen(iso: string, now: Date = new Date()): string {
   if (days === 1) return `Yesterday, ${p.time}`;
   const date = `${p.day} ${MONTHS[p.month - 1] ?? ''}`;
   return p.year === n.year ? `${date}, ${p.time}` : `${date} ${p.year}, ${p.time}`;
+}
+
+/** A handover line names people by slug ("passed it from ben-mcadam to ian-hancock"): say their names instead. */
+export function withNames(text: string, team: readonly { slug: string; name: string }[]): string {
+  let out = text;
+  for (const m of team) {
+    const escaped = m.slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, 'g'), m.name);
+  }
+  return out;
+}
+
+/** A handover line with names; "from" the very person the line starts with is left out, so no name reads twice. */
+export function handoverEntryLine(
+  who: string,
+  text: string,
+  team: readonly { slug: string; name: string }[],
+): string {
+  const named = withNames(text, team);
+  return who ? named.replace(` from ${who} to `, ' to ') : named;
+}
+
+/**
+ * The one line that says what is new on a task (change notices plan, decision 11): the newest thing, who did
+ * it and when (`at`, for `updateWhen`), and how many more there are. Used by the drawer's Updated rows and
+ * Home's Task updates card, so they always say the same.
+ */
+export function changeLine(
+  change: TodoChange,
+  team: readonly { slug: string; name: string }[],
+): { text: string; at: string; more: number } {
+  // First names, as the rows' own lines have them ("From Alex", "With Alex since…"); the panel says names in full.
+  const first = (name: string): string => name.trim().split(/\s+/)[0] || name;
+  const shortNames = (line: string): string =>
+    team.reduce((out, m) => (m.name ? out.split(m.name).join(first(m.name)) : out), line);
+  const newest = change.entries[0];
+  const finishedIsNewest = change.finished !== null && change.finished.at === change.at;
+  let text: string;
+  if (finishedIsNewest || !newest) {
+    text = `${change.finished?.byName ? first(change.finished.byName) : 'Someone'} marked it as done`;
+  } else {
+    const who = newest.byName ? first(newest.byName) : newest.by || 'Someone';
+    text =
+      newest.kind === 'note'
+        ? `${who} added an update`
+        : `${who} ${newest.kind === 'handover' ? shortNames(handoverEntryLine(newest.byName || newest.by || '', newest.text, team)) : newest.text}`;
+  }
+  return { text, at: change.at, more: change.count - 1 };
 }

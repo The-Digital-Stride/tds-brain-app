@@ -381,6 +381,14 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
           project,
           ...(projectMatch ? { projectMatch } : {}),
           ...timelineFields(file.data, file.body, team),
+          // The current stamp is this person's hand back (only a waiting row has a live stamp).
+          ...(file.state === 'waiting' &&
+          lower(file.data.assigned_to) === assignee &&
+          asString(file.data.assigned_at).trim() !== '' &&
+          lower(file.data.assigned_by) === identity.slug &&
+          lower(file.data.assigned_back) === 'true'
+            ? { handedBack: true as const }
+            : {}),
           // Only a waiting row, and never one in a hidden project (or any project while the index can't be read).
           canUpdate:
             canUpdate &&

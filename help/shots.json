@@ -237,6 +237,13 @@
     "alt": "A task open in the panel, with its Updates list and the box to add an update."
   },
   {
+    "id": "todo-updated",
+    "scene": "todo-updated",
+    "crop": "#drawer",
+    "pad": 0,
+    "alt": "The Tasks drawer with a New to you section and an Updated section. The updated task says who changed it and when."
+  },
+  {
     "id": "settings-todos-switch",
     "scene": "settings-todos-switch",
     "crop": ".setting:has(#set-direct)",

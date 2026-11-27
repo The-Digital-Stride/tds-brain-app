@@ -16,7 +16,6 @@ import type { ShellApi } from './contract.ts';
 // Same set-up as TodoPanel.test.tsx: the real shell, drawer and panel; the store, api and editor are stand-ins.
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 const apiMock = vi.hoisted(() => ({
-  askedTodos: vi.fn(),
   todoHistory: vi.fn(),
   libraryItems: vi.fn(),
   librarySearch: vi.fn(),
@@ -33,6 +32,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
@@ -91,6 +91,7 @@ function setStore(
   } = {},
 ) {
   store.current = {
+    ...askedStoreFields,
     changeTodos,
     uploadTodoFile,
     openView: vi.fn(),
@@ -272,7 +273,10 @@ describe('the Files block', () => {
       version: 'v1',
       attachments: [att()],
     };
-    apiMock.askedTodos.mockResolvedValue({ waiting: [asked], done: [], historyRead: true } as AskedTodoList);
+    store.current = {
+      ...store.current,
+      asked: { waiting: [asked], done: [], historyRead: true } as AskedTodoList,
+    };
     mount();
     fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send the quote' }));

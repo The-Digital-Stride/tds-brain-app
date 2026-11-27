@@ -82,6 +82,8 @@ export interface TodoPanelProps {
   /** A teammate's open to-do, shown read only (then `todo`, `asked` and `done` are null). */
   teamTodo?: TeamTodo | null;
   mode: TodoPanelMode;
+  /** Entries of the task's log the person hadn't seen when the panel opened (`entryKey`): tagged "New" while it stays open. */
+  newKeys?: ReadonlySet<string>;
   /** The drawer's status line, said here while the panel is open (it may cover the drawer). */
   message: string;
   isError: boolean;
@@ -199,6 +201,12 @@ export default function TodoPanel(props: TodoPanelProps) {
   }, [dirty, dispatch]);
 
   const ask = panel?.ask ?? null;
+  // Delete pressed with text typed in the update box asks "Discard your changes?" first; "Discard changes" then
+  // deletes the task (with its usual Undo). Forgotten the moment the question goes away.
+  const deleteAfterAsk = useRef<TodoItem | null>(null);
+  useEffect(() => {
+    if (ask === null) deleteAfterAsk.current = null;
+  }, [ask]);
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
   // biome-ignore lint/correctness/useExhaustiveDependencies: restart when the to-do or mode changes only.
@@ -308,7 +316,12 @@ export default function TodoPanel(props: TodoPanelProps) {
             safe="Keep editing"
             variant="danger"
             busy={false}
-            onConfirm={() => dispatch({ type: 'discard-todo' })}
+            onConfirm={() => {
+              const toDelete = deleteAfterAsk.current;
+              deleteAfterAsk.current = null;
+              dispatch({ type: 'discard-todo' });
+              if (toDelete) props.onDelete(toDelete);
+            }}
             onCancel={() => dispatch({ type: 'keep-todo' })}
           />
         ) : null}
@@ -341,6 +354,7 @@ export default function TodoPanel(props: TodoPanelProps) {
             onStatus={props.onStatus}
             drafts={drafts}
             onAskedUpdate={props.onAskedUpdate}
+            newKeys={props.newKeys}
           />
         ) : done ? (
           <DoneReadView done={done} team={props.team} me={props.me} onStatus={props.onStatus} />
@@ -366,6 +380,7 @@ export default function TodoPanel(props: TodoPanelProps) {
             tooLong={tooLong}
             editButton={editButton}
             drafts={drafts}
+            deleteAfterAsk={deleteAfterAsk}
           />
         )}
       </section>
@@ -505,8 +520,11 @@ function ReadView({
   tooLong,
   editButton,
   drafts,
+  deleteAfterAsk,
   ...p
 }: TodoPanelProps & {
+  /** Set to this task when Delete asks about discarding typed text first. */
+  deleteAfterAsk: React.MutableRefObject<TodoItem | null>;
   todo: TodoItem;
   faithful: boolean;
   tooLong: boolean;
@@ -525,9 +543,12 @@ function ReadView({
   const filesBlock = p.canEdit
     ? p.canAttach
     : p.canAttach || links.length > 0 || splitTodoFiles(todo.details).files !== '';
+  // Read only: the log sections always come out (they show as the Updates block and History). The `## Files`
+  // section comes out with them; when there is one, `filesBlock` is true and it shows as the Files block. Before,
+  // a task with a log but no files showed its raw log lines in the details as well (browser check, release 2).
   const shown = p.canEdit
     ? detailsText(todo, p.canAttach, p.canUpdate === true)
-    : detailsText(todo, filesBlock, true);
+    : splitTodoSections(todo.details).details;
   const canUpdate = p.canEdit && p.canUpdate === true && p.onUpdate !== undefined;
   const compose: TodoUpdateCompose | null = canUpdate
     ? {
@@ -601,6 +622,7 @@ function ReadView({
             more={todo.updatesMore}
             extras={todo.updateExtras}
             team={p.team}
+            newKeys={p.newKeys}
             compose={backOpen ? null : compose}
             onStatus={p.onStatus}
           />
@@ -671,7 +693,10 @@ function ReadView({
               onClick={() => {
                 if (p.busy) return;
                 // Typed text would be lost: the panel asks "Discard your changes?" first.
-                if (typedUpdate !== '') return shellDispatch({ type: 'close-todo' });
+                if (typedUpdate !== '') {
+                  deleteAfterAsk.current = todo;
+                  return shellDispatch({ type: 'close-todo' });
+                }
                 p.onDelete(todo);
               }}
             >
@@ -794,8 +819,10 @@ function ReadOnlyView({
   team,
   me,
   onStatus,
+  newKeys,
 }: {
   item: ReadOnlyItem;
+  newKeys?: ReadonlySet<string>;
   team: TeamMember[];
   me: string;
   onStatus: (text: string, isError?: boolean) => void;
@@ -829,6 +856,7 @@ function ReadOnlyView({
             more={item.updatesMore}
             extras={item.updateExtras}
             team={team}
+            newKeys={newKeys}
             compose={item.compose ?? null}
             onStatus={onStatus}
           />
@@ -866,6 +894,7 @@ function AskedReadView({
   ...rest
 }: {
   asked: AskedTodo;
+  newKeys?: ReadonlySet<string>;
   team: TeamMember[];
   me: string;
   onStatus: (text: string, isError?: boolean) => void;

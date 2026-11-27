@@ -8,13 +8,15 @@ import type {
   TodoItem,
   TodoList,
 } from '../../../shared/contract.ts';
+import { lookedMark, type TodoLooked } from '../../../shared/todo-changes.ts';
+import type { TodoUpdate } from '../../../shared/todo-updates-contract.ts';
 import type { HeldTodo } from '../store.tsx';
 import type { ShellApi } from './contract.ts';
 
 // The real shell (its reducer, its guard for unsaved changes, its keys) with the real drawer and panel. Only the
 // store, the editor and the converter are stand-ins: the editor and converter need a real browser.
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
-const apiMock = vi.hoisted(() => ({ askedTodos: vi.fn(), todoHistory: vi.fn() }));
+const apiMock = vi.hoisted(() => ({ todoHistory: vi.fn() }));
 vi.mock('../api.ts', () => ({ api: apiMock }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
@@ -25,6 +27,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
 const { TodosDrawer, PANEL_WAIT_MS } = await import('./TodosDrawer.tsx');
@@ -67,6 +70,7 @@ function setStore(
   { directWrites = true, held = [] as HeldTodo[] } = {},
 ) {
   store.current = {
+    ...askedStoreFields,
     changeTodos,
     openView: vi.fn(),
     heldTodos: held,
@@ -193,6 +197,21 @@ describe('opening and reading', () => {
       expect(within(panel).queryByRole('button', { name })).toBeNull();
     }
     expect(within(panel).getByLabelText('Details').textContent).toContain('Some notes');
+  });
+
+  it('keeps the update log out of the details when changes are off and the task has no files (browser check R2)', async () => {
+    const withLog = {
+      ...todo('a.md', 'First'),
+      details:
+        'Some notes\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Ben McAdam (ben-mcadam) wrote: Sent the quote.\n\n## Handover history\n\n- 25 Nov 2026, 10:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).',
+    };
+    setStore('switched-off', [withLog], { directWrites: false });
+    mount();
+    const panel = await open('First');
+    const details = within(panel).getByLabelText('Details').textContent ?? '';
+    expect(details).toContain('Some notes');
+    expect(details).not.toContain('Sent the quote');
+    expect(details).not.toContain('Handover history');
   });
 
   it('shows someone who may only tick things off just "Mark as done" (no Edit, no Delete)', async () => {
@@ -852,14 +871,13 @@ describe('asked of others', () => {
     historyRead: true,
   });
   const openAsked = async () => {
-    apiMock.askedTodos.mockResolvedValue(list());
+    store.current = { ...store.current, asked: list() };
     mount();
     fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
     return screen.getByRole('button', { name: 'Send the quote' });
   };
 
   beforeEach(() => {
-    apiMock.askedTodos.mockReset();
     apiMock.todoHistory.mockReset();
   });
 
@@ -935,41 +953,22 @@ describe('asked of others', () => {
     await waitFor(() => expect(document.activeElement).toBe(titleButton('Old job')));
   });
 
-  it('asks for the asked list again when the tasks reload, and ignores an older answer landing late', async () => {
-    let late: (l: AskedTodoList) => void = () => {};
-    apiMock.askedTodos.mockResolvedValueOnce(list());
-    const view = mount();
+  it('keeps the rows shown, with a retry line, when a reload failed, and Try again asks the store', async () => {
+    const reloadAsked = vi.fn();
+    store.current = { ...store.current, asked: list(), askedState: 'failed', reloadAsked };
+    mount();
     fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
-    expect(apiMock.askedTodos).toHaveBeenCalledTimes(1);
-    apiMock.askedTodos.mockReturnValueOnce(new Promise<AskedTodoList>((r) => (late = r)));
-    reload(view);
-    await waitFor(() => expect(apiMock.askedTodos).toHaveBeenCalledTimes(2));
-    apiMock.askedTodos.mockResolvedValueOnce({ ...list(), waiting: [asked('n.md', 'Newer job')] });
-    reload(view);
-    await screen.findByRole('button', { name: 'Newer job' });
-    await act(async () => late(list()));
-    expect(screen.getByRole('button', { name: 'Newer job' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Send the quote' })).toBeNull();
-  });
-
-  it('keeps the rows shown, with a retry line, when a reload fails', async () => {
-    apiMock.askedTodos.mockResolvedValueOnce(list());
-    const view = mount();
-    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
-    apiMock.askedTodos.mockRejectedValueOnce(new Error('x'));
-    reload(view);
     const line = await screen.findByText(/Couldn't refresh this list/);
     expect(line.getAttribute('role')).toBe('status');
     expect(screen.getByRole('button', { name: 'Send the quote' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(reloadAsked).toHaveBeenCalledTimes(1);
   });
 
-  it('Try again shows the loading state again while it asks', async () => {
-    apiMock.askedTodos.mockRejectedValueOnce(new Error('x'));
+  it('shows the loading state while the store has no list yet', async () => {
+    store.current = { ...store.current, asked: null, askedState: 'loading' };
     mount();
     fireEvent.click(await screen.findByRole('radio', { name: /^Asked/ }));
-    const retry = await screen.findByRole('button', { name: 'Try again' });
-    apiMock.askedTodos.mockReturnValueOnce(new Promise(() => {}));
-    fireEvent.click(retry);
     await screen.findByText('Loading…');
   });
 
@@ -1337,6 +1336,33 @@ describe('updates and hand back', () => {
       expect(holdTodo).not.toHaveBeenCalled();
     });
 
+    it('Delete with text typed, then "Discard changes", deletes the task with its usual Undo', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await open('First');
+      typeUpdate('Not sent yet');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      expect(holdTodo).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(holdTodo).toHaveBeenCalledTimes(1);
+      expect(holdTodo.mock.calls[0]?.[0]).toMatchObject({ todoId: 'a.md', kind: 'delete', label: 'Deleted' });
+      expect(api.state.todoPanel).toBeNull();
+    });
+
+    it('"Keep editing" after Delete with text typed deletes nothing, and a later discard does not either', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await open('First');
+      typeUpdate('Not sent yet');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      // Closing the panel by another way asks again, and discarding that only closes.
+      fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(holdTodo).not.toHaveBeenCalled();
+      expect(api.state.todoPanel).toBeNull();
+    });
+
     it('Undo after "Add an update and mark as done" brings the text back into the update box', async () => {
       withUpdates([todo('a.md', 'First')]);
       heldIntoStore();
@@ -1506,14 +1532,13 @@ describe('updates on a task you passed on', () => {
     historyRead: true,
   });
   const openAsked = async (over: Partial<AskedTodo> = {}) => {
-    apiMock.askedTodos.mockResolvedValue(askedList(over));
+    store.current = { ...store.current, asked: askedList(over) };
     mount();
-    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 1' }));
+    fireEvent.click(await screen.findByRole('radio', { name: /^Asked, 1/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send the quote' }));
     return dialog();
   };
   beforeEach(() => {
-    apiMock.askedTodos.mockReset();
     apiMock.todoHistory.mockReset();
   });
 
@@ -1552,5 +1577,331 @@ describe('updates on a task you passed on', () => {
     expect(within(panel).getByText('On it.')).toBeTruthy();
     expect(within(panel).queryByLabelText('Add an update')).toBeNull();
     expect(within(panel).getByText(/so you can read it but not change it/)).toBeTruthy();
+  });
+});
+
+// Task change notices (plan 2026-11-27-task-change-notices): the Updated folds, the Asked tab's dot, the looked marks
+// and the "New" tags in the panel.
+describe('task change notices', () => {
+  /** An ISO time to the minute, `min` minutes ago. */
+  const ago = (min: number): string =>
+    `${new Date(Date.now() - min * 60_000).toISOString().slice(0, 16)}:00+00:00`;
+  const entry = (text: string, min: number, over: Partial<TodoUpdate> = {}): TodoUpdate => ({
+    kind: 'note',
+    at: ago(min),
+    by: 'ben-mcadam',
+    byName: 'Ben McAdam',
+    text,
+    via: null,
+    action: 'update',
+    ...over,
+  });
+  const markLooked = vi.fn();
+  /** The store with the markers the person has saved (`prefs.todoLooked`) and the call that writes new ones. */
+  const withNotices = (mine: TodoItem[], looked: TodoLooked = {}, askedList: AskedTodoList | null = null) => {
+    setStore('on', mine);
+    const s = store.current as { boot: { prefs: Record<string, unknown> }; todos: TodoList };
+    s.boot = { ...s.boot, prefs: { ...s.boot.prefs, todoLooked: looked, todoSeen: {} } };
+    s.todos = { ...s.todos, canUpdate: true };
+    store.current = { ...store.current, markTodosLooked: markLooked, asked: askedList };
+  };
+  /** Saves a marker for the task as the store would, then hands the drawer the new prefs. */
+  const writeMarker = (view: ReturnType<typeof mount>, t: TodoItem) => {
+    const s = store.current as { boot: { prefs: { todoLooked: TodoLooked } } };
+    s.boot = {
+      ...s.boot,
+      prefs: {
+        ...s.boot.prefs,
+        todoLooked: {
+          ...s.boot.prefs.todoLooked,
+          [t.id]: lookedMark({ kind: 'held', todo: t }, { slug: 'sam-example', name: '' }, new Date()),
+        },
+      },
+    };
+    reload(view);
+  };
+  const me = { slug: 'sam-example', name: '' };
+  const rowOf = (title: string) => titleButton(title).closest('li') as HTMLElement;
+  const foldHeads = () => [...document.querySelectorAll('.fold-title')].map((e) => e.textContent);
+  const askedTask = (id: string, title: string, over: Partial<AskedTodo> = {}) =>
+    asked(id, title, { updates: [entry('On it.', 20)], ...over });
+
+  beforeEach(() => markLooked.mockReset());
+
+  describe('the Updated fold on Mine', () => {
+    const two = () => [
+      todo('a.md', 'First', { updates: [entry('Older note.', 30)] }),
+      todo('b.md', 'Second', { updates: [entry('Newer note.', 5), entry('Another.', 8)] }),
+      todo('c.md', 'Third'),
+    ];
+
+    it('lists the changed tasks under "New to you", newest change first, each with its line, and not again below', () => {
+      withNotices(two());
+      mount();
+      expect(foldHeads()[0]).toBe('Updated');
+      const updated = [...document.querySelectorAll('.fold')].find(
+        (f) => f.querySelector('.fold-title')?.textContent === 'Updated',
+      ) as HTMLElement;
+      expect(within(updated).getByRole('heading', { name: /Updated/ }).textContent).toContain('2');
+      const titles = within(updated)
+        .getAllByRole('button', { name: /^(First|Second)$/ })
+        .map((b) => b.textContent);
+      expect(titles).toEqual(['Second', 'First']);
+      expect(within(rowOf('Second')).getByText(/^Ben added an update · .+ and 1 more$/)).toBeTruthy();
+      const single = within(rowOf('First')).getByText(/^Ben added an update · .+$/);
+      expect(single.textContent).not.toContain('more');
+      // Not repeated in the groups below.
+      expect(screen.getAllByRole('button', { name: 'First' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Third', hidden: true })).toHaveLength(1);
+    });
+
+    it('gives each row the dot a new row has, and says "Updated." to a screen reader', () => {
+      withNotices(two());
+      mount();
+      const row = rowOf('First');
+      expect(row.querySelector('.todo-new')).toBeTruthy();
+      expect(within(row).getByText('Updated.').className).toContain('visually-hidden');
+      expect(
+        screen.getByRole('button', { name: 'Third', hidden: true }).closest('li')?.querySelector('.todo-new'),
+      ).toBeNull();
+    });
+
+    it('has no Updated fold when nothing changed', () => {
+      withNotices(three());
+      mount();
+      expect(foldHeads()).not.toContain('Updated');
+    });
+
+    it('"Mark all as seen" on Updated marks those tasks looked at, and says so', () => {
+      const mine = two();
+      withNotices(mine);
+      mount();
+      const updated = [...document.querySelectorAll('.fold')].find(
+        (f) => f.querySelector('.fold-title')?.textContent === 'Updated',
+      ) as HTMLElement;
+      fireEvent.click(within(updated).getByRole('button', { name: 'Mark all as seen' }));
+      expect(markLooked).toHaveBeenCalledTimes(1);
+      expect(markLooked.mock.calls[0]?.[0]).toEqual([
+        { kind: 'held', todo: mine[1] },
+        { kind: 'held', todo: mine[0] },
+      ]);
+      expect(screen.getByText('Marked as seen.')).toBeTruthy();
+    });
+
+    it('"Mark all as seen" on New to you marks the tasks looked at too, so a new task with a note does not jump to Updated', () => {
+      const fresh = todo('n.md', 'Newly passed', {
+        handover: {
+          by: 'ben-mcadam',
+          byName: 'Ben McAdam',
+          at: ago(60),
+          from: null,
+          via: null,
+          source: 'stamp',
+        },
+        updates: [entry('Here is the background.', 30)],
+      });
+      withNotices([fresh]);
+      mount();
+      // New to you, not Updated.
+      expect(foldHeads()).toContain('New to you');
+      expect(foldHeads()).not.toContain('Updated');
+      const fold = [...document.querySelectorAll('.fold')].find(
+        (f) => f.querySelector('.fold-title')?.textContent === 'New to you',
+      ) as HTMLElement;
+      fireEvent.click(within(fold).getByRole('button', { name: 'Mark all as seen' }));
+      expect(markLooked).toHaveBeenCalledWith([{ kind: 'held', todo: fresh }]);
+    });
+  });
+
+  describe('looking at a task', () => {
+    it('opening the panel marks the task looked at, and again when its updates change while it is open', async () => {
+      const t = todo('a.md', 'First', { updates: [entry('One.', 30)] });
+      withNotices([t]);
+      const view = mount();
+      await open('First');
+      expect(markLooked).toHaveBeenCalledTimes(1);
+      expect(markLooked).toHaveBeenLastCalledWith([{ kind: 'held', todo: t }]);
+      // Nothing changed: no second call.
+      reload(view);
+      expect(markLooked).toHaveBeenCalledTimes(1);
+      const later = { ...t, updates: [...(t.updates ?? []), entry('Two.', 1)] };
+      store.current = {
+        ...store.current,
+        todos: { ...(store.current as { todos: TodoList }).todos, mine: [later] },
+      };
+      reload(view);
+      await waitFor(() => expect(markLooked).toHaveBeenCalledTimes(2));
+      expect(markLooked).toHaveBeenLastCalledWith([{ kind: 'held', todo: later }]);
+    });
+
+    it('opening an asked task marks it looked at as an asked task', async () => {
+      const a = askedTask('x.md', 'Send the quote');
+      withNotices([], {}, { waiting: [a], done: [], historyRead: true });
+      mount();
+      fireEvent.click(await screen.findByRole('radio', { name: /^Asked/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Send the quote' }));
+      await dialog();
+      expect(markLooked).toHaveBeenCalledWith([{ kind: 'asked', todo: a }]);
+    });
+
+    it('a task opened this visit stays in Updated once its marker is written, until the tab changes', async () => {
+      const t = todo('a.md', 'First', { updates: [entry('One.', 30)] });
+      withNotices([t, todo('c.md', 'Third')]);
+      const view = mount();
+      // Before it is opened, the row has its dot and its hidden word.
+      expect(
+        screen.getByRole('button', { name: 'First' }).closest('li')?.querySelector('.todo-new'),
+      ).toBeTruthy();
+      await open('First');
+      writeMarker(view, t);
+      press('Escape');
+      const updated = [...document.querySelectorAll('.fold')].find(
+        (f) => f.querySelector('.fold-title')?.textContent === 'Updated',
+      ) as HTMLElement;
+      const row = within(updated).getByRole('button', { name: 'First' }).closest('li') as HTMLElement;
+      // It has been read, and the rail no longer counts it: the row stays, without the dot or "Updated." (UX gate R2).
+      expect(row.querySelector('.todo-new')).toBeNull();
+      expect(within(row).queryByText('Updated.')).toBeNull();
+      expect(within(row).getByText(/added an update/)).toBeTruthy();
+      // The tab changes: it is gone from Updated, as a looked-at task should be.
+      fireEvent.click(screen.getByRole('radio', { name: /^Open/ }));
+      fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
+      expect(foldHeads()).not.toContain('Updated');
+    });
+  });
+
+  describe('the Asked tab', () => {
+    const askedLists = (): AskedTodoList => ({
+      waiting: [askedTask('x.md', 'Send the quote'), asked('y.md', 'Book the venue')],
+      done: [],
+      historyRead: true,
+    });
+
+    it('labels the tab with a dot and hidden words when a task you asked for has an update', () => {
+      withNotices([], {}, askedLists());
+      mount();
+      const tab = screen.getByRole('radio', { name: /^Asked, 2/ });
+      expect(tab.querySelector('.seg-dot')).toBeTruthy();
+      expect(within(tab).getByText('with updates', { exact: false }).className).toContain('visually-hidden');
+      expect(tab.textContent).toBe('Asked, 2, with updates');
+    });
+
+    it('has no dot when nothing has changed', () => {
+      withNotices([], {}, { ...askedLists(), waiting: [asked('y.md', 'Book the venue')] });
+      mount();
+      expect(screen.getByRole('radio', { name: 'Asked, 1' }).querySelector('.seg-dot')).toBeNull();
+    });
+
+    it('shows an Updated fold at the top, with the row once, its line and a Mark all as seen', async () => {
+      const list = askedLists();
+      withNotices([], {}, list);
+      mount();
+      fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
+      expect(foldHeads()[0]).toBe('Updated');
+      const updated = document.querySelector('.fold') as HTMLElement;
+      expect(within(updated).getByText(/^Ben added an update · /)).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: 'Send the quote' })).toHaveLength(1);
+      expect(screen.getByRole('button', { name: 'Book the venue' })).toBeTruthy();
+      fireEvent.click(within(updated).getByRole('button', { name: 'Mark all as seen' }));
+      expect(markLooked).toHaveBeenCalledWith([{ kind: 'asked', todo: list.waiting[0] }]);
+      expect(screen.getByText('Marked as seen.')).toBeTruthy();
+    });
+
+    it('says "Handed back to <name>, <date>" for a task you handed back', async () => {
+      withNotices(
+        [],
+        {},
+        {
+          waiting: [asked('y.md', 'Book the venue', { handedBack: true })],
+          done: [],
+          historyRead: true,
+        },
+      );
+      mount();
+      fireEvent.click(await screen.findByRole('radio', { name: /^Asked/ }));
+      const row = rowOf('Book the venue');
+      expect(within(row).getByText(/^Handed back to Ben, \d+ Nov$/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Book the venue' }));
+      const panel = await dialog();
+      expect(within(panel).getByText(/^Handed back to Ben McAdam, \d+ Nov$/)).toBeTruthy();
+    });
+  });
+
+  describe('"New" in the task panel', () => {
+    const seenOnce = [entry('Old one.', 120)];
+    const base = () => todo('a.md', 'First', { updates: [...seenOnce, entry('Fresh one.', 5)] });
+    const markerFor = (t: TodoItem): TodoLooked => ({
+      [t.id]: lookedMark(
+        { kind: 'held', todo: { ...t, updates: seenOnce } },
+        me,
+        new Date(Date.now() - 60_000),
+      ),
+    });
+
+    it('tags what the person had not seen and says how many, politely', async () => {
+      const t = base();
+      withNotices([t], markerFor(t));
+      mount();
+      const panel = await open('First');
+      const line = within(panel).getByText('1 new since you last looked.');
+      expect(line.getAttribute('role')).toBe('status');
+      expect(line.getAttribute('aria-live')).toBe('polite');
+      expect(within(panel).getAllByText('New')).toHaveLength(1);
+      const card = within(panel).getByText('Fresh one.').closest('li') as HTMLElement;
+      expect(within(card).getByText('New')).toBeTruthy();
+    });
+
+    it('says nothing when everything was seen', async () => {
+      const t = base();
+      withNotices([t], { [t.id]: lookedMark({ kind: 'held', todo: t }, me, new Date()) });
+      mount();
+      const panel = await open('First');
+      expect(within(panel).queryByText(/new since you last looked/)).toBeNull();
+      expect(within(panel).queryByText('New')).toBeNull();
+    });
+
+    it('keeps the tags while the task stays open, though its marker has been written, and tags what arrives', async () => {
+      const t = base();
+      withNotices([t], markerFor(t));
+      const view = mount();
+      const panel = await open('First');
+      expect(within(panel).getByText('1 new since you last looked.')).toBeTruthy();
+      writeMarker(view, t);
+      expect(within(screen.getByRole('dialog')).getByText('1 new since you last looked.')).toBeTruthy();
+      const later = { ...t, updates: [...(t.updates ?? []), entry('Arrived while open.', 1)] };
+      store.current = {
+        ...store.current,
+        todos: { ...(store.current as { todos: TodoList }).todos, mine: [later] },
+      };
+      reload(view);
+      const now = screen.getByRole('dialog');
+      expect(within(now).getByText('2 new since you last looked.')).toBeTruthy();
+      expect(within(now).getAllByText('New')).toHaveLength(2);
+    });
+
+    it('works the set out again for the next task, from its own marker', async () => {
+      const t = base();
+      const quiet = todo('b.md', 'Second', { updates: [entry('Seen.', 50)] });
+      withNotices([t, quiet], {
+        ...markerFor(t),
+        [quiet.id]: lookedMark({ kind: 'held', todo: quiet }, me, new Date()),
+      });
+      mount();
+      await open('First');
+      press('n');
+      expect(heading()).toBe('Second');
+      expect(within(screen.getByRole('dialog')).queryByText(/new since you last looked/)).toBeNull();
+    });
+
+    it('tags on an asked task too', async () => {
+      const a = askedTask('x.md', 'Send the quote');
+      withNotices([], {}, { waiting: [a], done: [], historyRead: true });
+      mount();
+      fireEvent.click(await screen.findByRole('radio', { name: /^Asked/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Send the quote' }));
+      const panel = await dialog();
+      expect(within(panel).getByText('1 new since you last looked.')).toBeTruthy();
+      expect(within(panel).getByText('New')).toBeTruthy();
+    });
   });
 });

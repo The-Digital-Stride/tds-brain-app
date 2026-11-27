@@ -3,6 +3,7 @@ import type { Attention } from '../../../shared/contract.ts';
 import { helpVisible, skillsMenuVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
+import { changedTodos } from '../state/todo-changed.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { useStore, useToolSnapshot } from '../store.tsx';
 import { useTourOpen } from '../tour/request.ts';
@@ -43,6 +44,8 @@ interface ItemProps {
   pip?: Attention | null;
   /** Something new to the person: a plain blue dot, whatever the chats are doing. */
   fresh?: boolean;
+  /** How many are new or updated: shown on the red badge. Without it the badge is a plain dot. */
+  freshCount?: number;
   count?: number;
   after?: ReactNode;
   keys?: string;
@@ -61,6 +64,7 @@ function Item({
   drawer,
   pip,
   fresh,
+  freshCount,
   count,
   after,
   keys,
@@ -90,13 +94,25 @@ function Item({
     >
       <Icon name={icon} />
       {/* Icons only: the count rides on the icon. The aria-label already says the number. */}
-      {count && !wide ? (
+      {/* With news, the red count alone rides on the icon: two badges hid it (UX gate R2). */}
+      {count && !wide && !freshCount ? (
         <span className="rail-badge" aria-hidden="true">
           {count}
         </span>
       ) : null}
       {pip ? <span className="dot rail-pip" data-attention={pip} /> : null}
-      {fresh ? <span className="dot rail-pip" data-new="true" /> : null}
+      {fresh ? (
+        // New or updated: a red count on the icon (change notices plan, decision 7: a count on the rail). The
+        // aria-label already says the number.
+        <span
+          className="dot rail-pip"
+          data-new="true"
+          data-count={freshCount ? true : undefined}
+          aria-hidden="true"
+        >
+          {freshCount ? (freshCount > 99 ? '99+' : freshCount) : null}
+        </span>
+      ) : null}
       <span className="rail-label">{label}</span>
       {count ? <span className="count rail-label">{count}</span> : null}
       {after}
@@ -111,7 +127,7 @@ function Mark() {
 
 /** Layer 1: one slim strip that gets you everywhere. */
 export function Rail({ inert = false }: { inert?: boolean }) {
-  const { boot, todos, sessions, view, activeChat, newChat, openView } = useStore();
+  const { boot, todos, asked, askedState, sessions, view, activeChat, newChat, openView } = useStore();
   const snap = useToolSnapshot();
   const { state, dispatch } = useShell();
   const { railShowsNames: wide, width, drawerModal, panelModal } = useDesk();
@@ -166,8 +182,12 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
   const live = sessions?.live ?? [];
   const mine = todos?.mine.length ?? 0;
+  // "New to you" plus the tasks with a change since the person looked. While the Asked list is loading, or
+  // failed, only the tasks they hold are counted.
+  const now = new Date();
   const fresh = todos
-    ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date()).length
+    ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, now).length +
+      changedTodos(todos, askedState === 'loaded' ? asked : null, boot.identity, boot.prefs, now).total
     : 0;
   const sections = visibleSections(snap);
   const app = APPS.find((a) => view === `app:${a.id}`);
@@ -263,6 +283,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           label="Tasks"
           name={todosRailLabel(mine, fresh)}
           fresh={fresh > 0}
+          freshCount={fresh}
           wide={showsNames}
           drawer={drawer('todos')}
           count={mine}

@@ -31,7 +31,7 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 
 ![The message box on Home, with Chat for set to Auto.](images/home-start.webp)
 
-**Start my day**, above the box, runs the good morning skill in a new chat. It shows only if your Brain has that skill. Under the box are cards: your [meetings](help:meetings), the things you pinned, and the newest things. While an Ads change waits for your yes, an **Ads approvals** card shows too. Owners and scouts also see their pinned skills, or the ones they use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
+**Start my day**, above the box, runs the good morning skill in a new chat. It shows only if your Brain has that skill. Under the box are cards: your [meetings](help:meetings), [task updates](help:task-notices), the things you pinned, and the newest things. While an Ads change waits for your yes, an **Ads approvals** card shows too. Owners and scouts also see their pinned skills, or the ones they use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
 
 ## Good to know
 

@@ -15,6 +15,23 @@ describe('greeting', () => {
   });
 });
 
+describe('summary with task updates', () => {
+  const u = (overdue: number, dueToday: number, asking: number, updates: number) =>
+    summary({ overdue, dueToday, asking, updates });
+  it('adds nothing for zero, and reads one and several', () => {
+    expect(u(0, 0, 0, 0)).toBe('Nothing is waiting for you.');
+    expect(u(1, 0, 0, 0)).toBe('One task is overdue.');
+    expect(u(0, 0, 0, 1)).toBe('One task has an update.');
+    expect(u(0, 0, 0, 4)).toBe('4 tasks have updates.');
+  });
+  it('joins with the other parts', () => {
+    expect(u(1, 0, 0, 2)).toBe('One task is overdue and 2 tasks have updates.');
+    expect(u(3, 2, 1, 1)).toBe(
+      '3 tasks are overdue, 2 are due today, one chat is waiting for you and one task has an update.',
+    );
+  });
+});
+
 describe('summary', () => {
   const s = (overdue: number, dueToday: number, asking: number) => summary({ overdue, dueToday, asking });
   it('says nothing is waiting when all are zero', () => {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type { AskedTodo, LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import {
+  askedMeta,
+  askedStatusLine,
+  changeLine,
   chatsRailLabel,
   handoverLine,
   handoverMeta,
@@ -11,6 +14,7 @@ import {
   syncWords,
   todoChatDraft,
   todoPlaces,
+  todosRailLabel,
   updateWhen,
   updateWhenFull,
   whenWords,
@@ -275,5 +279,115 @@ describe('updateWhen', () => {
   });
   it('keeps the full date and time for the tooltip, in UK time', () => {
     expect(updateWhenFull('2026-07-03T13:20:00+00:00')).toBe('3 Jul 2026, 14:20');
+  });
+});
+
+describe('changeLine', () => {
+  const team = [
+    { slug: 'ben-mcadam', name: 'Ben McAdam' },
+    { slug: 'sam-example', name: 'Sam Example' },
+  ];
+  const entry = (kind: 'note' | 'auto' | 'handover', text: string, at = '2026-11-30T10:00:00+00:00') => ({
+    kind,
+    at,
+    by: kind === 'handover' ? null : 'ben-mcadam',
+    byName: 'Ben McAdam',
+    text,
+    via: null,
+    action: null,
+  });
+
+  it('says a note as "added an update", never its text, and counts the rest', () => {
+    const change = {
+      entries: [
+        entry('note', 'Secret words.'),
+        entry('auto', 'changed the details', '2026-11-30T09:00:00+00:00'),
+      ],
+      finished: null,
+      count: 2,
+      at: '2026-11-30T10:00:00+00:00',
+    };
+    expect(changeLine(change, team)).toEqual({
+      text: 'Ben added an update',
+      at: '2026-11-30T10:00:00+00:00',
+      more: 1,
+    });
+  });
+
+  it('says automatic and handover lines as the log does, with names for slugs', () => {
+    const auto = {
+      entries: [entry('auto', 'changed the due date to 3 Dec 2026')],
+      finished: null,
+      count: 1,
+      at: 'x',
+    };
+    expect(changeLine(auto, team).text).toBe('Ben changed the due date to 3 Dec 2026');
+    const back = {
+      entries: [entry('handover', 'handed it back to sam-example')],
+      finished: null,
+      count: 1,
+      at: 'x',
+    };
+    expect(changeLine(back, team).text).toBe('Ben handed it back to Sam');
+    const pass = {
+      entries: [entry('handover', 'passed it from ben-mcadam to sam-example')],
+      finished: null,
+      count: 1,
+      at: 'x',
+    };
+    expect(changeLine(pass, team).text).toBe('Ben passed it to Sam');
+  });
+
+  it('says a finish when that is the newest thing, with or without a name', () => {
+    const done = {
+      entries: [entry('note', 'All sent.')],
+      finished: { at: '2026-11-30T10:00:20+00:00', byName: 'Ben McAdam' },
+      count: 2,
+      at: '2026-11-30T10:00:20+00:00',
+    };
+    expect(changeLine(done, team)).toEqual({
+      text: 'Ben marked it as done',
+      at: '2026-11-30T10:00:20+00:00',
+      more: 1,
+    });
+    const nameless = { entries: [], finished: { at: 'x', byName: null }, count: 1, at: 'x' };
+    expect(changeLine(nameless, team).text).toBe('Someone marked it as done');
+  });
+});
+
+describe('a task you handed back, on the Asked tab', () => {
+  const base: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack'> = {
+    state: 'waiting',
+    assigneeName: 'Ben McAdam',
+    asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-13T12:00:00+00:00', source: 'stamp' },
+    done: null,
+  };
+
+  it('says "Handed back to <name>, <date>" instead of "With <name> since <date>"', () => {
+    const back = { ...base, handedBack: true as const };
+    expect(askedStatusLine(back)).toBe('Handed back to Ben McAdam, 13 Nov');
+    expect(askedMeta(back)).toBe('Handed back to Ben, 13 Nov');
+  });
+
+  it('keeps "With" for every other task', () => {
+    expect(askedStatusLine(base)).toBe('With Ben McAdam since 13 Nov');
+    expect(askedMeta(base)).toBe('With Ben since 13 Nov');
+  });
+});
+
+describe('todosRailLabel', () => {
+  it('says "new or updated" for the count, which holds both', () => {
+    expect(todosRailLabel(5, 3)).toBe('Tasks, 5 of yours, 3 new or updated');
+    expect(todosRailLabel(5, 0)).toBe('Tasks, 5 of yours');
+    expect(todosRailLabel(0, 0)).toBeUndefined();
+  });
+});
+
+describe('todosRailLabel with news', () => {
+  it('says the new or updated count even when the person holds no task (UX gate R2)', () => {
+    expect(todosRailLabel(0, 2)).toBe('Tasks, 2 new or updated');
+    expect(todosRailLabel(0, 0)).toBeUndefined();
+    expect(todosRailLabel(3, 2)).toBe('Tasks, 3 of yours, 2 new or updated');
+    expect(todosRailLabel(3, 0)).toBe('Tasks, 3 of yours');
   });
 });

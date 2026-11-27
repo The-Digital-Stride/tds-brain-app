@@ -1,8 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   type AskedTodo,
-  type AskedTodoList,
   ATTENTION_LABEL,
   attentionFor,
   type DoneTodo,
@@ -10,7 +9,12 @@ import {
   type TodoAction,
   type TodoItem,
 } from '../../../shared/contract.ts';
-import { api } from '../api.ts';
+import {
+  type ChangeSubject,
+  entryKey,
+  type TodoLookedMark,
+  todoChange,
+} from '../../../shared/todo-changes.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { setChoice, useClientChoice, useProjectChoice } from '../state/client-choice.ts';
@@ -22,6 +26,7 @@ import {
   useProjects,
 } from '../state/projects.ts';
 import { useTeamTodo } from '../state/team-todo.ts';
+import { changedTodos } from '../state/todo-changed.ts';
 import { doneStore, filterDone, groupDone, searchDone, useDoneTodos } from '../state/todo-done.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import {
@@ -34,7 +39,7 @@ import {
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, useStore } from '../store.tsx';
-import { AskedList, type AskedState, askedOrder } from './AskedList.tsx';
+import { AskedList, askedOrder } from './AskedList.tsx';
 import type { TodoFilter, TodoPanelState } from './contract.ts';
 import { DoneList, type DoneState, doneOrder } from './DoneList.tsx';
 import { Fold } from './Fold.tsx';
@@ -50,7 +55,7 @@ import { buildEditActions, detailsText, type EditDraft, useTypedDrafts } from '.
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { todoOpener } from './todo-opener.ts';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
-import { cap, handoverMeta } from './words.ts';
+import { cap, changeLine, handoverMeta, updateWhen } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
@@ -130,6 +135,8 @@ const UNDO_VERB: Record<HeldTodo['kind'], string> = {
 };
 
 /** "Marked as done" → "marked as done": the label follows the title in the Undo line's sentence. */
+const NO_LOOKED: Readonly<Record<string, TodoLookedMark>> = {};
+
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 /**
@@ -167,6 +174,8 @@ function TodoRow({
   todo,
   controls,
   fresh,
+  update,
+  updateSeen,
   showScope,
   onOpened,
   favourite,
@@ -182,6 +191,10 @@ function TodoRow({
   showPlace?: boolean;
   /** In "New to you": a dot, and opening it marks it seen. */
   fresh: boolean;
+  /** In "Updated" (or starred and updated): the same dot, and a line saying the newest change. */
+  update?: { text: string; at: string; more: number };
+  /** Opened this visit and nothing newer since: the row stays in Updated, without the dot (the rail agrees). */
+  updateSeen?: boolean;
   /** The scope filter is All: a personal row says so. */
   showScope: boolean;
   /** The row was opened (chat or editor): "New to you" marks it seen. */
@@ -219,7 +232,9 @@ function TodoRow({
   const whereText =
     !chip && showPlace ? todoPlaceParts(todo, projectList?.projects, boot?.clients ?? []).join(' · ') : '';
   const hasWhere = Boolean(chip) || whereText !== '';
-  const describedBy = [fresh ? newId : '', parts.length > 0 ? metaId : '', hasWhere ? whereId : '']
+  const marked = fresh || (update !== undefined && !updateSeen);
+  const when = update ? updateWhen(update.at) : '';
+  const describedBy = [marked ? newId : '', parts.length > 0 ? metaId : '', hasWhere ? whereId : '']
     .filter(Boolean)
     .join(' ');
 
@@ -234,11 +249,11 @@ function TodoRow({
       {/* The row itself is not a button (Ian, 2026-11-14): only the chat button starts or opens the chat. The title
           has the row's whole width; its details and buttons share the line below (Ian, 2026-11-14). */}
       <div className="todo-main">
-        {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
+        {marked ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
-          {fresh ? (
+          {marked ? (
             <span className="visually-hidden" id={newId}>
-              New to you.
+              {fresh ? 'New to you.' : 'Updated.'}
             </span>
           ) : null}
           {/* The title opens the to-do in the panel, for everyone: reading needs no permission. */}
@@ -247,7 +262,7 @@ function TodoRow({
             className="line-title todo-open"
             data-panel-for={todo.key}
             aria-haspopup="dialog"
-            aria-describedby={fresh ? newId : undefined}
+            aria-describedby={marked ? newId : undefined}
             onClick={() => {
               onOpened(todo);
               controls.open(todo, 'read');
@@ -257,6 +272,13 @@ function TodoRow({
           </button>
         </span>
       </div>
+      {update ? (
+        <p className="line-meta todo-changed">
+          {update.text}
+          {when ? ` · ${when}` : ''}
+          {update.more > 0 ? ` and ${update.more} more` : ''}
+        </p>
+      ) : null}
       <div className="todo-foot">
         {parts.length > 0 ? (
           <span className="line-meta todo-meta" id={metaId}>
@@ -439,6 +461,10 @@ export function TodosDrawer() {
     pauseHeld,
     resumeHeld,
     markTodosSeen,
+    markTodosLooked,
+    asked,
+    askedState,
+    reloadAsked,
     reveal,
     clearReveal,
     doneReveal,
@@ -461,11 +487,17 @@ export function TodosDrawer() {
   // To-dos opened this visit: they stay in "New to you" (without the dot) until the tab changes, so a row
   // doesn't jump away under the person's hands.
   const [visitSeen, setVisitSeen] = useState<ReadonlySet<string>>(new Set());
+  // The same for "Updated": a task opened this visit keeps the marker it had when it was opened, so its row stays
+  // where it is (and keeps its line) until the tab changes. An undefined marker means it had never been looked at.
+  const [visitLooked, setVisitLooked] = useState<ReadonlyMap<string, TodoLookedMark | undefined>>(new Map());
+  // The marker the open panel's task had when the panel opened: what its "New" tags are worked out from.
+  const [panelMark, setPanelMark] = useState<{ id: string; mark: TodoLookedMark | undefined } | null>(null);
   // A to-do the global search sent us to: its group is held open and it opens in the panel.
   // `n` counts requests, so asking again remounts the groups (a group closed by hand opens again).
   const [revealed, setRevealed] = useState<{ key: string; n: number } | null>(null);
   const setTab = (t: Tab) => {
     setVisitSeen(new Set());
+    setVisitLooked(new Map());
     setRevealed(null);
     setTabState(t);
   };
@@ -489,36 +521,6 @@ export function TodosDrawer() {
   const teamSnap = useTeamTodo(panelTeamKey);
   const [doneQuery, setDoneQuery] = useState('');
   const searchId = useId();
-  // The asked-of-others list is its own request: it never blocks or fails the main list. It loads with the
-  // drawer and again whenever the to-dos reload (`todos` is a new object each time). A failed reload keeps
-  // what was shown.
-  const [asked, setAsked] = useState<AskedTodoList | null>(null);
-  const [askedState, setAskedState] = useState<AskedState>('loading');
-  const askedRun = useRef(0);
-  const loadAsked = useCallback(async () => {
-    const run = ++askedRun.current;
-    setAskedState('loading');
-    try {
-      const list = await api.askedTodos();
-      if (run !== askedRun.current) return;
-      setAsked(list);
-      setAskedState('loaded');
-    } catch {
-      if (run === askedRun.current) setAskedState('failed');
-    }
-  }, []);
-  const haveTodos = todos !== null;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `todos` changing is the trigger to reload.
-  useEffect(() => {
-    // The finished to-dos and teammates' to-dos refresh on the same signal in the store (StoreProvider).
-    if (haveTodos) void loadAsked();
-  }, [todos, haveTodos, loadAsked]);
-  useEffect(
-    () => () => {
-      askedRun.current = -1;
-    },
-    [],
-  );
   const adding = panel?.mode === 'add';
   const [filter, setFilter] = useState<TodoFilter>(EMPTY_FILTER);
   const [draft, setDraft] = useState<EditDraft>({
@@ -698,6 +700,41 @@ export function TodosDrawer() {
     }
   }, [heldTodos, failedHeld]);
 
+  // The open task, when it is one this person holds (TDS) or asked for: opening it counts as looking at it. What it
+  // had not shown them is worked out once, from the marker as it was when the panel opened (before this writes the
+  // new one), so the panel can tag those entries "New" for as long as the task stays open.
+  const viewer = { slug: boot?.identity.slug ?? '', name: boot?.identity.name ?? '' };
+  const lookedSaved = boot?.prefs.todoLooked ?? NO_LOOKED;
+  const panelKey = panel?.key ?? null;
+  const panelHeldTodo = panelKey
+    ? todos?.mine.find((t) => t.key === panelKey && t.scope === 'tds')
+    : undefined;
+  const panelAskedTodo =
+    panelKey && !panelHeldTodo && asked
+      ? [...asked.waiting, ...asked.done].find((t) => t.key === panelKey)
+      : undefined;
+  const panelSubject: ChangeSubject | null = panelHeldTodo
+    ? { kind: 'held', todo: panelHeldTodo }
+    : panelAskedTodo
+      ? { kind: 'asked', todo: panelAskedTodo }
+      : null;
+  const panelSubjectId = panelSubject?.todo.id ?? null;
+  if ((panelMark?.id ?? null) !== panelSubjectId) {
+    setPanelMark(panelSubjectId ? { id: panelSubjectId, mark: lookedSaved[panelSubjectId] } : null);
+    if (panelSubjectId) {
+      const markBefore = lookedSaved[panelSubjectId];
+      setVisitLooked((m) => new Map(m).set(panelSubjectId, markBefore));
+    }
+  }
+  // Again when the task's log changes while it is open (a new entry arrives, or it is finished).
+  const panelLogSig = panelSubject
+    ? `${(panelSubject.todo.updates ?? []).map(entryKey).join('|')}${panelSubject.kind === 'asked' && panelSubject.todo.state === 'done' ? ':done' : ''}`
+    : '';
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the task's id and its log stand for the subject.
+  useEffect(() => {
+    if (panelSubject) markTodosLooked([panelSubject]);
+  }, [panelSubjectId, panelLogSig]);
+
   if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
@@ -708,6 +745,34 @@ export function TodosDrawer() {
   const clients = boot?.clients ?? [];
   const savedSeen = boot?.prefs.todoSeen ?? {};
   const seenMap = Object.fromEntries(Object.entries(savedSeen).filter(([k]) => !visitSeen.has(k)));
+  // Looked markers, except that a task opened this visit keeps the one it had, so its row stays in Updated.
+  const lookedMap: Record<string, TodoLookedMark> = { ...lookedSaved };
+  for (const [id, mark] of visitLooked) {
+    if (mark) lookedMap[id] = mark;
+    else delete lookedMap[id];
+  }
+  const changed = changedTodos(
+    todos,
+    asked,
+    viewer,
+    { todoSeen: seenMap, todoLooked: lookedMap },
+    new Date(),
+  );
+  // What the saved markers say is still unseen (what the rail counts): a row kept in Updated for this visit
+  // after it was opened shows without its dot.
+  const unseenNow = changedTodos(
+    todos,
+    asked,
+    viewer,
+    { todoSeen: seenMap, todoLooked: lookedSaved },
+    new Date(),
+  );
+  const unseenIds = new Set([...unseenNow.held, ...unseenNow.asked].map((c) => c.todo.id));
+  const panelUnseen =
+    panelSubject && panelMark?.id === panelSubjectId
+      ? (todoChange(panelSubject, viewer, panelMark.mark, new Date())?.entries ?? [])
+      : [];
+  const panelNewKeys = new Set(panelUnseen.map(entryKey));
 
   // Filters (the text search is the global search's now). The kind filter belongs to Mine: everything open
   // to anyone is TDS.
@@ -789,10 +854,22 @@ export function TodosDrawer() {
   const freshKeys = new Set(fresh.map((t) => t.key));
   const { favourites, rest } = splitFavouriteTodos(shown, favs);
   const freshRows = favourites.length > 0 ? fresh.filter((t) => !favs.includes(t.key)) : fresh;
-  const groups = groupTodos(
-    freshRows.length > 0 ? rest.filter((t) => !freshKeys.has(t.key)) : rest,
-    todayIso(),
+  // "Updated": tasks you hold that someone else changed since you looked, under "New to you", newest first. Like new
+  // ones, a starred one stays in Pinned (with its dot and line) and the rest are not repeated in the groups below.
+  const shownKeys = new Set(shown.map((t) => t.key));
+  const updatedShown = tab === 'mine' ? changed.held.filter((h) => shownKeys.has(h.todo.key)) : [];
+  const updatedById = new Map(updatedShown.map((h) => [h.todo.key, h.change]));
+  const updatedRows = updatedShown.filter((h) => !favs.includes(h.todo.key)).map((h) => h.todo);
+  const skipKeys = new Set([...freshRows, ...updatedRows].map((t) => t.key));
+  const groups = groupTodos(skipKeys.size > 0 ? rest.filter((t) => !skipKeys.has(t.key)) : rest, todayIso());
+  const updatedAsked = changed.asked.filter(({ todo }) =>
+    [...(askedShown?.waiting ?? []), ...(askedShown?.done ?? [])].some((t) => t.key === todo.key),
   );
+  const askedLines = updatedAsked.map(({ todo, change }) => ({
+    todo,
+    line: changeLine(change, todos.team),
+    seen: !unseenIds.has(todo.id),
+  }));
   const showScope = tab === 'mine' && active.scope === 'all';
   // The group the global search sent us to stays open, whatever else is closed.
   const holdsRevealed = (list: TodoItem[]) => revealed !== null && list.some((t) => t.key === revealed.key);
@@ -845,7 +922,7 @@ export function TodosDrawer() {
     const keyboard = pressedByKeyboard();
     const id = held.todoId;
     keepTyped.current.add(id);
-    const shownOrder = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+    const shownOrder = [...favourites, ...freshRows, ...updatedRows, ...groups.flatMap((g) => g.items)]
       .map((t) => t.key)
       .filter((k) => k === id || !heldById.has(k));
     const at = shownOrder.indexOf(id);
@@ -935,10 +1012,13 @@ export function TodosDrawer() {
   const order = panelTeamKey
     ? [panelTeamKey]
     : tab === 'asked'
-      ? askedOrder(askedShown)
+      ? askedOrder(
+          askedShown,
+          askedLines.map((a) => a.todo.key),
+        )
       : tab === 'done'
         ? doneOrder(doneGroups)
-        : [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+        : [...favourites, ...freshRows, ...updatedRows, ...groups.flatMap((g) => g.items)]
             .map((t) => t.key)
             .filter((k) => !heldById.has(k));
 
@@ -1152,6 +1232,7 @@ export function TodosDrawer() {
 
   const row = (t: TodoItem, isFresh: boolean) => {
     const held = heldById.get(t.key);
+    const change = updatedById.get(t.key);
     return held ? (
       <HeldRow
         key={t.key}
@@ -1168,6 +1249,8 @@ export function TodosDrawer() {
         // A personal to-do can't be changed when the gate is off (the server would refuse): read and chat only.
         controls={t.scope === 'personal' && !todos.canUsePersonal ? { ...rows, actionable: false } : rows}
         fresh={isFresh && !visitSeen.has(t.key)}
+        update={change ? changeLine(change, todos.team) : undefined}
+        updateSeen={change !== undefined && !unseenIds.has(t.id)}
         showScope={showScope}
         onOpened={opened}
         favourite={favs.includes(t.key)}
@@ -1228,7 +1311,11 @@ export function TodosDrawer() {
           options={[
             { value: 'mine', label: `Mine, ${counts.mine}` },
             { value: 'open', label: `Open, ${counts.open}` },
-            { value: 'asked', label: counts.asked !== null ? `Asked, ${counts.asked}` : 'Asked' },
+            {
+              value: 'asked',
+              label: counts.asked !== null ? `Asked, ${counts.asked}` : 'Asked',
+              dot: changed.asked.length > 0,
+            },
             { value: 'done', label: 'Done' },
           ]}
         />
@@ -1400,8 +1487,15 @@ export function TodosDrawer() {
                 };
               }}
               onProject={project ? undefined : pickProject}
+              updated={askedLines}
+              onMarkSeen={() => {
+                markTodosLooked(askedLines.map(({ todo }): ChangeSubject => ({ kind: 'asked', todo })));
+                setVisitLooked(new Map());
+                setMessage('Marked as seen.');
+                scrollRef.current?.focus();
+              }}
               state={askedState}
-              onRetry={() => void loadAsked()}
+              onRetry={reloadAsked}
               openKey={panel?.key ?? null}
               onOpen={(t) => {
                 if (panel?.dirty) return shellDispatch({ type: 'close-todo' });
@@ -1482,6 +1576,12 @@ export function TodosDrawer() {
                       onClick={() => {
                         // Starred new to-dos too, so no dot is left anywhere.
                         markTodosSeen(fresh);
+                        // Both markers, so a task that arrived with a note doesn't jump into Updated.
+                        markTodosLooked(
+                          fresh
+                            .filter((t) => t.scope === 'tds')
+                            .map((t): ChangeSubject => ({ kind: 'held', todo: t })),
+                        );
                         setVisitSeen(new Set());
                         setMessage('Marked as seen.');
                         // The button leaves with its group: keep the keyboard in the drawer.
@@ -1495,6 +1595,36 @@ export function TodosDrawer() {
                   <ul className="drawer-list">{freshRows.map((t) => row(t, true))}</ul>
                 </Fold>
               ) : null}
+              {updatedRows.length > 0 ? (
+                <Fold
+                  key="updated"
+                  title="Updated"
+                  count={updatedRows.length}
+                  open={foldOpen('updated', true)}
+                  onToggle={(o) => setFold('updated', o)}
+                  action={
+                    <button
+                      type="button"
+                      className="btn"
+                      data-variant="quiet"
+                      data-size="small"
+                      onClick={() => {
+                        // Starred ones too, so no dot is left anywhere.
+                        markTodosLooked(
+                          updatedShown.map(({ todo }): ChangeSubject => ({ kind: 'held', todo })),
+                        );
+                        setVisitLooked(new Map());
+                        setMessage('Marked as seen.');
+                        scrollRef.current?.focus();
+                      }}
+                    >
+                      Mark all as seen
+                    </button>
+                  }
+                >
+                  <ul className="drawer-list">{updatedRows.map((t) => row(t, false))}</ul>
+                </Fold>
+              ) : null}
               {groups.map((g, i) => (
                 <Fold
                   // Only the top section starts open (below Favourites), so the list isn't overwhelming (Ian,
@@ -1504,7 +1634,9 @@ export function TodosDrawer() {
                   count={g.items.length}
                   open={foldOpen(
                     g.key,
-                    filtering || (freshRows.length === 0 && i === 0) || holdsRevealed(g.items),
+                    filtering ||
+                      (freshRows.length === 0 && updatedRows.length === 0 && i === 0) ||
+                      holdsRevealed(g.items),
                   )}
                   onToggle={(o) => setFold(g.key, o)}
                 >
@@ -1526,6 +1658,7 @@ export function TodosDrawer() {
           panel={panel}
           todo={panelTodo}
           asked={panelAsked}
+          newKeys={panelNewKeys}
           done={panelDone}
           doneLoading={doneSnap.list === null && doneSnap.error === null}
           teamTodo={panelTeamKey ? teamSnap.item : null}

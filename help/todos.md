@@ -6,7 +6,7 @@ order: 1
 summary: See what you and the team need to do, and tick things off.
 benefit: Nothing slips through the cracks, and everyone can see who's doing what.
 roles: all
-related: [home, talking-to-claude, skills, asked-of-others, task-updates]
+related: [home, talking-to-claude, skills, asked-of-others, task-updates, task-notices]
 since: 0.36.0
 reviewed: 2026-11-27
 ---

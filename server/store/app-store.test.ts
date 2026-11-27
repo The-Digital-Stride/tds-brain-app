@@ -56,6 +56,7 @@ describe('app store', () => {
       'levelMode',
       'model',
       'pins',
+      'todoLooked',
       'todoPanelOpen',
       'todoSeen',
       'tourSeen',
@@ -254,6 +255,7 @@ describe('app store', () => {
       todoPanelOpen: false,
       directWrites: true,
       todoSeen: {},
+      todoLooked: {},
       model: null,
       effort: null,
       levelMode: 'auto',
@@ -353,6 +355,57 @@ describe('app store', () => {
     expect(Object.keys((await store.update({ todoSeen: big })).todoSeen)).toHaveLength(500);
     const mixed = { ok: '2026-11-13T08:00:00Z', long: 'x'.repeat(41), n: 5 } as never;
     expect(Object.keys((await store.update({ todoSeen: mixed })).todoSeen)).toEqual(['ok']);
+  });
+
+  describe('todoLooked', () => {
+    const KEY = 'abcde12345f';
+    const mark = (seen: string, keys: string[] = [KEY]) => ({ keys, seen });
+
+    it('reads a file without it as an empty map, and replaces the whole map on a patch', async () => {
+      const dir = fresh();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'] }));
+      const store = createAppStore(dir, () => new Date('2026-11-27T12:00:00Z'));
+      expect((await store.get()).todoLooked).toEqual({});
+      await store.update({ todoLooked: { 'a.md': mark('2026-11-27T09:00:00Z') } });
+      const next = await store.update({ todoLooked: { 'b.md': mark('2026-11-27T10:00:00Z') } });
+      expect(Object.keys(next.todoLooked ?? {})).toEqual(['b.md']);
+      expect(Object.keys((await store.update({ pins: ['z'] })).todoLooked ?? {})).toEqual(['b.md']);
+    });
+
+    it('keeps only valid ids and valid markers, at most 500', async () => {
+      const store = createAppStore(fresh(), () => new Date('2026-11-27T12:00:00Z'));
+      const ok = mark('2026-11-27T09:00:00Z');
+      const mixed = {
+        'ok.md': ok,
+        '': ok,
+        [`${'k'.repeat(301)}.md`]: ok,
+        'bad-keys.md': { keys: ['short'], seen: '2026-11-27T09:00:00Z' },
+        'bad-seen.md': { keys: [], seen: 'yesterday' },
+        'extra.md': { keys: [], seen: '2026-11-27T09:00:00Z', more: 1 },
+        'str.md': 'x',
+      } as never;
+      expect(Object.keys((await store.update({ todoLooked: mixed })).todoLooked ?? {})).toEqual(['ok.md']);
+      const big: Record<string, unknown> = {};
+      for (let i = 0; i < 600; i++) big[`k${i}.md`] = ok;
+      expect(Object.keys((await store.update({ todoLooked: big as never })).todoLooked ?? {})).toHaveLength(
+        500,
+      );
+    });
+
+    it('prunes markers older than 30 days on every write', async () => {
+      const dir = fresh();
+      await createAppStore(dir, () => new Date('2026-11-27T12:00:00Z')).update({
+        todoLooked: {
+          'fresh.md': mark('2026-11-20T09:00:00Z'),
+          'old.md': mark('2026-10-01T09:00:00Z'),
+        },
+      });
+      const later = createAppStore(dir, () => new Date('2026-12-10T12:00:00Z'));
+      expect(Object.keys((await later.update({ pins: ['b'] })).todoLooked ?? {})).toEqual(['fresh.md']);
+      const much = createAppStore(dir, () => new Date('2027-01-30T12:00:00Z'));
+      expect((await much.update({ pins: ['c'] })).todoLooked).toEqual({});
+    });
   });
 
   it('reads an older prefs file as no model and no effort', async () => {

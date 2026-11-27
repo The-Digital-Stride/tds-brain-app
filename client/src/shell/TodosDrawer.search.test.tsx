@@ -13,6 +13,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { fakeShell } = await import('./todo-test-kit.tsx');
 
@@ -70,6 +71,7 @@ const fns = {
 
 function setStore(mine: TodoItem[], over: Partial<TodoList> = {}, seen: Record<string, string> = {}) {
   store.current = {
+    ...askedStoreFields,
     ...fns,
     heldTodos: [],
     completeTodo: vi.fn(),

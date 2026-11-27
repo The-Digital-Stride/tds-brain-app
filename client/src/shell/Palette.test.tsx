@@ -23,7 +23,7 @@ const api = vi.hoisted(() => ({
   startSession: vi.fn(),
   clientGuess: vi.fn(async () => ({ kind: 'none' })),
   close: vi.fn(),
-  updatePrefs: vi.fn(),
+  updatePrefs: vi.fn(() => new Promise(() => {})),
   librarySearch: vi.fn(),
   libraryScopes: vi.fn(),
   library: vi.fn(),

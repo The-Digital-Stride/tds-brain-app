@@ -35,6 +35,15 @@ describe('the tour keeps up with Cortex', () => {
     expect(Math.max(...Object.keys(TOUR_HISTORY).map(Number))).toBe(TOUR_VERSION);
   });
 
+  it('has the task-updates step, placed after Your tasks, and a history line for it', () => {
+    const ids = TOUR_STEPS.map((s) => s.id);
+    expect(ids.indexOf('task-updates')).toBe(ids.indexOf('todos') + 1);
+    const step = TOUR_STEPS.find((s) => s.id === 'task-updates');
+    expect(step?.text).toMatch(/updates, finishes or hands back/);
+    expect(TOUR_HISTORY[TOUR_VERSION]).toContain('task-updates');
+    expect(TOUR_HISTORY[TOUR_VERSION - 1]).not.toContain('task-updates');
+  });
+
   it('never reuses a step id', () => {
     const ids = TOUR_STEPS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);

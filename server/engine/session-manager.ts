@@ -816,6 +816,10 @@ export const FILES_LINE = `When you mention a file in the brain, give its whole 
 /** Wording only: the team says "tasks" for the brain's to-dos; nothing underneath is renamed. Instructions to Claude, never shown to a person. */
 export const TASKS_WORD_LINE = `The team calls to-dos 'tasks'. Say task or tasks to the person, and when they say task they mean a to-do in the brain. Underneath nothing is renamed: keep the \`todo/\` folder, the \`todo\` and \`tdsapp-todo\` skills and every path as they are. Ad Manager's scheduled tasks are a separate thing.`;
 
+/** A bare pipe splits a Markdown table cell, and the cells past the last column are dropped. */
+export const TABLES_LINE =
+  "In a Markdown table, write every `|` that belongs to a cell's text, such as one in a campaign name, as `\\|`, inside backticks too. Otherwise it splits the cell and values are lost.";
+
 /**
  * Email entries plan, overseer B1, as fixed after the security and correctness reviews: Claude never opens
  * the drafts folder or the approve keys. Only paths are checked (path fields, a Glob's pattern and the
@@ -1600,6 +1604,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         client && !project ? whichProjectLine(fields.openProjects) : null,
         FILES_LINE,
         TASKS_WORD_LINE,
+        TABLES_LINE,
         // Plan 2026-11-25-app-change-guards, decision 11.
         PUBLISH_LINE,
         APP_CODE_LINE,

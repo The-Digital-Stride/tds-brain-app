@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 import { Marked } from 'marked';
 import { memo, useMemo } from 'react';
 import { CHAT_FILE_HREF_PREFIX } from '../../shared/chat-files.ts';
+import { tableTokenizer } from './markdown-tables.ts';
 
 /** Maps a raw path from reply text to a chat file's key, or null when it is not one of the chat's files. */
 export type FileLinker = (raw: string) => string | null;
@@ -49,6 +50,7 @@ function fileHref(ctx: RenderContext, raw: string): string | null {
 // Local instance: the global `marked` is left alone. Returning false falls back to the default renderer.
 let inLink = false;
 const md = new Marked({
+  tokenizer: tableTokenizer,
   renderer: {
     link({ href, tokens }) {
       const ctx = current;

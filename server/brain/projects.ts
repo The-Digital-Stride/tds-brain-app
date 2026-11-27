@@ -87,6 +87,32 @@ export interface ProjectsIndex {
   resolve(value: string | null, client: string | null, scope: 'tds' | 'personal'): TodoProjectMatch;
   /** Project codes (R2 phase 4b): every card, live and archived; personal and duplicate refs resolve to nothing. */
   refs?: RefIndex;
+  /**
+   * Restricted projects (plan 2026-11-27, contract `ProjectsIndexAdds`). The real index always sets these
+   * three; they are optional only so a test's stand-in index needn't. Read them through `isHiddenPath` and
+   * `isHiddenKey` below, never directly.
+   */
+  hiddenPath?(brainRel: string): boolean;
+  hiddenKey?(key: ProjectKey): boolean;
+  hiddenCount?: number;
+}
+
+/** True when the path is, or is inside, a folder of a project this person can't see. */
+export const isHiddenPath = (index: ProjectsIndex, brainRel: string): boolean =>
+  index.hiddenPath ? index.hiddenPath(brainRel) : false;
+
+/** True for the key (or an old moved-from key) of a project this person can't see. */
+export const isHiddenKey = (index: ProjectsIndex, key: ProjectKey): boolean =>
+  index.hiddenKey ? index.hiddenKey(key) : false;
+
+/** The assign block's answer (contract `AssignAnswer`). */
+export type AssignAnswer = { ok: true } | { ok: false; why: 'outside'; name: string };
+
+/** A task's project label, client and scope as they will be after a change. */
+export interface TaskPlace {
+  project: string | null;
+  client: string | null;
+  scope: 'tds' | 'personal';
 }
 
 export interface ProjectsService {
@@ -119,6 +145,11 @@ export interface ProjectsService {
   applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Every open to-do in the project (UX B2): all TDS ones, whoever has them, and this person's own personal ones. */
   projectTodos(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
+  /**
+   * Restricted projects: may a task in this place be given to this person (slug; null = open to anyone)?
+   * Reads ALL cards and ignores who is asking (contract `ProjectsServiceAdds`).
+   */
+  assignCheck(place: TaskPlace, assignee: string | null): Promise<AssignAnswer>;
   /** Drops the caches (the watcher, and after a write). */
   changed(brainRel?: string): void;
 }
@@ -1319,6 +1350,8 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     tidy,
     applyTidy,
     projectTodos,
+    // Restricted projects: Builder S1 replaces this stand-in (contract `ProjectsServiceAdds.assignCheck`).
+    assignCheck: async () => ({ ok: true }),
     changed: () => changed(),
   };
 }

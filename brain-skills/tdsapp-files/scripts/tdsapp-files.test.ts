@@ -507,18 +507,20 @@ describe('delete', () => {
     }
   });
 
-  it('takes the role from git identity: clients for everyone on the team, templates for the owner', () => {
+  it('takes the role from git identity: clients for everyone on the team, templates for the owner and scouts', () => {
     put('templates/brief.docx');
+    put('templates/guide.docx');
     put('clients/acme/a.pdf');
     put('clients/acme/b.pdf');
     put('clients/acme/c.pdf');
-    // A scout who claims to be the owner on stdin is still a scout.
-    expectRefused(del('templates/brief.docx', { by: 'olive-owner', by_name: 'Olive Owner' }), 'not-allowed');
+    // A team member who claims to be the owner on stdin is still a team member.
     setEmail('tess@example.test');
+    expectRefused(del('templates/brief.docx', { by: 'olive-owner', by_name: 'Olive Owner' }), 'not-allowed');
     expectRefused(del('templates/brief.docx'), 'not-allowed');
     expect(del('clients/acme/a.pdf').exit).toBe(0);
+    // A head scout counts as a scout.
     setEmail('hal@example.test');
-    expectRefused(del('templates/brief.docx'), 'not-allowed');
+    expect(del('templates/guide.docx').exit).toBe(0);
     expect(del('clients/acme/b.pdf').exit).toBe(0);
     setEmail('stranger@example.test');
     expectRefused(del('clients/acme/c.pdf'), 'not-allowed');
@@ -540,7 +542,7 @@ describe('delete', () => {
     git(['config', 'user.name', 'Olive Owner']);
     expect(del('templates/a.pdf').exit).toBe(0);
     put('templates/b.pdf');
-    setEmail('sam@example.test');
+    setEmail('tess@example.test');
     expectRefused(del('templates/b.pdf'), 'not-allowed');
   });
 
@@ -730,6 +732,8 @@ describe('restore', () => {
       ['clients/acme/a.pdf', 'templates'],
       [42, 'client'],
     ];
+    // A team member: a record changed to say `templates` must not let them restore a template.
+    setEmail('tess@example.test');
     for (const [path, scope] of tries) {
       tamper(path, scope);
       const r = call('restore', { holding });
@@ -743,12 +747,12 @@ describe('restore', () => {
     expect(has('personal/a.pdf')).toBe(false);
   });
 
-  it('lets the owner restore a template but not a scout', () => {
+  it('lets the owner or a scout restore a template but not a team member', () => {
     setEmail('olive@example.test');
     const holding = deleted('templates/brief.pdf');
-    setEmail('sam@example.test');
+    setEmail('tess@example.test');
     expectRefused(call('restore', { holding }), 'not-allowed');
-    setEmail('olive@example.test');
+    setEmail('sam@example.test');
     expect(call('restore', { holding }).exit).toBe(0);
   });
 });

@@ -60,6 +60,7 @@ export type UploadDecision =
 function placeFor(
   target: UploadTarget,
   scopes: readonly LibraryScope[],
+  onTeam: boolean,
 ): { scope: LibraryScope; base: string } | UploadRefusal {
   const listed = (id: string, kind: LibraryScope['kind']) =>
     scopes.find((s) => s.id === id && s.kind === kind);
@@ -69,6 +70,8 @@ function placeFor(
       const scope = listed('personal', 'personal');
       return scope ? { scope, base: 'personal' } : 'not-allowed';
     }
+    // The script refuses a client file from someone not on the team list, so it is never offered.
+    if (!onTeam) return 'not-allowed';
     const slug = CLIENT_SCOPE.exec(target.scope)?.[1];
     const scope = slug ? listed(target.scope, 'client') : undefined;
     if (!slug || !scope || isNeverListed(`clients/${slug}`)) return 'not-allowed';
@@ -76,6 +79,8 @@ function placeFor(
   }
   const { card } = target;
   if (artifactRefusal(card)) return 'project-closed';
+  // ProjectList.canUploadFiles is one flag for every card, so no project upload for them at all.
+  if (!onTeam) return 'not-allowed';
   const slug = CLIENT_PROJECT.exec(card.folder)?.[1];
   if (slug) {
     const scope = card.space === 'client' ? listed(`client:${slug}`, 'client') : undefined;
@@ -92,12 +97,13 @@ function placeFor(
 /**
  * The one rule (overseer ruling 5). In order: the file's type (when `name` is given), this person's permission
  * (`mayAdd`: the files skill is there, its `roles:` allow them and it lists 'files-add-v1'), then the place. The
- * folder is picked by the file's own kind, whichever screen sent it (ruling 7).
+ * folder is picked by the file's own kind, whichever screen sent it (ruling 7). `onTeam` (default true) is
+ * false for someone not on the team list (`role: 'unknown'`): only their personal files take uploads.
  */
 export function decideUpload(
   target: UploadTarget,
   name: string | null,
-  ctx: { scopes: readonly LibraryScope[]; mayAdd: boolean },
+  ctx: { scopes: readonly LibraryScope[]; mayAdd: boolean; onTeam?: boolean },
 ): UploadDecision {
   let kind: LibraryKind | null = null;
   if (name !== null) {
@@ -106,7 +112,7 @@ export function decideUpload(
     if (!kind) return { ok: false, refusal: 'bad-type' };
   }
   if (!ctx.mayAdd) return { ok: false, refusal: 'not-allowed' };
-  const place = placeFor(target, ctx.scopes);
+  const place = placeFor(target, ctx.scopes, ctx.onTeam ?? true);
   if (typeof place === 'string') return { ok: false, refusal: place };
   const personal = place.base === 'personal';
   if (name === null || kind === null)
@@ -203,20 +209,27 @@ export function createLibraryUpload(root: string, deps: LibraryUploadDeps): Libr
     }
   };
 
+  const onTeam = (identity: Identity) => identity.role !== 'unknown';
+
   return {
     async canUpload(scope, identity) {
       if (typeof scope !== 'string') return false;
       const allowed = await mayAdd(identity);
-      return decideUpload({ scope }, null, { scopes: await scopes(), mayAdd: allowed }).ok;
+      return decideUpload({ scope }, null, {
+        scopes: await scopes(),
+        mayAdd: allowed,
+        onTeam: onTeam(identity),
+      }).ok;
     },
 
-    canUploadFiles: mayAdd,
+    canUploadFiles: async (identity) => onTeam(identity) && (await mayAdd(identity)),
 
     async save(input, identity, opts = {}) {
       const ext = extOf(input.name);
       if (!LIBRARY_UPLOAD_TYPES.includes(ext) || !classify(ext)) throw REFUSALS['bad-type']();
       const allowed = await mayAdd(identity);
       if (!allowed) throw REFUSALS['not-allowed']();
+      if ('project' in input && !onTeam(identity)) throw REFUSALS['not-allowed']();
       let card: ProjectCard | null = null;
       if ('project' in input) {
         let list: ProjectList;
@@ -235,6 +248,7 @@ export function createLibraryUpload(root: string, deps: LibraryUploadDeps): Libr
         {
           scopes: await scopes(),
           mayAdd: allowed,
+          onTeam: onTeam(identity),
         },
       );
       if (!decision.ok) throw REFUSALS[decision.refusal]();

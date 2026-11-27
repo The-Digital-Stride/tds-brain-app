@@ -40,7 +40,7 @@ Images shows the pictures in the Brain that you're allowed to see. You can brows
 - **Upload** opens your file chooser. Pick up to 10 files, 32 MB each: pictures, PDF, Word, Excel, PowerPoint, CSV, Markdown or text.
 - Pictures go in the chosen client's images folder. A PDF or other document goes to [Documents](help:documents) instead, and the message tells you.
 - In **My personal files**, uploads stay on this Mac only.
-- **Upload** shows only if you're allowed to add files. You can't drag files in.
+- Anyone on the team can upload. You can't drag files in.
 - You only see what your role lets you see.
 - You can download any picture.
 - Very large libraries may not list every file.

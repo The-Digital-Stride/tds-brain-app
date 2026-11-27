@@ -13,7 +13,7 @@ reviewed: 2026-11-27
 
 ## What it does
 
-Cortex tells you when a teammate does something to a task you care about. That means a task you hold, or one you asked someone else to do. It counts an update, a changed date, a new file or link, a hand back and a finished task.
+Cortex tells you when a teammate does something to a task you care about. That means a task you hold, or one you asked someone else to do. It counts an update, a changed date, a new file or link, a hand back, a pass-on to someone else and a finished task.
 
 ## Why it helps
 
@@ -37,6 +37,7 @@ Cortex tells you when a teammate does something to a task you care about. That m
 
 - Your own changes never count. Nor do personal tasks, because only you can change them.
 - A task that has just been given to you is under **New to you**, as before.
+- If someone passes on a task you asked them to do, it stays in **Asked** under the new person's name, and you are told.
 - A change shows for seven days, then it stops counting as new.
 - You hear about a change when your Brain syncs. That is not always straight away.
 - These notices are only in Cortex. Your Mac doesn't show a banner.

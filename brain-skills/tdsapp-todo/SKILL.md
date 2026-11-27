@@ -252,6 +252,12 @@ to save the details of a to-do with a long log until it is updated. An older scr
 The `todo` skill stays for one release as a stand-in: its script just runs this one, so an older
 copy of the app still works. Use `tdsapp-todo`.
 
+## Detail and checklists
+
+Every to-do you add carries its detail in `body` (what to do, why, and the source), and a to-do
+with more than one step uses `- [ ]` checklist items. Full rule: `todo/AGENTS.md`, "Detail and
+checklists". Send the detail with `add` and `edit`; don't leave the title to carry it.
+
 ## Changing to-dos by hand
 
 When you edit a to-do yourself rather than through the script, the rules in `todo/AGENTS.md` still

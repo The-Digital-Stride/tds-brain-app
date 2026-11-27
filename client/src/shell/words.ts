@@ -219,9 +219,17 @@ export function shortDayTime(iso: string): string {
   return `${at.getDate()} ${MONTHS[at.getMonth()]}, ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
+/**
+ * Since when the present holder has had an Asked task: when you asked, or, on one its holder has passed on
+ * (`passedOnAt`), when it reached whoever has it now ('' when nobody can say).
+ */
+function withSince(t: Pick<AskedTodo, 'asked' | 'passedOnAt'>): string {
+  return t.passedOnAt === undefined ? t.asked.at : (t.passedOnAt ?? '');
+}
+
 /** The asked-of-others row's second line: "With Ben McAdam · since 13 Nov", "Done by Ben McAdam · 14 Nov". */
 export function askedMeta(
-  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack'>,
+  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack' | 'passedOnAt'>,
 ): string {
   if (t.state === 'done') {
     const day = t.done ? shortDay(t.done.at) : '';
@@ -229,7 +237,7 @@ export function askedMeta(
     const who = first ? `Done by ${first}` : 'Done';
     return day ? `${who}, ${day}` : who;
   }
-  const day = shortDay(t.asked.at);
+  const day = shortDay(withSince(t));
   const first = t.assigneeName.split(/\s+/)[0] || t.assigneeName;
   // A task you handed back is the other person's again: it says so, not "With" them.
   if (t.handedBack === true) return day ? `Handed back to ${first}, ${day}` : `Handed back to ${first}`;
@@ -238,7 +246,7 @@ export function askedMeta(
 
 /** The panel's status line for an asked-of-others to-do. Names from git history say "(git history)". */
 export function askedStatusLine(
-  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack'>,
+  t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'handedBack' | 'passedOnAt'>,
 ): string {
   if (t.state === 'done') {
     const day = t.done ? shortDay(t.done.at) : '';
@@ -246,8 +254,9 @@ export function askedStatusLine(
     const tag = day && t.done?.source === 'history' ? ' (git history)' : '';
     return day ? `${who}, ${day}${tag}` : who;
   }
-  const day = shortDay(t.asked.at);
-  const tag = day && t.asked.source === 'history' ? ' (git history)' : '';
+  const day = shortDay(withSince(t));
+  // The tag is about the date you asked; a passed-on task shows another date, never one from git.
+  const tag = day && t.passedOnAt === undefined && t.asked.source === 'history' ? ' (git history)' : '';
   if (t.handedBack === true) {
     return day ? `Handed back to ${t.assigneeName}, ${day}${tag}` : `Handed back to ${t.assigneeName}`;
   }

@@ -432,6 +432,11 @@ export interface AskedTodo extends TodoTimelineFields, AskedTodoUpdateFields {
   details: string;
   /** When this person passed it on (or added it for them). */
   asked: TodoActor;
+  /**
+   * Only on a task this person asked for that its holder has since passed on: when it reached whoever has
+   * it now (ISO, from the task's own history or stamp, never git), or null when nobody can say. `asked` is still this person's own ask. Absent otherwise.
+   */
+  passedOnAt?: string | null;
   /** Who ticked it off and when; null while waiting. */
   done: TodoActor | null;
   /** The file's fingerprint, as TodoItem.version. */

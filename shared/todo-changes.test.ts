@@ -204,6 +204,24 @@ describe('todoChange: a task you asked someone to do', () => {
     expect(todoChange(now, ME, undefined, NOW)).toBeNull();
   });
 
+  it('the holder passing it on to someone else is news, and so is what the new holder does (follow-ups)', () => {
+    // The server keeps the row for the person who first asked; `asked` is still their own ask.
+    const subject = asked([
+      pass('2026-11-28T09:00:00+00:00', ME.name, 'passed it from sam-example to alex-sample', ME.slug),
+      pass(
+        '2026-11-30T10:00:00+00:00',
+        'Alex Sample',
+        'passed it from alex-sample to jo-owner',
+        'alex-sample',
+      ),
+      note('2026-11-30T11:00:00+00:00', 'jo-owner', 'On it.'),
+    ]);
+    const change = todoChange(subject, ME, undefined, NOW);
+    expect(change?.entries.map((e) => e.text)).toEqual(['On it.', 'passed it from alex-sample to jo-owner']);
+    const seen = lookedMark(subject, ME, NOW);
+    expect(todoChange(subject, ME, seen, NOW)).toBeNull();
+  });
+
   it('on a task you handed back, a note is news and an automatic line or pass-on is not', () => {
     const subject = asked(
       [

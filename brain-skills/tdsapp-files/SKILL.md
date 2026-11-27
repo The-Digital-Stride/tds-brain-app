@@ -1,9 +1,9 @@
 ---
 name: tdsapp-files
-description: Delete an image or document from the library the way TDS Cortex does, put a deleted file back, see what's been deleted, or add a new file to a client's (or your personal) Files or Images folder - through one small script that moves a deleted file into tdsapp-deleted/, keeps it for 30 days, then erases it, copies an added file in without overwriting anything, and writes every client delete, put-back, erase and add to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", "save this PDF to Acme's files", "add this image to the client's images", or asks to bin a client file or a template. Deletes: only client files (anyone on the team) and templates (the owner only). Not for to-dos (use tdsapp-todo). TDS Cortex also runs this script for its bin buttons, its daily clear-out and its to-do uploads.
+description: Delete an image or document from the library the way TDS Cortex does, put a deleted file back, see what's been deleted, or add a new file to a client's (or your personal) Files or Images folder - through one small script that moves a deleted file into tdsapp-deleted/, keeps it for 30 days, then erases it, copies an added file in without overwriting anything, and writes every client delete, put-back, erase and add to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", "save this PDF to Acme's files", "add this image to the client's images", or asks to bin a client file or a template. Deletes: only client files (anyone on the team) and templates (the owner and scouts). Not for to-dos (use tdsapp-todo). TDS Cortex also runs this script for its bin buttons, its daily clear-out and its to-do uploads.
 version: 0.4
 last_updated: 2026-11-23
-roles: owner, scout
+roles: owner, scout, team
 maturity: draft
 members: false
 agency: true
@@ -16,8 +16,7 @@ adds new files to the library. TDS Cortex runs it for the bin button on library 
 uploaded to a to-do, so a change made here or in the app comes out the same, and nothing else moves,
 adds or erases these files.
 
-It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to
-the team.
+Released to the whole team for the first release (Ian, 2026-11-25).
 
 ## How it works
 
@@ -110,7 +109,7 @@ It says no rather than guessing. For `delete` and `restore`:
   itself, and the places the library never lists (folders starting with a dot, `node_modules`,
   `clients/_…`, a client's `config/`, `crm/data/` and `context/google-ads/data/`), in any mix of
   capitals;
-- templates, unless you're the owner. Who you are comes from this Mac's git email (or name, when no
+- templates, unless you're the owner or a scout. Who you are comes from this Mac's git email (or name, when no
   email is set) in `.team-config/roles.json`, never from what the caller sends;
 - `CLAUDE.md`, `AGENTS.md` and `README.md` anywhere, and a client's `profile.md`;
 - deleting a project's own record inside `clients/<client>/projects/<project>/`: its card

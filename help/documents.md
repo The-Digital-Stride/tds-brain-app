@@ -38,7 +38,7 @@ Documents shows the files in the Brain that you're allowed to see. You can brows
 - A small grey label on each file says its type, such as PDF or DOCX.
 - **Upload** opens your file chooser. Pick up to 10 files, 32 MB each: pictures, PDF, Word, Excel, PowerPoint, CSV, Markdown or text.
 - Files are saved in the chosen client's library. In **My personal files**, they stay on this Mac only.
-- **Upload** shows only if you're allowed to add files. You can't drag files in.
+- Anyone on the team can upload. You can't drag files in.
 - You only see what your role lets you see.
 - PDFs, text, Markdown and web pages open inside the app.
 - Very large libraries may not list every file.

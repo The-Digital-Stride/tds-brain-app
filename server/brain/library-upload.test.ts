@@ -29,6 +29,14 @@ const sam: Identity = {
   knownMember: true,
 };
 const tess: Identity = { name: 'Tess Team', slug: 'tess-team', email: null, role: 'team', knownMember: true };
+/** Someone this Mac's git identity doesn't match on the team list. */
+const stranger: Identity = {
+  name: 'Someone',
+  slug: 'someone',
+  email: null,
+  role: 'unknown',
+  knownMember: false,
+};
 
 const SCOPES: LibraryScope[] = [
   { id: 'personal', name: 'My personal files', kind: 'personal' },
@@ -351,6 +359,37 @@ describe('createLibraryUpload: permission', () => {
     });
     expect(added).toEqual([]);
   });
+
+  it('lets anyone the skill roles allow upload, the whole team included', async () => {
+    const { service, added } = real(brain({ roles: 'owner, scout, team' }));
+    expect(await service.canUpload('client:acme-heating', tess)).toBe(true);
+    expect(await service.canUploadFiles(tess)).toBe(true);
+    expect((await service.save(scopeReq('client:acme-heating'), tess)).path).toBe(
+      'clients/acme-heating/files/quote.pdf',
+    );
+    expect(added).toEqual(['clients/acme-heating/files/quote.pdf']);
+  });
+
+  it('keeps someone not on the team list to their personal files, as the script does', async () => {
+    // The skill's roles let an unknown person through (they count as team there), but the script refuses
+    // them a client file, so no client or project upload is offered and none is tried.
+    const { service, added } = real(brain({ roles: 'owner, scout, team' }));
+    expect(await service.canUpload('client:acme-heating', stranger)).toBe(false);
+    expect(await service.canUploadFiles(stranger)).toBe(false);
+    expect(await refusal(service.save(scopeReq('client:acme-heating'), stranger))).toEqual({
+      code: 'not-allowed',
+      message: LIBRARY_UPLOAD_MESSAGES.notAllowed,
+    });
+    expect(await refusal(service.save(projectReq('acme-heating/web'), stranger))).toMatchObject({
+      code: 'not-allowed',
+    });
+    expect(await refusal(service.save(projectReq('personal/plan', 'pic.webp'), stranger))).toMatchObject({
+      code: 'not-allowed',
+    });
+    expect(added).toEqual([]);
+    expect(await service.canUpload('personal', stranger)).toBe(true);
+    expect((await service.save(scopeReq('personal'), stranger)).path).toBe('personal/files/quote.pdf');
+  });
 });
 
 describe('createLibraryUpload: save', () => {
@@ -555,32 +594,34 @@ describe('the flags and the request agree in every case', () => {
       (c) => c.key !== 'acme-heating/full' && c.key !== 'nobody/x' && c.key !== 'acme-heating/odd',
     ).map((c) => ({ project: c.key })),
   ];
-  const people = [
+  const people: { name: string; over: Parameters<typeof fake>[0]; who?: Identity }[] = [
     { name: 'allowed', over: {} },
     { name: 'no permission', over: { may: false } },
     { name: 'no add feature', over: { caps: ['files-delete-v1'] } },
     { name: 'projects locked', over: { canChange: false } },
+    { name: 'not on the team list', over: {}, who: stranger },
   ];
   for (const p of people) {
     for (const t of targets) {
       it(`${p.name}: ${JSON.stringify(t)}`, async () => {
         const f = fake(p.over);
+        const who = p.who ?? sam;
         let flag: boolean;
         if ('scope' in t) {
-          flag = await f.service.canUpload(t.scope, sam);
+          flag = await f.service.canUpload(t.scope, who);
         } else {
           // The project flag (list level, as the route sets it) and the per-card rule the contract gives the client.
           const c = CARDS.find((x) => x.key === t.project) as ProjectCard;
           flag =
             ((p.over as { canChange?: boolean }).canChange ?? true) &&
-            (await f.service.canUploadFiles(sam)) &&
+            (await f.service.canUploadFiles(who)) &&
             !c.archived &&
             c.card === 'ok' &&
             c.space !== 'legacy';
         }
         let saved: boolean;
         try {
-          await f.service.save('scope' in t ? scopeReq(t.scope) : projectReq(t.project), sam);
+          await f.service.save('scope' in t ? scopeReq(t.scope) : projectReq(t.project), who);
           saved = true;
         } catch (err) {
           if (!(err instanceof LibraryUploadError)) throw err;

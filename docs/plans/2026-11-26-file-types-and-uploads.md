@@ -264,3 +264,15 @@ Every finding was checked in code before it was acted on.
   upload, the narrowed case, and a 390px window.
 - **Help.** `help/documents.md`, `help/images.md`, `help/projects.md`, both grid pictures retaken,
   `help/whats-new/0.94.0.md`, Upload and badge rules in `docs/design-system.md`.
+
+## Follow-up (2026-11-27): who can upload
+
+- The Facts above (and the v0.94.0 report) took `roles: owner, scout` from the repo's copy of `tdsapp-files`.
+  The brain's own copy had been opened to the whole team on 2026-11-25 (`roles: owner, scout, team`, and
+  templates for the owner and scouts), so everyone on the team list already had Upload. The repo copy now
+  matches the brain, and its tests follow the brain's template rule.
+- Ian asked for uploads to be open to any user. One gap was left: someone whose Mac isn't matched on the team
+  list (`role: 'unknown'`) passes the skill's `roles:` (they count as team there) but the script refuses them a
+  client file, so Upload showed and always failed. `decideUpload` now takes `onTeam`: for them, only their
+  personal files take uploads, with no client or project upload offered (the same as the bin, which they
+  never get). Letting them add client files would mean changing the brain's script, which isn't done here.

@@ -109,7 +109,7 @@ const NAME_MAX = 80;
 const RECORD_MAX = 16384;
 const DEFAULT_VIA = 'tdsapp-files skill';
 const ERRORS = new Set(['bad-request', 'not-found', 'not-allowed', 'changed', 'exists', 'internal']);
-const ROLE_CAN = { client: new Set(['owner', 'scout', 'team']), templates: new Set(['owner']) };
+const ROLE_CAN = { client: new Set(['owner', 'scout', 'team']), templates: new Set(['owner', 'scout']) };
 const README_TEXT = [
   '# Deleted files',
   '',
@@ -241,7 +241,7 @@ function scopeOf(rel, role, restoring) {
   }
   if (!ROLE_CAN[scope].has(role)) {
     throw refuse('not-allowed', scope === 'templates'
-      ? 'only the owner can delete templates'
+      ? 'only the owner and scouts can delete templates'
       : 'only people on the team in .team-config/roles.json can delete client files');
   }
   return scope;

@@ -387,6 +387,25 @@ describe('Home', () => {
       expect(rows[0]?.textContent).toContain('You last worked on 20 Nov');
     });
 
+    it('marks a restricted project in the card, and an open one not', async () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({
+        projects: [
+          { ...card('northwind/secret', 'Secret job', '2026-11-24T09:00:00Z'), visibility: 'restricted' },
+          card('northwind/plain', 'Plain job', '2026-11-20T09:00:00Z'),
+        ],
+        duplicates: [],
+      });
+      await renderHome();
+      const section = (await screen.findByRole('heading', { name: 'Recent projects' })).closest('section');
+      if (!section) throw new Error('no card');
+      const rows = within(section).getAllByRole('listitem');
+      expect(
+        within(rows[0] as HTMLElement).getByText('Restricted: only its team, owners and scouts can see it'),
+      ).toBeTruthy();
+      expect(within(rows[1] as HTMLElement).queryByText(/^Restricted/)).toBeNull();
+    });
+
     it('is not shown when no project has been worked on', async () => {
       projectsStore.reset();
       api.projects.mockResolvedValue({ projects: [], duplicates: [] });
@@ -1313,6 +1332,19 @@ describe('Home: recent cards', () => {
       projectChoice.set('northwind/site');
       await renderHome();
       expect(await card('Recent tasks').findByText('No tasks of yours in this project.')).toBeTruthy();
+    });
+
+    it('says "Restricted project", never the client, on a task whose project is hidden from this person', async () => {
+      withTodos([
+        rtodo('mine.md', 'Book the room', '2026-11-20', {
+          client: 'northwind',
+          projectMatch: { how: 'restricted' },
+        }),
+      ]);
+      await renderHome();
+      const row = (await card('Recent tasks').findByText('Book the room')).closest('li') as HTMLElement;
+      expect(row.textContent).toContain('Restricted project');
+      expect(row.textContent).not.toContain('Northwind');
     });
 
     it('Working on narrows it', async () => {

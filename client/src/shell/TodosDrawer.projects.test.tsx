@@ -22,6 +22,9 @@ const { fakeShell } = await import('./todo-test-kit.tsx');
 const { projectsStore } = await import('../state/projects.ts');
 const { projectChoice, clientChoice } = await import('../state/client-choice.ts');
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
+const { looseProjectLabel, todoProjectKey } = await import('../state/todo-filter.ts');
+const { todoPlaceParts, todoProjectChip } = await import('../state/projects.ts');
+const { todoChatProject } = await import('../state/chat-project.ts');
 
 const SITE = card({ slug: 'site', client: 'acme', title: 'Website' });
 const SEO = card({ slug: 'seo', client: 'bolt', title: 'SEO audit' });
@@ -168,6 +171,47 @@ describe('project chips on rows', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Acme · Website' }));
     expect(tabs()).toEqual(['Mine, 1', 'Open, 0', 'Asked, 1', 'Done']);
     expect(screen.queryByText(/more belong to other people/)).toBeNull();
+  });
+});
+
+describe('a task in a project this person cannot see', () => {
+  it('says "Restricted project" in plain words: not a chip, button or link, and never a loose label', () => {
+    setStore([
+      todo('r1.md', 'Quiet job', { client: 'acme', projectMatch: { how: 'restricted' } }),
+      todo('m3.md', 'Ring the bank', { client: 'acme' }),
+    ]);
+    render(<TodosDrawer />);
+    const row = screen.getByText('Quiet job').closest('li') as HTMLElement;
+    expect(within(row).getByText('Restricted project')).toBeTruthy();
+    // The client is not named beside it, and nothing about the row can be pressed to filter by it.
+    expect(within(row).queryByText(/Acme/)).toBeNull();
+    expect(within(row).queryByRole('button', { name: /Restricted project/ })).toBeNull();
+    expect(within(row).queryByRole('link')).toBeNull();
+    expect(within(row).queryByRole('button', { name: /^Filter by project/ })).toBeNull();
+  });
+
+  it('reads as no project to the tidy-up and the chip rules', () => {
+    const t = { projectMatch: { how: 'restricted' as const }, project: null };
+    expect(looseProjectLabel(t)).toBeNull();
+    expect(todoProjectKey(t)).toBeNull();
+    expect(todoProjectChip(t, [SITE], [])).toBeNull();
+    expect(todoChatProject(t, [SITE])).toBeNull();
+    expect(todoPlaceParts({ client: 'acme', ...t }, [SITE], [{ slug: 'acme', name: 'Acme' }])).toEqual([
+      'Restricted project',
+    ]);
+  });
+
+  it('shows the same words on an Asked row', async () => {
+    api.askedTodos.mockResolvedValue({
+      waiting: [asked('a9.md', 'Hidden ask', { projectMatch: { how: 'restricted' } })],
+      done: [],
+      historyRead: true,
+    });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
+    const row = (await screen.findByText('Hidden ask')).closest('li') as HTMLElement;
+    expect(within(row).getByText('Restricted project')).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: /Restricted project|Filter by project/ })).toBeNull();
   });
 });
 

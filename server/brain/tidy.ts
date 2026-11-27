@@ -13,6 +13,7 @@ import {
   ProjectsError,
   type TidyRow,
   type TidySuggestion,
+  type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
 
 /** One open to-do as the tidy-up sees it (TDS, or this person's own personal one). */
@@ -33,6 +34,11 @@ export interface TidyContext {
   projects: Pick<ProjectCard, 'key' | 'slug' | 'client' | 'space'>[];
   /** Client folder slugs. */
   clients: string[];
+  /**
+   * How a label reads for this person (the projects index's `resolve`). Restricted projects: a label of a
+   * project they can't see answers 'restricted', so it is never a row. Missing: read against `projects`.
+   */
+  resolve?: (value: string | null, client: string | null, scope: 'tds' | 'personal') => TodoProjectMatch;
 }
 
 /** Template placeholders: cleared, never turned into a project. */
@@ -189,7 +195,9 @@ export function suggestTidy(label: string, todos: TidyTodo[], ctx: TidyContext):
 export function buildTidyRows(todos: TidyTodo[], ctx: TidyContext): ScopedTidyRow[] {
   const groups = new Map<string, { todo: TidyTodo; personalMatch: boolean }[]>();
   for (const t of todos) {
-    const m = resolveTodoProject(t.project, t.client, t.scope, ctx.projects, ctx.clients);
+    const m = ctx.resolve
+      ? ctx.resolve(t.project, t.client, t.scope)
+      : resolveTodoProject(t.project, t.client, t.scope, ctx.projects, ctx.clients);
     if (m.how !== 'legacy' && m.how !== 'client' && m.how !== 'loose') continue;
     const label = (t.project ?? '').trim();
     const personalMatch = m.how === 'legacy' && m.key.startsWith('personal/');

@@ -109,3 +109,14 @@ Copy straight after the merge, with `tdsapp-projects` 0.6.0 (Ian's standing yes 
 `r2-chat-summaries.md`: copy the `tdsapp-projects` 0.7.0 skill into the brain and add one sentence to
 `.claude/rules/save-locations.md` (a chat's summary is saved with Save to project, never by Claude). Copy
 straight after the merge (Ian's standing yes for R2); the checks are in the file.
+
+## Restricted projects (tdsapp-projects 0.9.0)
+
+`restricted-projects.md`: copy the `tdsapp-projects` 0.9.0 skill into the brain, then one paragraph for
+`clients/AGENTS.md` and one line for `todo/AGENTS.md`, so sessions outside TDS Cortex treat a restricted
+project's folder as the team's only. Apply only with Ian's yes, after the merge; the checks are in the file.
+
+| # | File here | Brain file | Check after applying |
+|---|---|---|---|
+| 18 | `restricted-projects.md` (edit 2) | `clients/AGENTS.md` | `grep -c "A restricted project" clients/AGENTS.md` is 1 |
+| 19 | `restricted-projects.md` (edit 3) | `todo/AGENTS.md` | `grep -c "Don't give a to-do in a restricted project" todo/AGENTS.md` is 1 |

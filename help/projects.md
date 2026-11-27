@@ -6,9 +6,9 @@ order: 3
 summary: See every project, who is on it, its tasks and its files, in one place.
 benefit: Know how each project is going without asking around.
 roles: all
-related: [project-chats, project-chat-list, project-emails, saving-chats-to-projects, project-codes, meetings, todos, documents, images, picking-the-client, home]
+related: [restricted-projects, project-chats, project-chat-list, project-emails, saving-chats-to-projects, project-codes, meetings, todos, documents, images, picking-the-client, home]
 since: 0.55.0
-reviewed: 2026-11-26
+reviewed: 2026-11-27
 ---
 
 ## What it does
@@ -37,15 +37,16 @@ Projects shows the team's work by client: each project's brief, team, tasks and 
 
 - **Since you last looked** keeps its changes until you press **Clear**.
 - **Meetings** shows your last and next meeting, on your Mac only. **File the notes** files them.
-- A client project's **Overview** shows key facts from the client's business file. It's changed in the brain, not here.
+- A client project's **Overview** shows key facts from the client's business file, which is changed in the brain.
 - A project without a card is read-only until you press **Add a card**.
 - Anyone who can edit a project can archive it. Only its Account Owner or the brain's Owner can delete it.
-- Anyone on the team can edit shared projects. Only the Account Owner, an owner or a scout can change the Account Owner.
-- Personal projects are only yours. A move can't make a project personal again.
+- Anyone on the team can edit shared projects. Only the Account Owner, an owner or a scout can change who that is.
+- Personal projects are only yours.
 - Delete is final for files only on this Mac. Deleted tasks can be restored; chats are kept.
 - Tidy-up changes teammates' tasks; one person runs it.
 - Update Cortex on every Mac before archiving.
 - Old brain skills make Projects read-only.
+- To hide a project, see [Restricted projects](help:restricted-projects).
 
 ## Try this
 

@@ -1015,6 +1015,10 @@ function parseProjectFields(v: unknown): ProjectFields {
       case 'billable':
         if (!(value === null || typeof value === 'boolean')) throw projectBad();
         break;
+      // Restricted projects (plan 2026-11-27): the script decides who may switch it.
+      case 'visibility':
+        if (value !== 'everyone' && value !== 'restricted') throw projectBad();
+        break;
       default:
         throw projectBad();
     }

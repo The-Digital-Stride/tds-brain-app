@@ -115,6 +115,20 @@ export function isProjectProtected(relFromRoot: string): boolean {
 }
 
 /**
+ * Restricted projects (plan 2026-11-27, decision 4): true for a path inside any shared project folder,
+ * live or archived: `clients/<c>/projects/`, `clients/<c>/projects-archive/`, `clients/_archive/<c>/projects/`,
+ * `projects/` and `projects-archive/`. Used only when the projects index can't be read, so a restricted
+ * project's files are hidden rather than shown while nobody can say which they are. Case is ignored.
+ */
+export function isInSharedProjectFolder(relFromRoot: string): boolean {
+  const segs = relFromRoot.toLowerCase().split('/');
+  if (segs[0] === 'projects' || segs[0] === 'projects-archive') return segs.length > 1;
+  if (segs[0] !== 'clients') return false;
+  if (segs[1] === '_archive') return segs[3] === 'projects' && segs.length > 4;
+  return (segs[2] === 'projects' || segs[2] === 'projects-archive') && segs.length > 3;
+}
+
+/**
  * True for a path (from the brain's root) that must never be listed or served: any empty, `.` or
  * `..` segment, any name starting with a dot, `node_modules`, `clients/_*`, personal to-dos
  * (`personal/todo/` and its done and deleted folders: the To-dos drawer shows those), and inside a client a

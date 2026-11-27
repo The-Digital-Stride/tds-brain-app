@@ -14,7 +14,7 @@ import {
   hasDeleteCapability,
 } from './files-skill.ts';
 import { checkHealth } from './health.ts';
-import { defaultRunner, type Runner, readIdentity } from './identity.ts';
+import { defaultRunner, type Runner, readIdentity, readMembers } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
 import { createLibraryUpload, type LibraryUploadService } from './library-upload.ts';
 import { createMyChanges } from './my-changes.ts';
@@ -23,7 +23,7 @@ import { createProjectArtifact, type ProjectArtifactService } from './project-ar
 import { createProjectBusiness, type ProjectBusinessService } from './project-business.ts';
 import { createProjectMeetings, type ProjectMeetingsService } from './project-meetings.ts';
 import { createProjectUpdates, type ProjectUpdatesService } from './project-updates.ts';
-import { createProjects } from './projects.ts';
+import { createProjects, type TaskPlace } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
 import { createQueue } from './skill-runner.ts';
 import { listSkills, skillAccess } from './skills.ts';
@@ -166,6 +166,15 @@ export function createBrainReaders(
       library.changed(from);
       library.changed(to);
     },
+    // Restricted projects (plan 2026-11-27, decision 3): the one person this server serves, and the roster.
+    viewer: () => readIdentity(root, run),
+    members: async () =>
+      (await readMembers(root)).flatMap((m) => {
+        if (typeof m.name !== 'string' || m.name.trim() === '') return [];
+        const own = (m as { slug?: unknown }).slug;
+        const slug = typeof own === 'string' && own.trim() !== '' ? own.trim() : memberSlug(m.name);
+        return [{ name: m.name, slug, role: typeof m.role === 'string' ? m.role : '' }];
+      }),
   });
   // Chat summaries: bound to the session manager's ownsChat once it exists (setHoldsChat below).
   let holdsChat: ((chatId: string) => Promise<boolean>) | null = null;
@@ -251,6 +260,13 @@ export function createBrainReaders(
   // One bridge per brain, so ads changes run one at a time; the in-flight file lives in the app's data folder.
   const ads = createAdsService(root, { ...deps.adsSkill, dataDir: deps.dataDir ?? null });
   const todoTimeline = createTodoTimeline(deps.todoLog);
+  // Restricted projects (contract, S2): a change builds its own list, so it gets the index too, and the
+  // assign block asks the projects service, which reads every card and ignores who is asking.
+  const todoChangeDeps = {
+    history: todoHistory,
+    projects: () => projects.index(),
+    assignCheck: (place: TaskPlace, assignee: string | null) => projects.assignCheck(place, assignee),
+  };
   const changeProject: NonNullable<SearchableBrain['changeProject']> = async (action, identity) => {
     if (action.kind === 'update' || action.kind === 'update-remove') {
       try {
@@ -308,21 +324,21 @@ export function createBrainReaders(
         filesCapabilities: () => filesSkill.capabilities(),
         projects: () => projects.index(),
       }),
-    completeTodo: (id, by) => completeTodo(root, id, by, now()),
+    // Restricted projects: ticking reads the index too, so a hidden project's task that isn't theirs is not found.
+    completeTodo: (id, by) => completeTodo(root, id, by, now(), { projects: () => projects.index() }),
     changeTodo: async (action, identity) => {
-      const outcome = await changeTodo(root, action, identity, todoSkill, { history: todoHistory });
+      const outcome = await changeTodo(root, action, identity, todoSkill, todoChangeDeps);
       // A to-do's project or stage moves its counts.
       projects.changed();
       return outcome;
     },
     completePersonalTodo: async (id, expect, by) => {
-      await changeTodo(root, { kind: 'tick', id, scope: 'personal', expect }, by, todoSkill, {
-        history: todoHistory,
-      });
+      await changeTodo(root, { kind: 'tick', id, scope: 'personal', expect }, by, todoSkill, todoChangeDeps);
     },
     uploadTodoFile: (req, identity) =>
       uploadTodoFile(root, req, identity, todoSkill, {
         history: todoHistory,
+        projects: () => projects.index(),
         clients: () => listClients(root),
         files: filesSkill,
         onSaved: (path) => {
@@ -334,7 +350,11 @@ export function createBrainReaders(
     doneTodos: (identity) =>
       listDoneTodos(root, identity, { log: doneLog, projects: () => projects.index() }),
     teamTodo: (id, identity) => readTeamTodo(root, id, identity.slug, { projects: () => projects.index() }),
-    todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
+    todoHistory: (key, identity) =>
+      todoTimeline.history(root, key, identity, {
+        projects: () => projects.index(),
+        asked: (who) => askedTodos.list(root, who, now(), () => projects.index()),
+      }),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));

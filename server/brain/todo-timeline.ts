@@ -7,6 +7,7 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import {
+  type AskedTodoList,
   type Identity,
   type TeamMember,
   TODO_HISTORY_MAX,
@@ -18,9 +19,20 @@ import {
 } from '../../shared/contract.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { GIT_MAX_PARALLEL, type GitLogRunner, runGit } from './todo-history.ts';
 import { todoChangeError } from './todo-skill.ts';
-import { authorSlug, dueOf, lower, readTeam, SAFE_ID } from './todos.ts';
+import {
+  authorSlug,
+  dueOf,
+  lower,
+  readTaskIndex,
+  readTeam,
+  SAFE_ID,
+  taskRule,
+  usableIndex,
+} from './todos.ts';
+import { readBytes } from './util.ts';
 
 export const HISTORY_MAX_OUTPUT = 512 * 1024;
 const KEY_MAX = 255;
@@ -385,8 +397,8 @@ async function isRealFile(path: string): Promise<boolean> {
   }
 }
 
-/** The to-do's file must exist (as a real file) where its key says, before git is asked anything. */
-async function fileExists(root: string, key: HistoryKey): Promise<boolean> {
+/** The to-do's file must exist (as a real file) where its key says, before git is asked anything. Its path, or null. */
+async function keyFile(root: string, key: HistoryKey): Promise<string | null> {
   const { id } = key;
   const places =
     key.kind === 'personal'
@@ -395,14 +407,58 @@ async function fileExists(root: string, key: HistoryKey): Promise<boolean> {
         ? [key.folder === 'done' ? join(root, 'todo', 'done', id) : join(root, 'todo', id)]
         : // A TodoItem key ticked since lives in done/ now.
           [join(root, 'todo', id), join(root, 'todo', 'done', id)];
-  for (const p of places) if (await isRealFile(p)) return true;
-  return false;
+  for (const p of places) if (await isRealFile(p)) return p;
+  return null;
 }
 
 const UNAVAILABLE: TodoHistoryResponse = { status: 'unavailable', events: [], more: false };
 
+/** What a history read may use to apply THE task rule. Both optional: without them, as before. */
+export interface TodoTimelineDeps {
+  /** The projects index (S1 wiring: `projects.index()`). */
+  projects?: () => Promise<ProjectsIndex>;
+  /** This person's Asked list, so a hidden project's task they asked for still opens from there. */
+  asked?: (identity: Identity) => Promise<AskedTodoList>;
+}
+
+/**
+ * THE task rule for a TDS task's history (plan 2026-11-27, decision 6): served only when the task is
+ * served to this person: assigned to them, or (an Asked key) on their Asked list.
+ */
+async function mayOpen(
+  path: string,
+  key: HistoryKey,
+  identity: Identity,
+  deps: TodoTimelineDeps,
+): Promise<boolean> {
+  const read = await readTaskIndex(deps.projects);
+  if (read === null) return true;
+  const bytes = await readBytes(path);
+  if (bytes === null) return false;
+  const { data } = parseFrontmatter(bytes.toString('utf8'));
+  const project = asString(data.project).trim() || null;
+  const client = asString(data.client).trim() || null;
+  const written = lower(data.assignee);
+  const mine = identity.slug !== '' && written === identity.slug;
+  const projectMatch = usableIndex(read)?.resolve(project, client, 'tds');
+  if (taskRule(read, { project, projectMatch }, mine) !== 'hide') return true;
+  if (key.kind !== 'asked' || !deps.asked) return false;
+  const state = key.folder === 'done' ? 'done' : 'waiting';
+  try {
+    const list = await deps.asked(identity);
+    return [...list.waiting, ...list.done].some((t) => t.id === key.id && t.state === state);
+  } catch {
+    return false;
+  }
+}
+
 export interface TodoTimeline {
-  history(root: string, key: string, identity: Identity): Promise<TodoHistoryResponse>;
+  history(
+    root: string,
+    key: string,
+    identity: Identity,
+    deps?: TodoTimelineDeps,
+  ): Promise<TodoHistoryResponse>;
 }
 
 export function createTodoTimeline(run: GitLogRunner = runGit): TodoTimeline {
@@ -428,11 +484,14 @@ export function createTodoTimeline(run: GitLogRunner = runGit): TodoTimeline {
   };
 
   return {
-    async history(root, rawKey, _identity) {
+    async history(root, rawKey, identity, deps = {}) {
       const key = parseHistoryKey(rawKey);
       if (!key) throw new TodoChangeError('bad-request', BAD_KEY);
-      if (!(await fileExists(root, key))) throw todoChangeError('not-found');
+      const path = await keyFile(root, key);
+      if (path === null) throw todoChangeError('not-found');
       if (key.kind === 'personal') return { status: 'personal', events: [], more: false };
+      // A hidden project's task that isn't served to this person is answered as one that isn't there.
+      if (!(await mayOpen(path, key, identity, deps))) throw todoChangeError('not-found');
       let head: string;
       try {
         head = (await run(['rev-parse', 'HEAD'], root)).stdout.trim();

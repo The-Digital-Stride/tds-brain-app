@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { createLibrary, type LibraryOptions } from './library.ts';
+import type { ProjectsIndex } from './projects.ts';
 
 const temps: string[] = [];
 afterAll(() => {
@@ -201,5 +202,90 @@ describe('library search', () => {
     await new Promise((d) => setTimeout(d, 200));
     expect(walked).toBe(9);
     expect(peak).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('library search: restricted projects (plan 2026-11-27, decision 5)', () => {
+  const SECRET = 'clients/acme/projects/secret';
+  const hiding =
+    (folder: string): (() => Promise<ProjectsIndex>) =>
+    async () => ({
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: () => ({ how: 'none' }),
+      hiddenPath: (rel) => rel.toLowerCase().startsWith(`${folder}/`),
+      hiddenKey: () => false,
+      hiddenCount: 1,
+    });
+  const files = {
+    [`${SECRET}/launch-plan.md`]: '# Launch plan',
+    'clients/acme/projects/web/launch-notes.md': '# Launch notes',
+    'clients/acme/reports/launch-report.md': '# Launch report',
+    'projects/old-site/launch-old.md': '# Launch old',
+  };
+
+  it("never finds a hidden project's files, and doesn't count them", async () => {
+    const root = brain(files);
+    const found = await lib(root, { projects: hiding(SECRET) }).search('launch', 'document');
+    expect(found.hits.map((h) => h.item.name).sort()).toEqual([
+      'launch-notes.md',
+      'launch-old.md',
+      'launch-report.md',
+    ]);
+    expect(found.total).toBe(3);
+  });
+
+  it("finds no project folder's files when the index can't be read", async () => {
+    const root = brain(files);
+    const l = lib(root, {
+      projects: async () => {
+        throw new Error('no index');
+      },
+    });
+    expect(await ids(l, 'launch')).toEqual(['launch-report.md']);
+  });
+
+  it('finds the same as before when nothing is hidden', async () => {
+    const root = brain(files);
+    const none = await lib(root).search('launch', 'document');
+    const open = await lib(root, { projects: hiding('nowhere') }).search('launch', 'document');
+    expect(open.hits.map((h) => h.item.path)).toEqual(none.hits.map((h) => h.item.path));
+  });
+
+  describe('call notes filed outside the project folder', () => {
+    const notes = {
+      'clients/acme/call-notes/2026-11-01-launch-secret.md': '---\nproject: secret\n---\n# Launch secret\n',
+      'clients/acme/call-notes/2026-11-02-launch-web.md': '---\nproject: acme/web\n---\n# Launch web\n',
+      'clients/acme/call-notes/2026-11-03-launch-plain.md': '# Launch plain\n',
+    };
+    const index =
+      (restricted: boolean): (() => Promise<ProjectsIndex>) =>
+      async () => ({
+        ...(await hiding(SECRET)()),
+        resolve: (value, client) =>
+          restricted && (value === 'secret' || value === `${client}/secret`)
+            ? { how: 'restricted' }
+            : { how: 'none' },
+      });
+
+    it("never finds a hidden project's notes for an outsider, and finds them for someone who can see it", async () => {
+      const root = brain(notes);
+      expect((await ids(lib(root, { projects: index(true) }), 'launch')).sort()).toEqual([
+        '2026-11-02-launch-web.md',
+        '2026-11-03-launch-plain.md',
+      ]);
+      expect(await ids(lib(root, { projects: index(false) }), 'launch')).toHaveLength(3);
+    });
+
+    it("finds only untagged notes when the index can't be read", async () => {
+      const root = brain(notes);
+      const l = lib(root, {
+        projects: async () => {
+          throw new Error('no index');
+        },
+      });
+      expect(await ids(l, 'launch')).toEqual(['2026-11-03-launch-plain.md']);
+    });
   });
 });

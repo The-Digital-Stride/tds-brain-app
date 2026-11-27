@@ -287,5 +287,12 @@
     "crop": ".sheet-scroll",
     "pad": 0,
     "alt": "The Cortex Guide, with the contents on the left and a page on the right."
+  },
+  {
+    "id": "restricted-projects",
+    "scene": "restricted-projects",
+    "crop": "section.card:has(.restricted-badge)",
+    "pad": 6,
+    "alt": "The project list, with a Restricted mark beside one project's title."
   }
 ]

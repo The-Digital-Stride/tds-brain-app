@@ -1,6 +1,7 @@
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture } from './test-helpers.ts';
 import { readTeamTodo } from './todo-team.ts';
 
@@ -61,5 +62,46 @@ describe('readTeamTodo', () => {
     ]) {
       expect(await readTeamTodo(root, id, 'sam-example'), id).toBeNull();
     }
+  });
+});
+
+describe('readTeamTodo: restricted projects (plan 2026-11-27, decision 6)', () => {
+  const SECRET = 'acme-heating/secret';
+  const index: ProjectsIndex = {
+    cards: [],
+    byKey: () => null,
+    keysForPath: () => [],
+    resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+    hiddenPath: (rel) => rel.startsWith('clients/acme-heating/projects/secret/'),
+    hiddenKey: (key) => key === SECRET,
+    hiddenCount: 1,
+  };
+  const task = (assignee: string) =>
+    fm([`assignee: ${assignee}`, 'client: acme-heating', `project: ${SECRET}`, 'stage: Build'], 'Words\n');
+
+  it("is not found for a teammate's task in a hidden project, and masked for one's own", async () => {
+    const root = copyFixture();
+    writeFileSync(join(root, 'todo', '20261120-alex.md'), task('alex-sample'));
+    writeFileSync(join(root, 'todo', '20261120-sam.md'), task('sam-example'));
+    const projects = async () => index;
+    expect(await readTeamTodo(root, '20261120-alex.md', 'sam-example', { projects })).toBeNull();
+    expect(await readTeamTodo(root, '20261120-sam.md', 'sam-example', { projects })).toMatchObject({
+      project: null,
+      stage: null,
+      projectMatch: { how: 'restricted' },
+    });
+    // Without an index the task reads as before.
+    expect(await readTeamTodo(root, '20261120-alex.md', 'sam-example')).toMatchObject({ project: SECRET });
+  });
+
+  it("is not found for a project-labelled teammate's task when the index can't be read", async () => {
+    const root = copyFixture();
+    writeFileSync(join(root, 'todo', '20261120-alex.md'), task('alex-sample'));
+    writeFileSync(join(root, 'todo', '20261120-plain.md'), fm(['assignee: alex-sample'], 'Words\n'));
+    const projects = async (): Promise<ProjectsIndex> => {
+      throw new Error('no index');
+    };
+    expect(await readTeamTodo(root, '20261120-alex.md', 'sam-example', { projects })).toBeNull();
+    expect(await readTeamTodo(root, '20261120-plain.md', 'sam-example', { projects })).not.toBeNull();
   });
 });

@@ -208,6 +208,17 @@ describe('buildTidyRows', () => {
     expect(rows[0]?.todos.map((t) => t.scope)).toEqual(['tds']);
     expect(rows[0]?.suggestion.do).toBe('new-project');
   });
+
+  it("never rows a restricted label: the index's resolve says so (restricted projects, decision 6)", () => {
+    // `client-portal` stands for a project hidden from this person: the projects index answers 'restricted'.
+    const ctx: TidyContext = {
+      ...CTX,
+      resolve: (value) =>
+        value === 'client-portal' ? { how: 'restricted' } : { how: 'loose', label: value ?? '' },
+    };
+    const rows = buildTidyRows([todo('client-portal'), todo('client-portal'), todo('os')], ctx);
+    expect(rows.map((r) => r.label)).toEqual(['os']);
+  });
 });
 
 describe('checkSuggestion and tidyTarget (a changed suggestion is checked again)', () => {

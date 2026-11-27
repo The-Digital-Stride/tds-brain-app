@@ -7,6 +7,7 @@
  */
 import type { DoneTodo, PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { foldRef, refCandidates } from '../../../shared/project-refs.ts';
+import { isRestricted } from '../../../shared/project-visibility.ts';
 import { dueInWords } from '../format.ts';
 import { helpLibrary } from '../help/library.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
@@ -306,6 +307,7 @@ const projects: SearchSource = {
         label: projectText(p, ctx.clients),
         hint: 'Open project',
         icon: 'bullets',
+        ...(isRestricted(p) ? { restricted: true } : {}),
         run: (a) => {
           // The Projects app reads the request when it shows (or is already showing).
           projectPageRequest.set(p.key);
@@ -319,6 +321,7 @@ const projects: SearchSource = {
         label: projectText(p, ctx.clients),
         hint: 'Filter to this project',
         icon: 'bullets',
+        ...(isRestricted(p) ? { restricted: true } : {}),
         run: (a) => a.filterToProject?.(p.key),
       }),
     ),

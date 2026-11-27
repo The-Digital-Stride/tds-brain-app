@@ -24,20 +24,28 @@ import {
   type TodoSkillAccess,
 } from '../../shared/contract.ts';
 import { FilesChangeError, PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
+import { outsideProjectNote } from '../../shared/project-visibility.ts';
 import {
   LEGACY_PROJECTS_SCOPE,
   PROJECT_KEY_PATTERN,
   PROJECT_STAGE_MAX,
   TODO_PROJECT_CAPABILITY,
+  type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
 import { parseTodoFiles, resolveTodoFilePath, splitTodoFiles } from '../../shared/todo-files.ts';
 import { stampDone } from './done-record.ts';
 import { FILES_ADD_CAPABILITY, FILES_SKILL, type FilesSkillRunner, findFilesSkill } from './files-skill.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
-import { idFor } from './library.ts';
-import { classify, extOf, isHiddenInTemplates, isNeverListed } from './library-rules.ts';
-import type { ProjectsIndex } from './projects.ts';
+import { idFor, isHiddenCallNote } from './library.ts';
+import {
+  classify,
+  extOf,
+  isHiddenInTemplates,
+  isInSharedProjectFolder,
+  isNeverListed,
+} from './library-rules.ts';
+import { type AssignAnswer, isHiddenPath, type ProjectsIndex, type TaskPlace } from './projects.ts';
 import { skillAccess } from './skills.ts';
 import type { GitAuthor, TodoHistory } from './todo-history.ts';
 import {
@@ -114,6 +122,57 @@ function stampHandover(
 }
 
 // ---------------------------------------------------------------------------
+// Restricted projects (plan 2026-11-27-restricted-projects, decision 6). THE task rule, applied by every
+// reader and every change: a task whose project is hidden from this person is served, opened or changed
+// only when it is assigned to them (Asked: only when they asked for it). It then carries
+// `projectMatch: { how: 'restricted' }` with `project` and `stage` null, so nothing sent names the project.
+// ---------------------------------------------------------------------------
+
+/** The projects index as the to-do readers have it: null when none was given, 'unread' when it failed. */
+export type TaskIndex = ProjectsIndex | 'unread' | null;
+
+/** Reads the index once for one answer. A failure is kept as 'unread' so the rule can fail closed. */
+export async function readTaskIndex(projects?: () => Promise<ProjectsIndex>): Promise<TaskIndex> {
+  if (!projects) return null;
+  try {
+    return await projects();
+  } catch {
+    return 'unread';
+  }
+}
+
+/** The index to resolve labels with, or null. */
+export const usableIndex = (index: TaskIndex): ProjectsIndex | null => (index === 'unread' ? null : index);
+
+/**
+ * What the rule does with one task. `allowed`: it is assigned to this person (Asked: they asked for it).
+ * With an unreadable index nobody can say which projects are hidden, so a project-labelled task that
+ * isn't allowed is hidden rather than shown (decision 4). No index given (tests, older wiring): shown.
+ */
+export function taskRule(
+  index: TaskIndex,
+  task: { project?: string | null; projectMatch?: TodoProjectMatch },
+  allowed: boolean,
+): 'show' | 'mask' | 'hide' {
+  if (index === null) return 'show';
+  if (index === 'unread') return (task.project ?? null) !== null && !allowed ? 'hide' : 'show';
+  if (task.projectMatch?.how !== 'restricted') return 'show';
+  return allowed ? 'mask' : 'hide';
+}
+
+/** A served task in a hidden project: its own `project` and `stage` would name it, so both go. */
+export function maskTask<T extends { project?: string | null }>(task: T): T {
+  return { ...task, project: null, ...('stage' in task ? { stage: null } : {}) };
+}
+
+/** Which brain paths are a hidden project's: none without an index, every project folder when it failed. */
+export function hiddenPathOf(index: TaskIndex): (rel: string) => boolean {
+  if (index === null) return () => false;
+  if (index === 'unread') return isInSharedProjectFolder;
+  return (rel) => isHiddenPath(index, rel);
+}
+
+// ---------------------------------------------------------------------------
 // Files on to-dos (plan 2026-11-16-todo-attachments, decisions 1 and 7). Read only: the brain's
 // `tdsapp-todo` skill is the only writer of the `## Files` section.
 // ---------------------------------------------------------------------------
@@ -160,10 +219,13 @@ async function isListableFile(root: string, realRoot: string, path: string): Pro
  * `libraryId` is the library's own id (`<scope id>.<hash of the path>`, `idFor`), worked out without
  * walking the library: only files that are there and listable get one, and a `personal/` file only
  * when its holder is `me` (overseer S3). One reader per listing: the brain's real path is read once.
+ * `hidden` (restricted projects): a file in a hidden project's folder gets no `libraryId`, as the library
+ * won't open it.
  */
 export function createAttachmentReader(
   root: string,
   me: string,
+  hidden: (rel: string) => boolean = () => false,
 ): (body: string) => Promise<TodoAttachment[]> {
   let realRoot: Promise<string | null> | null = null;
   const real = () => {
@@ -177,7 +239,8 @@ export function createAttachmentReader(
       links.map(async (link): Promise<TodoAttachment> => {
         const personal = link.path.startsWith('personal/');
         const scope = libraryScopeOf(link.path);
-        const mayOpen = scope !== null && (!personal || (me !== '' && link.holder === me));
+        const mayOpen =
+          scope !== null && (!personal || (me !== '' && link.holder === me)) && !hidden(link.path);
         const base = mayOpen ? await real() : null;
         const listed = base !== null && (await isListableFile(root, base, link.path));
         return {
@@ -256,13 +319,9 @@ async function readFolder(
   return items;
 }
 
-async function readAll(
-  root: string,
-  me: string,
-  team: TeamMember[],
-  projects: ProjectsIndex | null,
-): Promise<TodoItem[]> {
-  const attachments = createAttachmentReader(root, me);
+async function readAll(root: string, me: string, team: TeamMember[], index: TaskIndex): Promise<TodoItem[]> {
+  const attachments = createAttachmentReader(root, me, hiddenPathOf(index));
+  const projects = usableIndex(index);
   const [tds, personal] = await Promise.all([
     readFolder(root, 'tds', me, team, attachments, projects),
     readFolder(root, 'personal', me, team, attachments, projects),
@@ -403,17 +462,30 @@ export async function listTodos(
   identity: Identity,
   deps: TodoListDeps = {},
 ): Promise<TodoList> {
+  return (await buildTodoList(root, identity, deps)).list;
+}
+
+/**
+ * The list as served, plus what a change needs behind it: each served task as its file says (by key,
+ * before masking, so the assign block sees a hidden project's real label) and the index it was read with.
+ */
+async function buildTodoList(
+  root: string,
+  identity: Identity,
+  deps: TodoListDeps,
+): Promise<{ list: TodoList; files: Map<string, TodoItem>; index: TaskIndex }> {
   const [team, access] = await Promise.all([readTeam(root), changeAccess(root, identity)]);
-  let index: ProjectsIndex | null = null;
-  if (deps.projects) {
-    try {
-      index = await deps.projects();
-    } catch {
-      index = null;
-    }
-  }
-  const items = await readAll(root, identity.slug, team, index);
+  const index = await readTaskIndex(deps.projects);
   const isMine = (t: TodoItem) => t.assignee !== null && t.assignee === identity.slug;
+  // THE task rule before anything is counted: a hidden task isn't mine, open or among other people's.
+  const files = new Map<string, TodoItem>();
+  const items: TodoItem[] = [];
+  for (const t of await readAll(root, identity.slug, team, index)) {
+    const seen = taskRule(index, t, isMine(t));
+    if (seen === 'hide') continue;
+    files.set(t.key, t);
+    items.push(seen === 'mask' ? maskTask(t) : t);
+  }
   const history = deps.history;
   // Uncached git lookups are capped per call; the rest wait for a later load (their nulls aren't cached).
   let budget = HISTORY_LOOKUPS_PER_LIST;
@@ -450,7 +522,7 @@ export async function listTodos(
   }
   const canAttach = features.includes(TODO_ATTACH_CAPABILITY);
   const canUpload = canAttach && (await canUseFilesAdd(root, identity, deps.filesCapabilities));
-  return {
+  const list: TodoList = {
     mine,
     open,
     othersCount: tdsOthers,
@@ -462,6 +534,7 @@ export async function listTodos(
     canUpload,
     canProject: features.includes(TODO_PROJECT_CAPABILITY),
   };
+  return { list, files, index };
 }
 
 // ---------------------------------------------------------------------------
@@ -594,23 +667,107 @@ export interface TodoChangeResult {
 
 const keyOf = (scope: TodoScope, id: string) => (scope === 'personal' ? `personal/${id}` : id);
 
+/** What `changeTodo` may use beyond the brain's files. */
+export interface TodoChangeDeps extends Pick<TodoListDeps, 'history' | 'projects'> {
+  /**
+   * Restricted projects (decision 7): may a task in this place be given to this person? Asked before the
+   * script runs for `add`, `assignee`, `project` and `move` to TDS. Missing (tests, older wiring): no block.
+   */
+  assignCheck?: (place: TaskPlace, assignee: string | null) => Promise<AssignAnswer>;
+}
+
+/**
+ * The assign block (decision 7): the task's place and person as they will be after the change, read from
+ * the task's file where the action doesn't set them. Null when the change can't put a task anywhere new.
+ */
+function placeAfter(
+  action: TodoAction | TodoTickAction,
+  file: TodoItem | null,
+): { place: TaskPlace; assignee: string | null } | null {
+  switch (action.kind) {
+    case 'add':
+      return {
+        place: {
+          project: action.project ?? null,
+          client: action.client ?? null,
+          scope: action.scope ?? 'tds',
+        },
+        assignee: action.assignee,
+      };
+    case 'assignee':
+      return file
+        ? {
+            place: { project: file.project, client: file.client, scope: file.scope },
+            assignee: action.assignee,
+          }
+        : null;
+    case 'project':
+      return file
+        ? {
+            place: { project: action.project, client: action.client, scope: file.scope },
+            assignee: file.assignee,
+          }
+        : null;
+    case 'move':
+      if (action.to !== 'tds' || !file) return null;
+      return {
+        place: { project: action.dropProject ? null : file.project, client: file.client, scope: 'tds' },
+        assignee: file.assignee,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Refuses, before the script runs, a change that would point a task at a project this person can't see
+ * (as the script refuses one that doesn't exist: `bad-request`) or leave a restricted project's task with
+ * someone who can't see it (`not-allowed`, with the note the form shows). An index or check that can't be
+ * read refuses rather than guesses.
+ */
+async function assignBlock(
+  action: TodoAction | TodoTickAction,
+  file: TodoItem | null,
+  index: TaskIndex,
+  check: TodoChangeDeps['assignCheck'],
+): Promise<void> {
+  const after = placeAfter(action, file);
+  if (!after || after.place.project === null) return;
+  if (action.kind === 'add' || action.kind === 'project') {
+    if (index === 'unread') throw todoChangeError('internal');
+    const match = index?.resolve(after.place.project, after.place.client, after.place.scope);
+    if (match?.how === 'restricted') throw todoChangeError('bad-request');
+  }
+  // Open to anyone is always allowed: whoever takes it is checked when it is passed to them.
+  if (!check || after.assignee === null) return;
+  let answer: AssignAnswer;
+  try {
+    answer = await check(after.place, after.assignee);
+  } catch {
+    throw todoChangeError('internal');
+  }
+  if (!answer.ok) throw new TodoChangeError('not-allowed', outsideProjectNote(answer.name));
+}
+
 /**
  * One change, run by the brain's `todo` skill script. Refuses `not-allowed` unless `changes` is
  * 'on' (and, for anything personal, `canUsePersonal`), `bad-request` for values outside the
  * Workbench's rules (and personal changes without `expect`), `not-found` for an id that is
- * not listed for this person in that scope (theirs or open) and `changed` when `expect` is not the
- * listed version, all before anything runs.
+ * not listed for this person in that scope (theirs or open; THE task rule leaves out a hidden project's
+ * task that isn't theirs), `changed` when `expect` is not the listed version, and the assign block, all
+ * before anything runs.
  */
 export async function changeTodo(
   root: string,
   action: TodoAction | TodoTickAction,
   identity: Identity,
   runner: TodoSkillRunner,
-  deps: Pick<TodoListDeps, 'history'> = {},
+  deps: TodoChangeDeps = {},
 ): Promise<TodoChangeResult> {
-  const list = await listTodos(root, identity, {
+  const { list, files, index } = await buildTodoList(root, identity, {
     history: deps.history,
     capabilities: () => runner.capabilities(),
+    projects: deps.projects,
   });
   if (list.changes !== 'on') throw todoChangeError('not-allowed');
   if (typeof action !== 'object' || action === null) throw todoChangeError('bad-request');
@@ -636,15 +793,18 @@ export async function changeTodo(
     if (action.kind === 'add' && action.assignee !== identity.slug) throw todoChangeError('bad-request');
     if ('id' in action && action.expect === undefined) throw todoChangeError('bad-request');
   }
+  let onDisk: TodoItem | null = null;
   if ('id' in action) {
     const scope: TodoScope = action.scope ?? 'tds';
     const listed = [...list.mine, ...list.open].find((t) => t.id === action.id && t.scope === scope);
     if (!listed) throw todoChangeError('not-found');
+    // The task as its file says: a served task in a hidden project has its label masked.
+    onDisk = files.get(listed.key) ?? listed;
     if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
-    if (action.kind === 'attach') await checkAttach(root, listed, action.path);
+    if (action.kind === 'attach') await checkAttach(root, listed, action.path, index);
     // An older script (no canProject) moves the bytes as they are, so a private project's name would
     // reach todo/: refuse while the to-do is in one (decision 8; overseer sign-off, should 2).
-    if (action.kind === 'move' && action.to === 'tds' && !list.canProject && inPersonalProject(listed)) {
+    if (action.kind === 'move' && action.to === 'tds' && !list.canProject && inPersonalProject(onDisk)) {
       throw new TodoChangeError('not-allowed', TODO_PRIVATE_PROJECT_MESSAGE);
     }
     // A browser that saw canAttach sends details without the Files section and says so. If this check
@@ -660,6 +820,7 @@ export async function changeTodo(
       throw todoChangeError('changed');
     }
   }
+  await assignBlock(action, onDisk, index, deps.assignCheck);
   // An older script would ignore `body` on add; the server only sends it when canAttach (decision 6).
   let run: TodoRunAction = action;
   if (action.kind === 'add' && action.details !== undefined && !list.canAttach) {
@@ -696,8 +857,13 @@ export function savedNotLinkedMessage(path: string): string {
   return `The file was saved to the library at ${path}, but it couldn't be linked to this task. Add it from the library instead.`;
 }
 
-/** Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it. */
-async function checkAttach(root: string, listed: TodoItem, path: string): Promise<void> {
+/**
+ * Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it.
+ * Restricted projects: a hidden project's file (in its folder, or a call note naming it) gets the very
+ * answer a missing file gets, so a guessed path never confirms that a hidden file exists. With an
+ * unreadable index every project folder's file, and every call note naming a project, is refused (decision 4).
+ */
+async function checkAttach(root: string, listed: TodoItem, path: string, index: TaskIndex): Promise<void> {
   const linked = listed.attachments.some((a) => a.path === path);
   if (!linked && listed.attachments.length >= TODO_ATTACHMENTS_MAX)
     throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.full);
@@ -707,7 +873,11 @@ async function checkAttach(root: string, listed: TodoItem, path: string): Promis
   } catch {
     throw todoChangeError('internal');
   }
-  if (!(await isListableFile(root, realRoot, path)))
+  if (
+    hiddenPathOf(index)(path) ||
+    !(await isListableFile(root, realRoot, path)) ||
+    (await isHiddenCallNote(root, index, path))
+  )
     throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.notListable);
 }
 
@@ -779,6 +949,8 @@ export interface TodoUploadInput {
 
 export interface TodoUploadDeps {
   history?: TodoHistory;
+  /** The projects index, for THE task rule: a hidden project's task that isn't theirs is not found. */
+  projects?: () => Promise<ProjectsIndex>;
   /** The brain's clients (BrainReaders.clients). */
   clients: () => Promise<ClientInfo[]>;
   files: Pick<FilesSkillRunner, 'add' | 'capabilities'>;
@@ -816,6 +988,7 @@ export async function uploadTodoFile(
     history: deps.history,
     capabilities: () => runner.capabilities(),
     filesCapabilities: () => deps.files.capabilities(),
+    projects: deps.projects,
   });
   if (list.changes !== 'on' || !list.canUpload)
     throw new TodoChangeError('not-allowed', TODO_FILES_MESSAGES.uploadNotAllowed);
@@ -874,11 +1047,20 @@ export async function uploadTodoFile(
 /** What the app writes as the place a to-do was ticked. */
 export const TICKED_VIA = APP_VIA;
 
-export async function completeTodo(root: string, id: string, by: Identity, at: Date): Promise<void> {
+export async function completeTodo(
+  root: string,
+  id: string,
+  by: Identity,
+  at: Date,
+  deps: Pick<TodoListDeps, 'projects'> = {},
+): Promise<void> {
   if (typeof id !== 'string' || !SAFE_ID.test(id))
     throw new Error('That is not a task the app can tick off.');
-  const live = await readFolder(root, 'tds', '', []);
-  if (!live.some((t) => t.id === id))
+  const index = await readTaskIndex(deps.projects);
+  const live = await readFolder(root, 'tds', '', [], null, usableIndex(index));
+  const item = live.find((t) => t.id === id);
+  // THE task rule: a hidden project's task that isn't theirs is answered as one that isn't there.
+  if (!item || taskRule(index, item, item.assignee !== null && item.assignee === by.slug) === 'hide')
     throw new Error('That task could not be found. It may already be done.');
   const source = join(root, 'todo', id);
   const doneDir = join(root, 'todo', 'done');

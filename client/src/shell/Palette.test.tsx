@@ -29,6 +29,7 @@ const api = vi.hoisted(() => ({
   library: vi.fn(),
   libraryText: vi.fn(),
   doneTodos: vi.fn(),
+  projects: vi.fn(),
   todoHistory: vi.fn(async () => ({ status: 'ok', events: [], more: false })),
 }));
 // The editor and the converter need a real browser; the panel's own behaviour is tested in TodoPanel.test.tsx.
@@ -57,6 +58,7 @@ class FakeEventSource {
 const { App } = await import('../App.tsx');
 const { docsStore } = await import('../apps/documents/store.ts');
 const { doneStore } = await import('../state/todo-done.ts');
+const { projectsStore } = await import('../state/projects.ts');
 const { doc, SCOPES, listing } = await import('../apps/shared/testing.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
@@ -476,6 +478,49 @@ const REPORT_HELP = [
   'What Claude did',
   'Helpers',
 ];
+
+describe('restricted projects in search', () => {
+  const project = (slug: string, title: string, over: Record<string, unknown> = {}) => ({
+    key: `acme/${slug}`,
+    space: 'client',
+    slug,
+    client: 'acme',
+    folder: `clients/acme/projects/${slug}`,
+    archived: false,
+    status: 'active',
+    title,
+    team: [],
+    openTodos: 0,
+    ...over,
+  });
+  afterEach(() => {
+    projectsStore.reset();
+    api.projects.mockReset();
+  });
+
+  it('marks a restricted project on its rows, and an open one on none', async () => {
+    const list = {
+      projects: [
+        project('site', 'Zebra site'),
+        project('secret', 'Zebra secret', { visibility: 'restricted' }),
+      ],
+      duplicates: [],
+    };
+    api.projects.mockResolvedValue(list);
+    projectsStore.apply(list as never);
+    await renderHome();
+    await openPalette();
+    fireEvent.change(input(), { target: { value: 'zebra' } });
+    const rowFor = (text: string) => options().filter((o) => o.textContent?.includes(text));
+    const secret = rowFor('Zebra secret');
+    expect(secret.length).toBeGreaterThan(0);
+    for (const row of secret)
+      expect(within(row).getByText('Restricted: only its team, owners and scouts can see it')).toBeTruthy();
+    const open = rowFor('Zebra site');
+    expect(open.length).toBeGreaterThan(0);
+    for (const row of open) expect(within(row).queryByText(/^Restricted/)).toBeNull();
+  });
+});
 
 describe('global search', () => {
   const docHit = (id: string, title: string) => ({

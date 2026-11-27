@@ -9,17 +9,32 @@ import type { TeamTodo } from '../../shared/contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { rosterName } from './todo-asked.ts';
-import { createAttachmentReader, dueOf, lower, readTeam, SAFE_ID, todoTitle } from './todos.ts';
+import {
+  createAttachmentReader,
+  dueOf,
+  hiddenPathOf,
+  lower,
+  maskTask,
+  readTaskIndex,
+  readTeam,
+  SAFE_ID,
+  taskRule,
+  todoTitle,
+  usableIndex,
+} from './todos.ts';
 import { readBytes } from './util.ts';
 
 export interface TeamTodoDeps {
-  /** Fills `projectMatch`; without it, or if it fails, none is set. */
+  /** Fills `projectMatch` and applies THE task rule; without it none is set, and if it fails project-labelled tasks that aren't theirs are not found. */
   projects?: () => Promise<ProjectsIndex>;
 }
 
 const SKIP = new Set(['AGENTS.md', 'README.md', 'CLAUDE.md']);
 
-/** `me` is the caller's slug, for their own personal attachments. Null when there is no such to-do. */
+/**
+ * `me` is the caller's slug, for their own personal attachments and THE task rule. Null when there is no
+ * such to-do, or it is in a project hidden from them and isn't theirs.
+ */
 export async function readTeamTodo(
   root: string,
   id: string,
@@ -42,15 +57,13 @@ export async function readTeamTodo(
   const assignee = written === '' || written === 'open' ? null : written;
   const project = asString(data.project).trim() || null;
   const client = asString(data.client).trim() || null;
-  let index: ProjectsIndex | null = null;
-  if (deps.projects) {
-    try {
-      index = await deps.projects();
-    } catch {
-      index = null;
-    }
-  }
-  return {
+  const read = await readTaskIndex(deps.projects);
+  const index = usableIndex(read);
+  const projectMatch = index ? index.resolve(project, client, 'tds') : undefined;
+  // THE task rule: a hidden project's task is not found unless it is this person's.
+  const seen = taskRule(read, { project, projectMatch }, assignee !== null && assignee === me);
+  if (seen === 'hide') return null;
+  const item: TeamTodo = {
     key: `team:todo/${id}`,
     id,
     path: `todo/${id}`,
@@ -60,10 +73,11 @@ export async function readTeamTodo(
     due: dueOf(data),
     details: body.trim(),
     version: createHash('sha256').update(bytes).digest('hex'),
-    attachments: await createAttachmentReader(root, me)(body),
+    attachments: await createAttachmentReader(root, me, hiddenPathOf(read))(body),
     client,
     project,
     stage: asString(data.stage).trim() || null,
-    ...(index ? { projectMatch: index.resolve(project, client, 'tds') } : {}),
+    ...(projectMatch ? { projectMatch } : {}),
   };
+  return seen === 'mask' ? maskTask(item) : item;
 }

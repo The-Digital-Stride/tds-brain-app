@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restricted projects</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --paper: #ffffff;
+  --ink: #1c2330;
+  --muted: #5b6677;
+  --line: #d5dbe4;
+  --accent: #2c55c9;
+  --accent-soft: #e6ecfb;
+  --teal: #0f8a7a;
+  --teal-soft: #def3ef;
+  --green: #1d8a4e;
+  --amber: #b77a00;
+  --amber-soft: #fbf0d6;
+  --red: #c23a3a;
+  --red-soft: #fbe4e4;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-head: ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+    --accent: #86a5ff; --accent-soft: #232f4a; --teal: #4fd1bd; --teal-soft: #17342f;
+    --green: #4cc683; --amber: #e8b444; --amber-soft: #3a2f12; --red: #f07a7a; --red-soft: #3d1d1f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+  --accent: #86a5ff; --accent-soft: #232f4a; --teal: #4fd1bd; --teal-soft: #17342f;
+  --green: #4cc683; --amber: #e8b444; --amber-soft: #3a2f12; --red: #f07a7a; --red-soft: #3d1d1f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font); margin: 0; }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 34px; }
+h1, h2, h3 { font-family: var(--font-head); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; }
+h2 { font-size: 22px; line-height: 1.25; }
+h3 { font-size: 17px; line-height: 1.3; }
+p { margin: 0; max-width: 65ch; }
+.lead { font-size: 18px; color: var(--muted); }
+header { display: grid; gap: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--teal); font-weight: 600; }
+section.folder { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 0 12px 12px 12px;
+  padding: 22px 20px 20px; display: grid; gap: 14px; margin-top: 18px; min-width: 0; }
+section.folder > .tab { position: absolute; top: -27px; left: -1px; background: var(--paper); border: 1px solid var(--line);
+  border-bottom: none; border-radius: 8px 8px 0 0; padding: 4px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
+  letter-spacing: .04em; }
+section.gate { border: 2px solid var(--amber); }
+section.gate > .tab { border: 2px solid var(--amber); border-bottom: none; color: var(--amber); top: -29px; left: -2px; }
+section.risk { border: 2px solid var(--red); }
+section.risk > .tab { border: 2px solid var(--red); border-bottom: none; color: var(--red); top: -29px; left: -2px; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 65ch; }
+.scroll { overflow-x: auto; max-width: 100%; }
+.scroll svg { min-width: 480px; width: 100%; }
+svg { display: block; max-width: 100%; height: auto; }
+svg text { font-family: var(--font); fill: currentColor; }
+svg .mono { font-family: var(--mono); }
+code { font-family: var(--mono); font-size: .9em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.play { justify-self: start; font: inherit; font-size: 14px; border: 1px solid var(--accent); color: var(--accent);
+  background: transparent; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+.play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fill-paper { fill: var(--paper); }
+.fill-soft { fill: var(--accent-soft); }
+.fill-teal { fill: var(--teal-soft); }
+.fill-amber { fill: var(--amber-soft); }
+.fill-red { fill: var(--red-soft); }
+.t-red { fill: var(--red); }
+.t-green { fill: var(--green); }
+.t-amber { fill: var(--amber); }
+.answer { font-size: clamp(19px, 3.4vw, 24px); line-height: 1.4; font-family: var(--font-head); font-weight: 600;
+  background: var(--amber-soft); border-left: 5px solid var(--amber); padding: 14px 16px; border-radius: 0 10px 10px 0; max-width: none; }
+.note { border-left: 4px solid var(--amber); background: var(--amber-soft); padding: 10px 12px; border-radius: 0 8px 8px 0; font-size: 15px; }
+.risks { display: grid; gap: 12px; }
+.risk-card { background: var(--red-soft); border: 1px solid var(--red); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; }
+.risk-card p { max-width: none; }
+.bottom { font-family: var(--font-head); font-weight: 600; font-size: 18px; border-top: 2px solid var(--red); padding-top: 12px; max-width: none; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.strip > div { background: var(--teal-soft); border: 1px solid var(--teal); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.strip b { font-family: var(--font-head); }
+.strip span { font-size: 15px; }
+
+/* Animations: without the .run class every figure shows its finished, readable state. */
+.run .st { animation: stepin .8s ease both; }
+.run .st2 { animation-delay: .8s; }
+.run .st3 { animation-delay: 1.6s; }
+.run .st4 { animation-delay: 2.4s; }
+.run .st5 { animation-delay: 3.2s; }
+.run .st6 { animation-delay: 4s; }
+@keyframes stepin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .run .st { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Plan for TDS Cortex · 27 November 2026</span>
+    <h1>Restricted projects</h1>
+    <p class="lead">Some projects are private. This page shows how Cortex will keep them out of sight, and, just as important, what it will not do.</p>
+  </header>
+
+  <section class="folder" aria-labelledby="s1">
+    <span class="tab">1 · The short answer</span>
+    <h2 id="s1">One switch hides a project</h2>
+    <p class="answer">A project can be marked Restricted. Cortex then shows it only to its Account Owner, its team, and the agency's owners and scouts.</p>
+    <p>Cortex is the TDS Brain App. The <strong>Account Owner</strong> is the person who looks after that client. The <strong>team</strong> is the people listed on the project. <strong>Owners and scouts</strong> are the people who run the agency. Everyone else will not see the project at all.</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s2">
+    <span class="tab">2 · Who sees it</span>
+    <h2 id="s2">Four kinds of people, one restricted project</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 520 340" role="img" aria-label="A restricted project card sits in the middle. The Account Owner sees it. The project team sees it. Owners and scouts see it, marked with a Restricted badge. Everyone else sees nothing, not even that it exists.">
+        <rect x="170" y="135" width="180" height="70" rx="10" class="fill-amber" stroke="var(--amber)" stroke-width="2"/>
+        <text x="260" y="162" text-anchor="middle" font-size="15" font-weight="600">Project: Astra</text>
+        <rect x="205" y="174" width="110" height="22" rx="11" class="fill-paper" stroke="var(--amber)"/>
+        <rect x="214" y="181" width="9" height="8" rx="1" fill="var(--amber)"/>
+        <path d="M216 181 V178 a2.5 2.5 0 0 1 5 0 V181" stroke="var(--amber)" stroke-width="1.5" fill="none"/>
+        <text x="273" y="190" text-anchor="middle" font-size="12" font-weight="600" class="t-amber">Restricted</text>
+
+        <path d="M180 110 L215 135" stroke="var(--green)" stroke-width="2.5" fill="none"/>
+        <path d="M340 110 L305 135" stroke="var(--green)" stroke-width="2.5" fill="none"/>
+        <path d="M180 230 L215 205" stroke="var(--green)" stroke-width="2.5" fill="none"/>
+        <path d="M340 230 L318 214" stroke="var(--red)" stroke-width="2.5" stroke-dasharray="5 4" fill="none"/>
+        <path d="M308 222 L324 206" stroke="var(--red)" stroke-width="3" fill="none"/>
+
+        <rect x="10" y="10" width="230" height="100" rx="10" class="fill-teal" stroke="var(--teal)"/>
+        <text x="125" y="34" text-anchor="middle" font-size="14" font-weight="600">Account Owner</text>
+        <text x="125" y="54" text-anchor="middle" font-size="12" opacity=".85">Looks after this client</text>
+        <rect x="45" y="68" width="160" height="28" rx="14" class="fill-paper" stroke="var(--green)" stroke-width="2"/>
+        <text x="125" y="87" text-anchor="middle" font-size="13" font-weight="600" class="t-green">Sees it</text>
+
+        <rect x="280" y="10" width="230" height="100" rx="10" class="fill-teal" stroke="var(--teal)"/>
+        <text x="395" y="34" text-anchor="middle" font-size="14" font-weight="600">Project team</text>
+        <text x="395" y="54" text-anchor="middle" font-size="12" opacity=".85">People listed on the project</text>
+        <rect x="315" y="68" width="160" height="28" rx="14" class="fill-paper" stroke="var(--green)" stroke-width="2"/>
+        <text x="395" y="87" text-anchor="middle" font-size="13" font-weight="600" class="t-green">Sees it</text>
+
+        <rect x="10" y="230" width="230" height="100" rx="10" class="fill-soft" stroke="var(--accent)"/>
+        <text x="125" y="254" text-anchor="middle" font-size="14" font-weight="600">Owners and scouts</text>
+        <text x="125" y="274" text-anchor="middle" font-size="12" opacity=".85">They run the agency. They see every project.</text>
+        <rect x="30" y="288" width="190" height="28" rx="14" class="fill-paper" stroke="var(--green)" stroke-width="2"/>
+        <text x="125" y="307" text-anchor="middle" font-size="12.5" font-weight="600" class="t-green">Sees it, marked Restricted</text>
+
+        <rect x="280" y="230" width="230" height="100" rx="10" class="fill-paper" stroke="var(--red)" stroke-dasharray="5 4"/>
+        <text x="395" y="254" text-anchor="middle" font-size="14" font-weight="600">Everyone else</text>
+        <text x="395" y="274" text-anchor="middle" font-size="12" opacity=".85">All other team members</text>
+        <rect x="300" y="288" width="190" height="28" rx="14" class="fill-red" stroke="var(--red)" stroke-width="2"/>
+        <text x="395" y="307" text-anchor="middle" font-size="12.5" font-weight="600" class="t-red">Sees nothing at all</text>
+      </svg>
+      </div>
+      <figcaption>Everyone else does not even see a grey box or a lock. As far as they can tell, the project does not exist. Owners and scouts see it with a small "Restricted" badge, so they know it is private.</figcaption>
+    </figure>
+  </section>
+
+  <section class="folder gate" aria-labelledby="s3">
+    <span class="tab">3 · How the hiding works</span>
+    <h2 id="s3">One gate, not fifteen</h2>
+    <p>Cortex could hide a project by teaching every screen to hide it. That is fifteen places to get wrong. Instead there is one checkpoint. The list that every screen reads from simply never contains a hidden project.</p>
+    <figure id="f3">
+      <div class="scroll">
+      <svg viewBox="0 0 520 520" role="img" aria-label="Step 1: the brain, a shared folder of files copied to every team Mac. Step 2: Cortex on your Mac reads the project cards. Then one gate asks: can this person see this project? Allowed projects pass through. Hidden projects stop here. Step 3: the one list, which every screen reads, does not contain hidden projects. Projects, Search, Home, Files, Tasks, Meetings and the chat assistant all read that one list. One gate, not fifteen.">
+        <g class="st st1">
+          <rect x="110" y="8" width="300" height="60" rx="10" class="fill-soft" stroke="var(--accent)"/>
+          <text x="260" y="32" text-anchor="middle" font-size="14" font-weight="600">1 · The brain</text>
+          <text x="260" y="52" text-anchor="middle" font-size="12" opacity=".9">A shared folder of files, copied to every team Mac</text>
+        </g>
+        <g class="st st2">
+          <path d="M260 70 V92" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M254 86 L260 94 L266 86" stroke="currentColor" stroke-width="2" fill="none"/>
+          <rect x="110" y="96" width="300" height="60" rx="10" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="260" y="120" text-anchor="middle" font-size="14" font-weight="600">2 · Cortex on your Mac</text>
+          <text x="260" y="140" text-anchor="middle" font-size="12" opacity=".9">Reads the project cards, one small file each</text>
+        </g>
+        <g class="st st3">
+          <path d="M260 158 V180" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M254 174 L260 182 L266 174" stroke="currentColor" stroke-width="2" fill="none"/>
+          <rect x="50" y="184" width="420" height="124" rx="14" class="fill-amber" stroke="var(--amber)" stroke-width="3"/>
+          <text x="260" y="206" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" class="t-amber">THE ONE GATE</text>
+          <text x="260" y="230" text-anchor="middle" font-size="16" font-weight="700">Can this person see this project?</text>
+        </g>
+        <g class="st st4">
+          <rect x="68" y="248" width="170" height="46" rx="10" class="fill-teal" stroke="var(--green)" stroke-width="2"/>
+          <text x="153" y="269" text-anchor="middle" font-size="13" font-weight="600" class="t-green">Yes: passes through</text>
+          <text x="153" y="285" text-anchor="middle" font-size="11.5" opacity=".9">Open, or you are allowed</text>
+          <rect x="282" y="248" width="170" height="46" rx="10" class="fill-red" stroke="var(--red)" stroke-width="2" stroke-dasharray="5 4"/>
+          <text x="367" y="269" text-anchor="middle" font-size="13" font-weight="600" class="t-red">No: stops here</text>
+          <text x="367" y="285" text-anchor="middle" font-size="11.5" opacity=".9">Hidden. Not passed on.</text>
+        </g>
+        <g class="st st5">
+          <path d="M153 310 V332" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M147 326 L153 334 L159 326" stroke="currentColor" stroke-width="2" fill="none"/>
+          <rect x="50" y="336" width="420" height="58" rx="12" class="fill-teal" stroke="var(--teal)" stroke-width="2"/>
+          <text x="260" y="360" text-anchor="middle" font-size="14" font-weight="600">3 · The one list</text>
+          <text x="260" y="380" text-anchor="middle" font-size="12" opacity=".9">The list every screen reads. Hidden projects are simply not in it.</text>
+        </g>
+        <g class="st st6">
+          <path d="M260 396 V410 M44 410 H476" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M44 410 V420 M116 410 V420 M188 410 V420 M260 410 V420 M332 410 V420 M404 410 V420 M476 410 V420" stroke="currentColor" stroke-width="2" fill="none"/>
+          <rect x="13" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="44" y="453" text-anchor="middle" font-size="11.5">Projects</text>
+          <rect x="85" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="116" y="453" text-anchor="middle" font-size="11.5">Search</text>
+          <rect x="157" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="188" y="453" text-anchor="middle" font-size="11.5">Home</text>
+          <rect x="229" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="260" y="453" text-anchor="middle" font-size="11.5">Files</text>
+          <rect x="301" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="332" y="453" text-anchor="middle" font-size="11.5">Tasks</text>
+          <rect x="373" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="404" y="453" text-anchor="middle" font-size="11.5">Meetings</text>
+          <rect x="445" y="422" width="62" height="52" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+          <text x="476" y="444" text-anchor="middle" font-size="11.5">Chat</text>
+          <text x="476" y="460" text-anchor="middle" font-size="11.5">assistant</text>
+          <text x="260" y="504" text-anchor="middle" font-size="17" font-weight="700" class="t-amber">One gate, not fifteen.</text>
+        </g>
+      </svg>
+      </div>
+      <figcaption>The gate runs once, when Cortex loads the project cards. If a card is muddled (for example after a sync clash) and Cortex cannot tell, it hides the project rather than show it.</figcaption>
+      <button class="play" type="button" data-target="f3">Play</button>
+    </figure>
+  </section>
+
+  <section class="folder" aria-labelledby="s4">
+    <span class="tab">4 · Tasks</span>
+    <h2 id="s4">You can't hand a hidden project's task to someone who can't see it</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 520 250" role="img" aria-label="Left: when you give a task in a restricted project to someone who is not on it, the form says Alex isn't on this restricted project. Add them to the project team first, then give them the task. Right: a task you already have in a project you can't see stays yours and shows a Restricted project label, with no project details.">
+        <rect x="10" y="10" width="245" height="230" rx="12" class="fill-paper" stroke="currentColor" stroke-opacity=".5"/>
+        <text x="26" y="34" font-size="13" font-weight="600">Giving a task</text>
+        <text x="26" y="58" font-size="12" opacity=".85">Give it to:</text>
+        <rect x="26" y="66" width="213" height="30" rx="8" class="fill-soft" stroke="var(--accent)"/>
+        <text x="38" y="86" font-size="13">Alex</text>
+        <rect x="26" y="108" width="213" height="118" rx="8" class="fill-amber" stroke="var(--amber)" stroke-width="2"/>
+        <text x="38" y="130" font-size="12" font-weight="600">Alex isn't on this restricted</text>
+        <text x="38" y="148" font-size="12" font-weight="600">project. Add them to the project</text>
+        <text x="38" y="166" font-size="12" font-weight="600">team first, then give them the</text>
+        <text x="38" y="184" font-size="12" font-weight="600">task.</text>
+        <text x="38" y="210" font-size="11.5" opacity=".9">The task is not given until you do.</text>
+
+        <rect x="275" y="10" width="235" height="230" rx="12" class="fill-paper" stroke="currentColor" stroke-opacity=".5"/>
+        <text x="291" y="34" font-size="13" font-weight="600">A task you already have</text>
+        <rect x="291" y="50" width="203" height="62" rx="8" class="fill-soft" stroke="var(--accent)"/>
+        <rect x="302" y="64" width="16" height="16" rx="3" class="fill-paper" stroke="currentColor"/>
+        <text x="328" y="77" font-size="13">Send the signed form</text>
+        <rect x="328" y="87" width="134" height="20" rx="10" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+        <rect x="337" y="94" width="7" height="6" rx="1" fill="currentColor"/>
+        <text x="395" y="101" text-anchor="middle" font-size="11.5" font-weight="600">Restricted project</text>
+        <text x="291" y="138" font-size="12">You keep the task.</text>
+        <text x="291" y="158" font-size="12">It shows no project name,</text>
+        <text x="291" y="176" font-size="12">no stage and no link.</text>
+        <text x="291" y="204" font-size="12" opacity=".9">You can't open the project.</text>
+        <text x="291" y="222" font-size="12" opacity=".9">You can still tick the task off.</text>
+      </svg>
+      </div>
+      <figcaption>Owners and scouts can always be given these tasks, because they see every project. A task with nobody assigned is fine too. Cortex checks this before anything is saved.</figcaption>
+    </figure>
+  </section>
+
+  <section class="folder" aria-labelledby="s5">
+    <span class="tab">5 · The switch</span>
+    <h2 id="s5">Three kinds of person can switch it on or off</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 520 240" role="img" aria-label="The Account Owner, an owner or a scout can switch Restricted on or off. Other team members cannot. Switching on first shows a box saying which people will stop seeing the project, that their open tasks stay with them, and that people on an older Cortex still see it until they update.">
+        <rect x="10" y="10" width="190" height="44" rx="10" class="fill-teal" stroke="var(--green)" stroke-width="2"/>
+        <text x="105" y="30" text-anchor="middle" font-size="13" font-weight="600">Account Owner</text>
+        <text x="105" y="46" text-anchor="middle" font-size="11.5" class="t-green" style="fill: var(--green)">can switch it</text>
+        <rect x="10" y="64" width="190" height="44" rx="10" class="fill-teal" stroke="var(--green)" stroke-width="2"/>
+        <text x="105" y="84" text-anchor="middle" font-size="13" font-weight="600">An owner</text>
+        <text x="105" y="100" text-anchor="middle" font-size="11.5" class="t-green" style="fill: var(--green)">can switch it</text>
+        <rect x="10" y="118" width="190" height="44" rx="10" class="fill-teal" stroke="var(--green)" stroke-width="2"/>
+        <text x="105" y="138" text-anchor="middle" font-size="13" font-weight="600">A scout</text>
+        <text x="105" y="154" text-anchor="middle" font-size="11.5" class="t-green" style="fill: var(--green)">can switch it</text>
+        <rect x="10" y="172" width="190" height="58" rx="10" class="fill-paper" stroke="var(--red)" stroke-dasharray="5 4"/>
+        <text x="105" y="194" text-anchor="middle" font-size="13" font-weight="600">Other team members</text>
+        <text x="105" y="212" text-anchor="middle" font-size="11.5" class="t-red" style="fill: var(--red)">can't switch it</text>
+
+        <path d="M204 120 H236" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M229 114 L237 120 L229 126" stroke="currentColor" stroke-width="2" fill="none"/>
+
+        <rect x="242" y="10" width="268" height="220" rx="12" class="fill-paper" stroke="var(--amber)" stroke-width="2"/>
+        <text x="256" y="34" font-size="13" font-weight="600">Switch Restricted on?</text>
+        <text x="256" y="52" font-size="11" opacity=".8">(example)</text>
+        <text x="256" y="76" font-size="12" font-weight="600">Sam and Priya will stop seeing</text>
+        <text x="256" y="93" font-size="12" font-weight="600">this project.</text>
+        <text x="256" y="116" font-size="12">Their open tasks stay with them.</text>
+        <text x="256" y="138" font-size="12">People on an older Cortex still see</text>
+        <text x="256" y="155" font-size="12">it until they update.</text>
+        <rect x="256" y="178" width="100" height="34" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".6"/>
+        <text x="306" y="200" text-anchor="middle" font-size="13">Cancel</text>
+        <rect x="366" y="178" width="130" height="34" rx="8" class="fill-amber" stroke="var(--amber)" stroke-width="2"/>
+        <text x="431" y="200" text-anchor="middle" font-size="13" font-weight="600">Switch on</text>
+      </svg>
+      </div>
+      <figcaption>Switching it on first shows who will stop seeing the project, by name. Nothing happens until you press the button. Taking someone with open tasks off the team shows the same kind of warning. A team member can't hide a project from the people who run the agency, and the person who creates a restricted project is added to its team so they can't lock themselves out.</figcaption>
+    </figure>
+  </section>
+
+  <section class="folder risk" aria-labelledby="s6">
+    <span class="tab">6 · What this does not do</span>
+    <h2 id="s6">It hides the project. It does not lock it.</h2>
+    <p>This is the risky part, so it is spelled out here: Restricted is a <strong>curtain</strong>, not a <strong>lock</strong>. Cortex hides the project. The files are still there.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 520 210" role="img" aria-label="On every team Mac, the brain folder holding the project's files. Opening it through Cortex shows nothing. Opening it in Finder or the terminal still works, because the files are really there.">
+        <rect x="10" y="10" width="500" height="190" rx="14" class="fill-paper" stroke="currentColor" stroke-opacity=".5"/>
+        <text x="26" y="34" font-size="13" font-weight="600">Every team Mac</text>
+        <rect x="26" y="52" width="200" height="130" rx="12" class="fill-soft" stroke="var(--accent)"/>
+        <text x="126" y="82" text-anchor="middle" font-size="14" font-weight="600">The brain folder</text>
+        <text x="126" y="104" text-anchor="middle" font-size="12" opacity=".9">The restricted project's</text>
+        <text x="126" y="122" text-anchor="middle" font-size="12" opacity=".9">files are in here, copied</text>
+        <text x="126" y="140" text-anchor="middle" font-size="12" opacity=".9">to this Mac.</text>
+        <path d="M228 90 H286" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M228 150 H286" stroke="currentColor" stroke-width="2" fill="none"/>
+        <rect x="290" y="62" width="206" height="54" rx="10" class="fill-red" stroke="var(--red)" stroke-width="2" stroke-dasharray="5 4"/>
+        <text x="393" y="86" text-anchor="middle" font-size="13" font-weight="600">Through Cortex</text>
+        <text x="393" y="104" text-anchor="middle" font-size="12" class="t-red" style="fill: var(--red)">Hidden</text>
+        <rect x="290" y="124" width="206" height="54" rx="10" class="fill-amber" stroke="var(--amber)" stroke-width="3"/>
+        <text x="393" y="148" text-anchor="middle" font-size="13" font-weight="600">Finder or the terminal</text>
+        <text x="393" y="166" text-anchor="middle" font-size="12" font-weight="600" class="t-amber" style="fill: var(--amber)">Still opens</text>
+      </svg>
+      </div>
+    </figure>
+    <div class="risks">
+      <div class="risk-card">
+        <h3>The files are still on every Mac</h3>
+        <p>The project's files stay in the brain folder, and that folder is copied to every team Mac. Someone who opens it outside Cortex, in Finder or in the terminal (the typing window for computer commands), could still read them.</p>
+      </div>
+      <div class="risk-card">
+        <h3>An older Cortex still shows it</h3>
+        <p>Hiding only works on a Mac that has the new version of Cortex. Anyone on an older version still sees the project until they update.</p>
+      </div>
+      <div class="risk-card">
+        <h3>The chat assistant is a guard rail, not a wall</h3>
+        <p>If you ask the chat assistant to open a hidden project's folder, it says no. But a broad search across the whole brain, or a brain skill run in chat, could still turn up a line from the project's files.</p>
+      </div>
+    </div>
+    <p class="bottom">A real lock, where the files are not on other people's Macs at all, is a later piece of work.</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s7">
+    <span class="tab">7 · What happens when</span>
+    <h2 id="s7">Nothing changes until someone flips the switch</h2>
+    <div class="strip">
+      <div><b>Today</b><span>Every project stays open to everyone, just as it is now.</span></div>
+      <div><b>Someone switches one on</b><span>Cortex adds one line to that project's card file. Switching it off takes the line away.</span></div>
+      <div><b>The files</b><span>Nothing is moved or renamed. The folder stays exactly where it is.</span></div>
+      <div><b>A muddled card</b><span>If Cortex can't tell, it hides the project instead of showing it.</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var btns = document.querySelectorAll('.play');
+  for (var i = 0; i < btns.length; i++) {
+    (function (btn) {
+      var box = document.getElementById(btn.getAttribute('data-target'));
+      if (!box) return;
+      btn.addEventListener('click', function () {
+        box.classList.remove('run');
+        void box.offsetWidth;
+        box.classList.add('run');
+        btn.textContent = 'Replay';
+      });
+    })(btns[i]);
+  }
+})();
+</script>
+</body>
+</html>

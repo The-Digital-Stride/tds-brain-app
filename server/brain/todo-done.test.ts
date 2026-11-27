@@ -3,6 +3,7 @@ import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Identity } from '../../shared/contract.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture } from './test-helpers.ts';
 import { createAskedLog, doneLogArgs } from './todo-asked.ts';
 import { listDoneTodos } from './todo-done.ts';
@@ -269,5 +270,58 @@ describe('listDoneTodos with a real git record', () => {
     const item = list.items.find((i) => i.id === '20261101-open.md');
     expect(item?.done?.at.slice(0, 10)).toBe('2026-11-15');
     expect(item?.done?.source).toBe('history');
+  });
+});
+
+describe('listDoneTodos: restricted projects (plan 2026-11-27, decision 6)', () => {
+  const SECRET = 'acme-heating/secret';
+  const index: ProjectsIndex = {
+    cards: [],
+    byKey: () => null,
+    keysForPath: () => [],
+    resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+    hiddenPath: (rel) => rel.startsWith('clients/acme-heating/projects/secret/'),
+    hiddenKey: (key) => key === SECRET,
+    hiddenCount: 1,
+  };
+  const done = (assignee: string | null) =>
+    fm(
+      [
+        ...(assignee ? [`assignee: ${assignee}`] : []),
+        'client: acme-heating',
+        `project: ${SECRET}`,
+        'stage: Build',
+        'completed_by: alex-sample',
+        'completed_at: 2026-11-10T09:00:00+00:00',
+      ],
+      'Words.\n',
+    );
+  const files = {
+    'todo/done/20261101-alex.md': done('alex-sample'),
+    'todo/done/20261101-open.md': done(null),
+    'todo/done/20261101-sam.md': done('sam-example'),
+    'todo/done/20261101-plain.md': fm(['assignee: alex-sample', 'completed_at: 2026-11-10'], 'Plain.\n'),
+  };
+
+  it("leaves out someone else's finished task in a hidden project, and masks sam's own", async () => {
+    const root = brainWith(files);
+    const { items } = await listDoneTodos(root, sam, { log: fakeLog('').log, projects: async () => index });
+    expect(items.map((t) => t.id).sort()).toEqual(['20261101-plain.md', '20261101-sam.md']);
+    expect(items.find((t) => t.id === '20261101-sam.md')).toMatchObject({
+      project: null,
+      stage: null,
+      projectMatch: { how: 'restricted' },
+    });
+  });
+
+  it("leaves out project-labelled tasks that aren't sam's when the index can't be read", async () => {
+    const root = brainWith(files);
+    const projects = async (): Promise<ProjectsIndex> => {
+      throw new Error('no index');
+    };
+    const { items } = await listDoneTodos(root, sam, { log: fakeLog('').log, projects });
+    expect(items.map((t) => t.id).sort()).toEqual(['20261101-plain.md', '20261101-sam.md']);
+    // Sam's own keeps its label: nothing says it is hidden.
+    expect(items.find((t) => t.id === '20261101-sam.md')?.project).toBe(SECRET);
   });
 });

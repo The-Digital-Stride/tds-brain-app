@@ -16,6 +16,8 @@ export interface PickOption {
    * ("Auto", "No client", "All clients"): always first, in the order given, under no heading.
    */
   group?: string;
+  /** A restricted project (decision 10): the list draws the Restricted badge beside the label. */
+  restricted?: boolean;
 }
 
 /** A run of the label to draw bold: [start, end) in UTF-16 code units of `label`. */

@@ -751,6 +751,33 @@ describe('POST /api/projects/change', () => {
     expect(seen.changes).toEqual(CHANGES);
   });
 
+  it('passes `visibility` on create, card and edit, and refuses any other value (restricted projects)', async () => {
+    const shown: ProjectAction[] = [
+      {
+        kind: 'create',
+        space: 'client',
+        client: 'acme-heating',
+        slug: 'launch',
+        fields: { title: 'Launch', visibility: 'restricted' },
+      },
+      { kind: 'card', key: KEY, fields: { visibility: 'everyone' } },
+      { kind: 'edit', key: KEY, fields: { visibility: 'restricted' }, expect: VERSION },
+    ];
+    for (const a of shown) expect((await post(ROUTES.projectsChange, a)).status).toBe(200);
+    expect(seen.changes).toEqual(shown);
+    for (const visibility of ['Restricted', 'hidden', '', null, true, ['restricted']]) {
+      const r = await post(ROUTES.projectsChange, {
+        kind: 'edit',
+        key: KEY,
+        fields: { visibility },
+        expect: VERSION,
+      });
+      expect(r.status, JSON.stringify(visibility)).toBe(400);
+      expect(r.json.error?.code).toBe('bad-request');
+    }
+    expect(seen.changes).toEqual(shown);
+  });
+
   it('passes the three project-code shapes on, through the real gate', async () => {
     const refs: ProjectAction[] = [
       { kind: 'ref', key: KEY, expect: VERSION },

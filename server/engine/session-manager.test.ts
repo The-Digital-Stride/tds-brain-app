@@ -51,7 +51,7 @@ import type {
 import { isRealPage, pageTitle } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import type { ProjectCard } from '../../shared/projects-contract.ts';
-import type { ProjectsIndex } from '../brain/projects.ts';
+import { createProjects, type ProjectsIndex } from '../brain/projects.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
@@ -90,6 +90,7 @@ import {
   type HistoryMessage,
   notedAttachments,
   type PastInfo,
+  RESTRICTED_PROJECT_REFUSAL,
   SessionError,
   type SessionManager,
   splitAttachmentNote,
@@ -6739,6 +6740,66 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     const s = await mgr.start({ resume: 'old-1', project: 'urban-cooling/web' });
     expect([s.client, s.project]).toEqual(['urban-cooling', null]);
   });
+
+  describe('a project hidden from this person (restricted projects, decision 11)', () => {
+    let brainDir: string;
+    beforeEach(() => {
+      brainDir = mkdtempSync(join(tmpdir(), 'sm-restricted-'));
+      const put = (rel: string, text: string) => {
+        mkdirSync(join(brainDir, rel, '..'), { recursive: true });
+        writeFileSync(join(brainDir, rel), text);
+      };
+      put('clients/urban-cooling/projects/web/project.md', '---\ntitle: Website rebuild\n---\n');
+      put(
+        'clients/urban-cooling/projects/secret/project.md',
+        '---\ntitle: Secret pitch\nteam:\n  - "bob-team"\nvisibility: restricted\n---\n',
+      );
+    });
+    afterEach(() => rmSync(brainDir, { recursive: true, force: true }));
+
+    /** The real projects index, as this viewer gets it. */
+    const realIndex = (slug: string) => {
+      const projects = createProjects(brainDir, {
+        skill: { run: async () => ({ key: '', version: '' }), capabilities: async () => [] },
+        todoSkill: { run: async () => ({ file: null }), capabilities: async () => [] },
+        clients: async () => CLIENTS,
+        dataDir: null,
+        git: async () => '',
+        viewer: async () => ({ name: slug, slug, email: null, role: 'team', knownMember: true }),
+      });
+      return () => projects.index();
+    };
+
+    it('is in no which-project list, project line or reopened chat', async () => {
+      const outsider = realIndex('carol-team');
+      const { queries } = projectSetup({ projectsIndex: outsider });
+      await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+      await flush();
+      const text = append(queries[0]);
+      expect(text).toContain('This client has these open projects: "Website rebuild"');
+      expect(text).not.toContain('Secret pitch');
+      expect(text).not.toContain('projects/secret');
+      await expectRefusal(
+        mgr.start({ prompt: 'hi', project: 'urban-cooling/secret' }),
+        'bad-request',
+        NOT_OPEN,
+      );
+      const reopened = await reopen(
+        { client: 'urban-cooling', project: 'urban-cooling/secret' },
+        { projectsIndex: outsider },
+      );
+      expect([reopened.s.client, reopened.s.project]).toEqual(['urban-cooling', null]);
+      expect(reopened.text).not.toContain('Secret pitch');
+    });
+
+    it('is listed as usual for someone on its team', async () => {
+      const { queries } = projectSetup({ projectsIndex: realIndex('bob-team') });
+      const s = await mgr.start({ prompt: 'hi', project: 'urban-cooling/secret' });
+      await flush();
+      expect(s.project).toBe('urban-cooling/secret');
+      expect(append(queries[0])).toContain('This chat is for the project "Secret pitch"');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -7179,9 +7240,210 @@ describe('app change guards (plan 2026-11-25-app-change-guards)', () => {
     await mgr.start({ prompt: 'hi' });
     await flush();
     const q = fx.queries[0];
-    expect(q?.options.hooks?.PreToolUse?.[0]?.hooks).toHaveLength(2);
+    // The drafts, change and restricted-project guards (plan 2026-11-27-restricted-projects).
+    expect(q?.options.hooks?.PreToolUse?.[0]?.hooks).toHaveLength(3);
     expect(await changeGuard(q)(call('Bash', { command: 'gh pr merge 4' }, BRAIN))).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'ask' },
     });
+  });
+});
+
+describe('the restricted-project guard (plan 2026-11-27-restricted-projects, decision 11)', () => {
+  type HookFn = (i: unknown, id?: string) => Promise<unknown>;
+  const HIDDEN = 'clients/acme/projects/secret';
+  /** A client file only the hidden project links (projects.test.ts: such a file is hidden too). */
+  const HIDDEN_FILE = 'clients/acme/files/deck.pdf';
+  /** A stand-in index with one hidden folder and file; the real one's rule is tested in projects.test.ts. */
+  const hiddenIndex =
+    (hiddenCount = 1) =>
+    async () =>
+      ({
+        cards: [],
+        byKey: () => null,
+        keysForPath: () => [],
+        resolve: () => ({ how: 'none' }),
+        hiddenPath: (rel: string) =>
+          hiddenCount > 0 && (rel === HIDDEN || rel.startsWith(`${HIDDEN}/`) || rel === HIDDEN_FILE),
+        hiddenPaths: hiddenCount > 0 ? [HIDDEN, HIDDEN_FILE] : [],
+        hiddenKey: () => false,
+        hiddenCount,
+      }) satisfies ProjectsIndex;
+
+  /** The guard: third in the first, matcher-less PreToolUse entry, after the drafts and change guards. */
+  async function guardOf(opts: Parameters<typeof setup>[1] = {}, entry = 0): Promise<HookFn> {
+    const fx = setup(undefined, { projectsIndex: hiddenIndex(), ...opts });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const all = (fx.queries[0]?.options.hooks as Record<string, { matcher?: string; hooks: HookFn[] }[]>)
+      ?.PreToolUse;
+    const hook = all?.[entry]?.hooks[2];
+    if (!hook || all?.[entry]?.matcher !== undefined) throw new Error('no restricted guard');
+    return hook;
+  }
+  const call = (tool_name: string, tool_input: Record<string, unknown>, cwd = BRAIN) => ({
+    hook_event_name: 'PreToolUse',
+    tool_name,
+    tool_input,
+    tool_use_id: 'toolu_1',
+    cwd,
+  });
+  const DENY = {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: RESTRICTED_PROJECT_REFUSAL,
+    },
+  };
+  const at = (folder: string) =>
+    [
+      ['Read', { file_path: `${BRAIN}/${folder}/plan.md` }],
+      ['Read', { file_path: `${folder}/plan.md` }],
+      ['Grep', { pattern: 'budget', path: `${BRAIN}/${folder}` }],
+      ['Grep', { pattern: 'budget', path: folder, glob: '*.md' }],
+      ['Glob', { pattern: '**/*.md', path: `${BRAIN}/${folder}` }],
+      ['Glob', { pattern: `${folder}/**/*.md` }],
+      ['Edit', { file_path: `${BRAIN}/${folder}/plan.md`, old_string: 'a', new_string: 'b' }],
+      ['Write', { file_path: `${BRAIN}/${folder}/new.md`, content: 'x' }],
+      ['NotebookEdit', { notebook_path: `${BRAIN}/${folder}/n.ipynb`, new_source: 'x' }],
+      ['Bash', { command: `cat ${folder}/plan.md` }],
+      ['Bash', { command: `ls ${folder}` }],
+      ['Bash', { command: `grep -r budget "${BRAIN}/${folder}/" | head` }],
+    ] as const;
+
+  it.each(at(HIDDEN))('denies %s %j aimed at a hidden folder', async (tool, input) => {
+    const guard = await guardOf();
+    expect(await guard(call(tool, input), 'toolu_1')).toEqual(DENY);
+  });
+
+  it.each(at('clients/acme/projects/secret-2'))(
+    'allows %s %j on a look-alike folder beside it',
+    async (tool, input) => {
+      const guard = await guardOf();
+      expect(await guard(call(tool, input), 'toolu_1')).toEqual({ continue: true });
+    },
+  );
+
+  it('resolves dots, reads a root with a space in it, and leaves the rest alone', async () => {
+    const guard = await guardOf();
+    expect(
+      await guard(call('Read', { file_path: `${BRAIN}/clients/acme/projects/x/../secret/plan.md` })),
+    ).toEqual(DENY);
+    expect(
+      await guard(call('Read', { file_path: 'secret/plan.md' }, `${BRAIN}/clients/acme/projects`)),
+    ).toEqual(DENY);
+    expect(await guard(call('Read', { file_path: '/etc/hosts' }))).toEqual({ continue: true });
+    expect(await guard(call('Bash', { command: 'ls clients/acme/projects/' }))).toEqual({ continue: true });
+    // Grep's pattern is a regex over file text, never a path.
+    expect(await guard(call('Grep', { pattern: HIDDEN, path: BRAIN }))).toEqual({ continue: true });
+    const spaced = await guardOf({ brainRoot: '/tmp/TDS Brain' });
+    expect(
+      await spaced(call('Bash', { command: `cat "/tmp/TDS Brain/${HIDDEN}/plan.md"` }, '/tmp/TDS Brain')),
+    ).toEqual(DENY);
+  });
+
+  // Review fix, finding 4: wildcards, braces, split quotes and backslashes reach the folder too.
+  const reaching = [
+    ['Bash', { command: 'cat clients/acme/projects/sec*/project.md' }],
+    ['Bash', { command: 'cat "clients/acme/projects/"secret/project.md' }],
+    ['Bash', { command: 'cat \'clients/acme/projects/\'"secret"/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/{secret,x}/project.md' }],
+    ['Bash', { command: 'cat clients/acme/{projects/secret,x}/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/secre\\t/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/s?cret/plan.md | head' }],
+    ['Bash', { command: 'ls clients/acme/projects/*' }],
+    ['Bash', { command: 'grep -r budget clients/acme/projects/**' }],
+    ['Bash', { command: `cat ${BRAIN}/clients/*/projects/secret/plan.md` }],
+    ['Glob', { pattern: 'clients/acme/projects/*/project.md' }],
+    ['Glob', { pattern: 'clients/acme/projects/{secret,x}/*.md' }],
+    ['Glob', { pattern: '**/secret/plan.md' }],
+    ['Glob', { pattern: 'clients/acme/projects/**/*.md' }],
+    ['Glob', { pattern: '*/plan.md', path: `${BRAIN}/clients/acme/projects` }],
+    ['Glob', { pattern: '**/*.md', path: 'clients/acme/projects' }],
+    ['Grep', { pattern: 'budget', glob: 'clients/acme/projects/*/plan.md' }],
+    ['Grep', { pattern: 'budget', path: `${BRAIN}/clients/acme/projects`, glob: '*.md' }],
+    ['Grep', { pattern: 'budget', path: 'clients/acme', glob: 'projects/s*/*.md' }],
+    // The client file only the hidden project links.
+    ['Read', { file_path: `${BRAIN}/${HIDDEN_FILE}` }],
+    ['Bash', { command: `cat ${HIDDEN_FILE}` }],
+    ['Bash', { command: 'cat clients/acme/files/d*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/files/*.pdf' }],
+    // Spelled out after `**`: aimed at the file, not a broad search.
+    ['Glob', { pattern: '**/deck.pdf' }],
+    ['Glob', { pattern: 'clients/acme/files/**' }],
+  ] as const;
+
+  it.each(reaching)('denies %s %j, which can reach the hidden folder', async (tool, input) => {
+    const guard = await guardOf();
+    expect(await guard(call(tool, input), 'toolu_1')).toEqual(DENY);
+  });
+
+  const notReaching = [
+    ['Bash', { command: 'cat clients/acme/projects/secret-2/x.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/secret-*/x.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/{secret-2,web}/x.md' }],
+    ['Bash', { command: 'cat "clients/acme/projects/"secret-2/x.md' }],
+    ['Bash', { command: 'ls clients/acme/projects/' }],
+    ['Bash', { command: 'ls clients/acme/projects/*.md' }],
+    ['Bash', { command: 'cat clients/acme/files/other.pdf' }],
+    ['Bash', { command: 'cat clients/acme/files/o*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/projects/secret-*/**' }],
+    ['Glob', { pattern: 'clients/acme/projects/*.md' }],
+    ['Glob', { pattern: 'clients/harvey-nash/projects/*/project.md' }],
+    // A broad search from the brain's root is an accepted limit (like grep -r there).
+    ['Glob', { pattern: '**/*.md' }],
+    ['Glob', { pattern: 'clients/**/project.md' }],
+    ['Grep', { pattern: 'budget', glob: '*.md' }],
+    // ...and stays one when a hidden file has that type: an everyday "search all my PDFs" still runs.
+    ['Glob', { pattern: '**/*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/**/*.pdf' }],
+    ['Grep', { pattern: 'budget', glob: '*.pdf' }],
+    ['Grep', { pattern: 'budget', path: 'clients/acme/projects' }],
+  ] as const;
+
+  it.each(notReaching)('allows %s %j, which cannot reach it', async (tool, input) => {
+    const guard = await guardOf();
+    expect(await guard(call(tool, input), 'toolu_1')).toEqual({ continue: true });
+  });
+
+  it('refuses a project-folder glob too when the projects index cannot be read', async () => {
+    const guard = await guardOf({ projectsIndex: () => Promise.reject(new Error('boom')) });
+    expect(await guard(call('Glob', { pattern: 'clients/acme/projects/*/plan.md' }))).toEqual(DENY);
+    expect(await guard(call('Bash', { command: 'cat clients/*/projects/x/a.md' }))).toEqual(DENY);
+    expect(await guard(call('Glob', { pattern: 'clients/acme/reports/*.md' }))).toEqual({ continue: true });
+  });
+
+  it('does nothing when nothing is hidden, or without a projects index', async () => {
+    const none = await guardOf({ projectsIndex: hiddenIndex(0) });
+    expect(await none(call('Read', { file_path: `${BRAIN}/${HIDDEN}/plan.md` }))).toEqual({ continue: true });
+    for (const [tool, input] of reaching) {
+      expect(await none(call(tool, input)), `${tool} ${JSON.stringify(input)}`).toEqual({ continue: true });
+    }
+    const bare = await guardOf({ projectsIndex: undefined });
+    expect(await bare(call('Read', { file_path: `${BRAIN}/${HIDDEN}/plan.md` }))).toEqual({ continue: true });
+  });
+
+  it('refuses every project folder when the projects index cannot be read (when unsure, hide)', async () => {
+    const guard = await guardOf({ projectsIndex: () => Promise.reject(new Error('boom')) });
+    expect(await guard(call('Read', { file_path: `${BRAIN}/clients/acme/projects/open/a.md` }))).toEqual(
+      DENY,
+    );
+    expect(await guard(call('Bash', { command: 'ls projects-archive/old' }))).toEqual(DENY);
+    expect(await guard(call('Read', { file_path: `${BRAIN}/clients/acme/reports/a.md` }))).toEqual({
+      continue: true,
+    });
+    expect(await guard(call('Read', { file_path: `${BRAIN}/personal/projects/mine/a.md` }))).toEqual({
+      continue: true,
+    });
+  });
+
+  it('runs on levelled chats too', async () => {
+    const guard = await guardOf({
+      levels: { teamLevels: async () => ({}), ownLevel: async () => null },
+      picker: {
+        pick: () => ({ now: Promise.resolve(null), settled: Promise.resolve(null) }),
+        prewarm: () => {},
+      },
+    });
+    expect(await guard(call('Bash', { command: `cat ${HIDDEN}/plan.md` }))).toEqual(DENY);
   });
 });

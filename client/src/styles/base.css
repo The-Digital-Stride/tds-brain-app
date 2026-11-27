@@ -480,6 +480,13 @@
     white-space: nowrap;
   }
 
+  /* The Restricted mark beside a project's title (RestrictedBadge): the chip, a little smaller, set off from the title. */
+  .restricted-badge {
+    margin-inline-start: var(--sp-6);
+    padding-block: 1px;
+    vertical-align: middle;
+  }
+
   /* A number pill: open chats, to-dos in a group. */
   .count {
     display: inline-block;

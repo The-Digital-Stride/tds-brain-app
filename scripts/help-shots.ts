@@ -54,6 +54,7 @@ const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'project-chat': { width: 1000, height: 560 },
   'project-chat-save': { width: 1000, height: 560 },
   'project-chat-list': { width: 1000, height: 400 },
+  'restricted-projects': { width: 1000, height: 460 },
   'todos-drawer': { width: 1000, height: 600 },
   'skills-drawer': { width: 1000, height: 560 },
   'documents-grid': { width: 920, height: 700 },
@@ -160,6 +161,33 @@ const SEEDERS: Record<string, () => Promise<void>> = {
     await store.add({ day, source: 'cache', measure: 'reused', tokens: 1_250_000, dedupeKey: 'demo-b' });
   },
   // The demo's earlier Acme chat belongs to the demo project, so the project's Chats tab has a past chat to list.
+  async 'restricted-projects'() {
+    // A made-up restricted project beside the demo one. Added here, so no other picture gets a badge.
+    const dir = inDemo(join(BRAIN, 'clients', 'acme-heating', 'projects', 'staff-review'));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'project.md'),
+      [
+        '---',
+        'v: 1',
+        'title: Staff review',
+        'client: acme-heating',
+        'ref: ACM7K3',
+        'kind: one-off',
+        'status: active',
+        'health: green',
+        'comms: green',
+        'owner: sam-taylor',
+        'visibility: restricted',
+        'start: 2026-11-12',
+        'created: 2026-11-12',
+        'created_by: sam-taylor',
+        '---',
+        'A private look at how the Acme Heating team is working.',
+        '',
+      ].join('\n'),
+    );
+  },
   async 'project-chat-list'() {
     // The repo's own projects skill, so the demo project can take a chat summary and rows offer Save to project.
     cpSync(
@@ -372,6 +400,11 @@ const SCENES: Record<string, Scene> = {
       .pressSequentially('What is still to do on this project?');
     await page.locator('.chat-drawer [aria-label="Hide chat"]').click();
     await page.getByRole('group', { name: 'Save or discard your message' }).waitFor();
+  },
+
+  async 'restricted-projects'(page) {
+    await page.locator('button.rail-item[aria-label="Projects"]').click();
+    await page.locator('.proj-row .restricted-badge').first().waitFor();
   },
 
   async 'project-chat-list'(page) {

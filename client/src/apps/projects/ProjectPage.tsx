@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { SaveChatRequest } from '../../../../shared/chat-summary-contract.ts';
 import type { TeamMember } from '../../../../shared/contract.ts';
+import { isRestricted } from '../../../../shared/project-visibility.ts';
 import type {
   ProjectCard,
   ProjectList,
@@ -9,6 +10,7 @@ import type {
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
+import { RestrictedBadge } from '../../shell/RestrictedBadge.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
@@ -702,6 +704,7 @@ export function ProjectPage({
         </button>
         <h2 className="proj-title" data-focus="title" tabIndex={-1}>
           {card.title}
+          {isRestricted(card) ? <RestrictedBadge /> : null}
         </h2>
         {!card.archived ? (
           <button

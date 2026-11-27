@@ -13,10 +13,12 @@ import {
   type SaveToProjectProps,
 } from '../../../../shared/chat-summary-contract.ts';
 import type { TeamMember } from '../../../../shared/contract.ts';
+import { isRestricted } from '../../../../shared/project-visibility.ts';
 import { ApiFailure, api } from '../../api.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
+import { RestrictedBadge } from '../../shell/RestrictedBadge.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
-import { Assignee } from '../../shell/TodoForms.tsx';
+import { Assignee, useAssignGate } from '../../shell/TodoForms.tsx';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -104,6 +106,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
   const card = list?.projects.find((p) => p.key === project) ?? null;
   const personal = card ? card.space === 'personal' : project.startsWith('personal/');
   const me = boot?.identity.slug ?? '';
+  const assignGate = useAssignGate(personal ? null : project);
 
   const [phase, setPhase] = useState<'loading' | 'error' | 'review' | 'saved'>('loading');
   const [errorText, setErrorText] = useState('');
@@ -360,6 +363,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
                     me={me}
                     team={team}
                     allowOpen={false}
+                    blocked={assignGate}
                   />
                 )}
               </div>
@@ -440,6 +444,12 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
             keepFocus.restore();
           }}
         />
+      ) : null}
+      {card && isRestricted(card) ? (
+        <p className="note">
+          Saving to {card.title}
+          <RestrictedBadge />
+        </p>
       ) : null}
       <p className="note">
         Nothing is saved until you press Save to project. Only what you see here is saved, never the chat

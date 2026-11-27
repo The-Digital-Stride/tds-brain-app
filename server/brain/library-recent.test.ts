@@ -192,3 +192,89 @@ describe('library recent', () => {
     expect(await l.recent('document')).toEqual({ files: [], partial: false });
   });
 });
+
+describe('library recent: restricted projects (plan 2026-11-27, decision 5)', () => {
+  const SECRET = 'clients/acme/projects/secret';
+  const hiding: () => Promise<ProjectsIndex> = async () => ({
+    cards: [],
+    byKey: () => null,
+    // A stand-in that still names the hidden key: the library must drop it from the stamp.
+    keysForPath: (rel: string) =>
+      rel.startsWith(`${SECRET}/`) || rel === 'clients/acme/reports/linked.md' ? ['acme/secret'] : [],
+    resolve: () => ({ how: 'none' }),
+    hiddenPath: (rel) => rel.startsWith(`${SECRET}/`),
+    hiddenKey: (key) => key === 'acme/secret',
+    hiddenCount: 1,
+  });
+
+  it("leaves out a hidden project's files, and a linked file elsewhere stays without its stamp", async () => {
+    const root = brain({
+      [`${SECRET}/plan.md`]: 3_000,
+      'clients/acme/reports/linked.md': 2_000,
+      'clients/acme/reports/other.md': 1_000,
+    });
+    const l = lib(root, { projects: hiding });
+    const recent = await l.recent('document');
+    expect(names(recent)).toEqual(['linked.md', 'other.md']);
+    expect(recent.files[0]?.item.projects).toEqual([]);
+    // A project filter for the hidden key finds nothing.
+    expect(names(await l.recent('document', 'acme/secret'))).toEqual([]);
+  });
+
+  it("leaves out every project folder's files when the index can't be read", async () => {
+    const root = brain({ [`${SECRET}/plan.md`]: 3_000, 'clients/acme/reports/other.md': 1_000 });
+    const l = lib(root, {
+      projects: async () => {
+        throw new Error('no index');
+      },
+    });
+    expect(names(await l.recent('document'))).toEqual(['other.md']);
+  });
+
+  describe('call notes filed outside the project folder', () => {
+    const SECRET_NOTE = 'clients/acme/call-notes/2026-11-01-secret.md';
+    const WEB_NOTE = 'clients/acme/call-notes/2026-11-02-web.md';
+    const PLAIN_NOTE = 'clients/acme/call-notes/2026-11-03-plain.md';
+    function notesBrain(): string {
+      const root = brain({ [SECRET_NOTE]: 3_000, [WEB_NOTE]: 2_000, [PLAIN_NOTE]: 1_000 });
+      const tag = (rel: string, project: string | null, at: number) => {
+        const p = join(root, rel);
+        writeFileSync(p, `---\n${project ? `project: ${project}\n` : ''}---\n# ${rel}\n`);
+        utimesSync(p, at, at);
+      };
+      tag(SECRET_NOTE, 'secret', 3_000);
+      tag(WEB_NOTE, 'acme/web', 2_000);
+      tag(PLAIN_NOTE, null, 1_000);
+      return root;
+    }
+    const restricting =
+      (restricted: boolean): (() => Promise<ProjectsIndex>) =>
+      async () => ({
+        ...(await hiding()),
+        resolve: (value: string | null) =>
+          restricted && value === 'secret' ? { how: 'restricted' as const } : { how: 'none' as const },
+      });
+
+    it("leaves out a hidden project's notes for an outsider, and keeps them for someone who can see it", async () => {
+      const root = notesBrain();
+      expect(names(await lib(root, { projects: restricting(true) }).recent('document'))).toEqual([
+        '2026-11-02-web.md',
+        '2026-11-03-plain.md',
+      ]);
+      expect(names(await lib(root, { projects: restricting(false) }).recent('document'))).toEqual([
+        '2026-11-01-secret.md',
+        '2026-11-02-web.md',
+        '2026-11-03-plain.md',
+      ]);
+    });
+
+    it("keeps only untagged notes when the index can't be read", async () => {
+      const l = lib(notesBrain(), {
+        projects: async () => {
+          throw new Error('no index');
+        },
+      });
+      expect(names(await l.recent('document'))).toEqual(['2026-11-03-plain.md']);
+    });
+  });
+});

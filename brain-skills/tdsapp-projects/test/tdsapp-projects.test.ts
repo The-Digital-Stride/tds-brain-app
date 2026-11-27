@@ -58,6 +58,7 @@ import {
   UPDATE_SUMMARY_MAX,
   UPDATES_DIR,
 } from '../../../shared/project-updates-contract.ts';
+import { PROJECTS_VISIBILITY_CAPABILITY } from '../../../shared/project-visibility.ts';
 import {
   archivedFolderPath,
   LINKED_FILE_ROOTS,
@@ -742,10 +743,11 @@ describe('capabilities and the command line', () => {
           PROJECTS_EMAIL_CAPABILITY,
           PROJECTS_CHAT_SUMMARY_CAPABILITY,
           PROJECTS_EMAIL_THREADS_CAPABILITY,
+          PROJECTS_VISIBILITY_CAPABILITY,
         ],
       },
     });
-    expect(projects.SCRIPT_VERSION).toBe('0.8.0');
+    expect(projects.SCRIPT_VERSION).toBe('0.9.0');
   });
 
   it('runs from the command line: one JSON line, exit 0, 2 and 1', () => {
@@ -1349,6 +1351,7 @@ describe('move', () => {
       PROJECTS_EMAIL_CAPABILITY,
       PROJECTS_CHAT_SUMMARY_CAPABILITY,
       PROJECTS_EMAIL_THREADS_CAPABILITY,
+      PROJECTS_VISIBILITY_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),

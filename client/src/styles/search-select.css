@@ -18,6 +18,21 @@
     color: var(--ink-soft);
     pointer-events: none;
   }
+  /* The lock on a chosen restricted project: inside the box, left of the chevron; presses pass through to the box. */
+  .ss-mark {
+    position: absolute;
+    top: 50%;
+    right: 32px;
+    display: flex;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .ss-mark .restricted-badge {
+    margin-inline-start: 0;
+  }
+  .ss:has(> .ss-mark) .ss-input {
+    padding-right: 66px;
+  }
   .ss-chevron svg {
     transition: transform var(--t-mid) var(--ease);
   }

@@ -11,6 +11,7 @@
 import type { LibraryItem } from './contract.ts';
 import type { ProjectRefState, RefAction } from './project-refs-contract.ts';
 import type { ProjectUpdateAction, ProjectUpdateRemoveAction } from './project-updates-contract.ts';
+import type { ProjectVisibility } from './project-visibility.ts';
 
 // ─── Where projects live (decision 1) ─────────────────────────────────────────────────────────────
 
@@ -144,6 +145,12 @@ export interface ProjectCard {
   comms: Light | null;
   owner: string | null;
   team: string[];
+  /**
+   * Restricted projects (plan 2026-11-27): the card's `visibility:` line. 'restricted' = seen in the app only
+   * by its Account Owner, its team, and every owner and scout (shared/project-visibility.ts). Always set by
+   * this server; absent (an older server) reads as 'everyone'. Never 'restricted' on a personal project.
+   */
+  visibility?: ProjectVisibility;
   /** Known values typed; anything else kept as written. */
   service: (ProjectService | string)[];
   start: string | null;
@@ -258,6 +265,17 @@ export interface ProjectList {
    * False/absent → no Save to project anywhere.
    */
   canSaveChat?: boolean;
+  /**
+   * Restricted projects: canChange && the script answers PROJECTS_VISIBILITY_CAPABILITY. False/absent → no
+   * "Who can see it" control. Per card the client also needs `mayRestrict(card, identity)`.
+   */
+  canRestrict?: boolean;
+  /**
+   * Restricted projects: every slug form (`personSlugs`) of each owner and scout on the roster. They see
+   * every project, so they can take a task in a restricted one (`canTakeTask`). Absent on an older server:
+   * the client then blocks nobody itself (the server still refuses).
+   */
+  seesAll?: string[];
 }
 
 /** `POST ROUTES.projectArtifact` (decision 8). JSON only; the server builds the target path and files a link card. */
@@ -291,6 +309,8 @@ export interface ProjectFields {
   comms?: Light | null;
   owner?: string | null;
   team?: string[];
+  /** Restricted projects: 'restricted' writes the card's line, 'everyone' removes it; absent leaves it. */
+  visibility?: ProjectVisibility;
   service?: string[];
   start?: string | null;
   end?: string | null;
@@ -609,6 +629,11 @@ export type TodoProjectMatch =
   | { how: 'missing'; key: ProjectKey }
   | { how: 'client'; client: string }
   | { how: 'loose'; label: string }
+  /**
+   * Restricted projects: the label names a project this person can't see. No key, title or label; the row's
+   * own `project` and `stage` are sent as null. Shown as RESTRICTED_LABEL, linking nowhere.
+   */
+  | { how: 'restricted' }
   | { how: 'none' };
 
 /** Added to TodoItem (shared/contract.ts) in R1. Old servers send neither; the client treats absent as null / none. */

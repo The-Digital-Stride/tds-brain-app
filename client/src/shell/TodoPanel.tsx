@@ -49,6 +49,7 @@ import {
   PERSONAL_WARNING,
   ProjectFields,
   todoProjectValue,
+  useAssignGate,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
 import {
@@ -778,6 +779,7 @@ function EditView({
     void p.onSave(todo, actions);
   };
   const projectNow = draft.project ?? todoProjectValue(todo);
+  const assignGate = useAssignGate(draft.scope === 'tds' ? projectNow : '');
   const stageNow = draft.stage ?? todo.stage ?? '';
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -890,6 +892,7 @@ function EditView({
               me={me}
               team={team}
               allowOpen
+              blocked={assignGate}
             />
             {passing ? <p className="todo-note">{PASS_ON_NOTE}</p> : null}
           </div>
@@ -902,6 +905,12 @@ function EditView({
               stage={stageNow}
               onChange={(n) => set({ project: n.project, stage: n.stage })}
             />
+          ) : null}
+          {p.canProject && todo.projectMatch?.how === 'restricted' ? (
+            <p className="hint" id={`${uid}-restricted`}>
+              This task is in a restricted project that isn't shown here. Choosing a project above moves it
+              out of that project.
+            </p>
           ) : null}
           {switchable ? (
             <div className="form-field">

@@ -692,6 +692,29 @@ describe('the Projects group', () => {
     expect(hits('projects', 'website')).toEqual([]);
   });
 
+  it('marks a restricted project on both of its rows, and an open one on neither', () => {
+    const mixed = [
+      card(),
+      card({
+        key: 'northwind/secret',
+        slug: 'secret',
+        client: 'northwind',
+        title: 'Secret site',
+        visibility: 'restricted',
+      }),
+    ];
+    const rows = (q: string) => hits('projects', q, withProjects({ projects: mixed }));
+    expect(rows('secret').map((h) => h.restricted)).toEqual([true, true]);
+    expect(rows('website').map((h) => h.restricted)).toEqual([undefined, undefined]);
+  });
+
+  it('puts the restricted label, and no project or client, on a task hit in a project the person cannot see', () => {
+    const t = todo('t1', 'Ship the build', { client: 'acme-heating', projectMatch: { how: 'restricted' } });
+    const [hit] = hits('todos', 'ship', withProjects({ todos: list([t]) }));
+    expect(hit?.hint).toContain('Restricted project');
+    expect(hit?.hint).not.toContain('Acme');
+  });
+
   it('puts "Client · Project" on a task hit', () => {
     const t = todo('t1', 'Ship the build', {
       projectMatch: { how: 'key', key: 'acme-heating/website-rebuild' },

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.8.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// tdsapp-projects.cjs (v0.9.0): make and change project cards (`project.md`) the way TDS Cortex does,
 // move a project to another client, archive, unarchive or delete one, keep its updates log, and give
 // projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md), and keep email
 // drafts for their inbox owner's approval (docs/plans/2026-11-24-projects-r2-email-entries.md), with
-// email threads known across inboxes (docs/plans/2026-11-25-project-email-threads.md). The
+// email threads known across inboxes (docs/plans/2026-11-25-project-email-threads.md), and let a
+// project be restricted to its team (docs/plans/2026-11-27-restricted-projects.md). The
 // plans are the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
 // docs/plans/2026-11-21-project-move.md, docs/plans/2026-11-21-project-archive-delete.md and
 // docs/plans/2026-11-23-projects-r2-updates-log.md; the shapes are in its shared/projects-contract.ts
@@ -94,8 +95,8 @@
 //
 // The card (frontmatter keys in this order; empty fields left out, never written as null; lists as
 // quoted `- ` items, so the brain's simple frontmatter readers take them):
-//   v, title, client, ref, kind, status, health, comms, owner, team, service, start, end, budget_hours,
-//   billable, stages, monday_id, created, created_by, moved_from
+//   v, title, client, ref, kind, status, health, comms, owner, team, visibility, service, start, end,
+//   budget_hours, billable, stages, monday_id, created, created_by, moved_from
 // Body: the brief, then an optional `## Linked files` section of `- [name](path from the card)` lines.
 //
 // The updates log (R2 phase 2): one file per entry in `<project folder>/updates/`, named
@@ -108,7 +109,16 @@
 // Project codes: `ref:` is written by create, card, ref and a move from personal, never by edit,
 // and kept byte for byte by everything else. Picking reads every card on disk plus the cards deleted
 // in git history (two git calls); when git can't say, create, card and move write no code, and only
-// ref refuses. find-ref is read only and never runs git.
+// ref refuses. find-ref is read only and runs git only to learn who is asking, when a restricted
+// card is among the cards it reads.
+//
+// Restricted projects (0.9.0): `visibility: restricted` on a shared card (never a personal one) means
+// the app shows the project only to its Account Owner, its team and every owner and scout. Any value
+// but empty or "everyone" reads as restricted. Only the Account Owner, an owner or a scout may switch
+// it (ownerChangeRule). To anyone else the project isn't there: every action on it answers exactly
+// what a missing key gets, and find-ref and email-check leave it out. The rule copies
+// shared/project-visibility.ts (a test pins both to the same answers). It hides the project in the
+// app only; the folder still syncs to every Mac.
 //
 // When `require`d it runs nothing and exports `run(action, input, ctx)`, so tests can pass a brain
 // root, a home folder and a clock (and `refPick`, standing in for the code's random pick). The command line always uses the real clock. Plain Node, no
@@ -122,7 +132,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.8.0';
+const SCRIPT_VERSION = '0.9.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -159,6 +169,11 @@ const EMAIL = {
 // Project email threads (docs/plans/2026-11-25-project-email-threads.md), as
 // shared/project-email-threads-contract.ts (a test checks these match).
 const PROJECTS_EMAIL_THREADS_CAPABILITY = 'projects-email-threads-v1';
+// Restricted projects (docs/plans/2026-11-27-restricted-projects.md), as shared/project-visibility.ts (a
+// test checks they match).
+const PROJECTS_VISIBILITY_CAPABILITY = 'projects-visibility-v1';
+const VISIBILITY_KEY = 'visibility';
+const VISIBILITIES = ['everyone', 'restricted'];
 const EMAIL_THREADS = {
   EMAIL_THREAD_MESSAGES_MAX: 30,
   EMAIL_THREAD_CODES_MAX: 10,
@@ -256,8 +271,8 @@ const MOVE_WALK_MAX = 5000;
 // Card frontmatter keys, in the order they are written. `ref` (the project code) sits right after
 // `client` and is only ever written by create, card, ref and a move from personal.
 const ORDER = [
-  'v', 'title', 'client', 'ref', 'kind', 'status', 'health', 'comms', 'owner', 'team', 'service', 'start', 'end',
-  'budget_hours', 'billable', 'stages', 'monday_id', 'created', 'created_by', 'moved_from',
+  'v', 'title', 'client', 'ref', 'kind', 'status', 'health', 'comms', 'owner', 'team', 'visibility', 'service',
+  'start', 'end', 'budget_hours', 'billable', 'stages', 'monday_id', 'created', 'created_by', 'moved_from',
 ];
 // ProjectFields (camelCase) → the card key on disk.
 const FIELD_KEYS = {
@@ -274,6 +289,7 @@ const FIELD_KEYS = {
   budgetHours: 'budget_hours',
   billable: 'billable',
   stages: 'stages',
+  visibility: VISIBILITY_KEY,
 };
 const LIST_KEYS = new Set(['team', 'service', 'stages', 'moved_from']);
 
@@ -552,6 +568,173 @@ function ownerRule(ctx, owner, who) {
     };
   }
   return { allowed: isBrainOwner(who), allowedWho: "the brain's Owner" };
+}
+
+// ---- restricted projects (docs/plans/2026-11-27-restricted-projects.md) -----------------------------
+//
+// parseVisibility, rawTextRestricted, slugForms, personSlugs, onProject, seesEveryProject, isRestricted
+// and canSeeProject copy shared/project-visibility.ts line for line (a test runs both on one table of
+// cases). A card is {space, visibility, owner, team}; a viewer {name, slug, role, knownMember}.
+
+const PERSONAL_NOT_RESTRICTED = "A personal project is yours alone already, so it can't be restricted.";
+
+// Fails closed: no value, an empty one or "everyone" (any case) is 'everyone'; anything else 'restricted'.
+function parseVisibility(raw) {
+  if (raw === undefined || raw === null) return 'everyone';
+  if (typeof raw !== 'string') return 'restricted';
+  const v = raw.trim().toLowerCase();
+  return v === '' || v === 'everyone' ? 'everyone' : 'restricted';
+}
+
+// True when frontmatter text carries a `visibility:` line (any case) that isn't "everyone".
+function rawTextRestricted(text) {
+  for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
+    const m = /^visibility\s*:\s*(.*?)\s*$/i.exec(line);
+    if (m) {
+      const value = m[1].replace(/^["']|["']$/g, '');
+      if (parseVisibility(value) === 'restricted') return true;
+    }
+  }
+  return false;
+}
+
+function slugForms(name) {
+  const lower = name.toLowerCase();
+  const member = lower.replace(/ /g, '-').replace(/[^a-z0-9-]/g, '');
+  const workbench = lower.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return [...new Set([member, workbench].filter(s => s !== ''))];
+}
+
+function personSlugs(person) {
+  return [...new Set([person.slug, ...(person.name ? slugForms(person.name) : [])].filter(s => s !== ''))];
+}
+
+// The project's Account Owner or on its team (either slug form).
+function onProject(card, person) {
+  const slugs = personSlugs(person);
+  if (slugs.length === 0) return false;
+  if (card.owner !== null && slugs.includes(card.owner)) return true;
+  return card.team.some(t => slugs.includes(t));
+}
+
+function seesEveryProject(viewer) {
+  return viewer.knownMember && (viewer.role === 'owner' || viewer.role === 'scout');
+}
+
+function isRestricted(card) {
+  return card.space !== 'personal' && card.visibility === 'restricted';
+}
+
+// THE rule: an open project, everyone; a restricted one, its Account Owner, its team, every owner and
+// scout. Someone the roster doesn't know sees no restricted project.
+function canSeeProject(card, viewer) {
+  if (!isRestricted(card)) return true;
+  if (!viewer.knownMember) return false;
+  return seesEveryProject(viewer) || onProject(card, viewer);
+}
+
+// This Mac's identity as the rule's viewer.
+function viewerOf(who) {
+  return {
+    name: who.member && typeof who.member.name === 'string' ? who.member.name : who.name,
+    slug: who.slug,
+    role: ['owner', 'scout', 'team'].includes(who.role) ? who.role : 'unknown',
+    knownMember: who.known,
+  };
+}
+
+// A `visibility` entry's value as the app's frontmatter reader takes it (server/brain/frontmatter.ts):
+// a `- ` list or `[...]` as a list, indented lines as text, else the one value unquoted.
+function visibilityValue(entry) {
+  const rest = entry.lines[0].slice(entry.lines[0].indexOf(':') + 1).trim();
+  if (rest === '' || /^[>|][+-]?$/.test(rest)) {
+    const items = [];
+    const text = [];
+    for (const line of entry.lines.slice(1)) {
+      const t = line.trim();
+      if (/^-\s/.test(t) && rest === '') items.push(unquote(t.slice(1)));
+      else if (t !== '') text.push(t);
+    }
+    return items.length > 0 ? items : text.join(rest.startsWith('>') || rest === '' ? ' ' : '\n');
+  }
+  if (rest.startsWith('[') && rest.endsWith(']')) return entryValue(entry);
+  return unquote(rest);
+}
+
+// A card's frontmatter block as text: the lines between the `---` lines (all of it when there's no
+// closing line), else the whole text, for a card that can't be parsed.
+function frontmatterText(text) {
+  const lines = text.split('\n');
+  if (lines[0] !== '---') return text;
+  const close = lines.indexOf('---', 1);
+  return lines.slice(1, close === -1 ? lines.length : close).join('\n');
+}
+
+// Who a card lets see it (the rule's card). When unsure, hide: restricted when the parsed value says so
+// or any `visibility:` line does; a card that can't be parsed but has such a line is restricted with
+// nobody on it (owners and scouts still see it, to fix it).
+function cardAccessOf(space, text) {
+  const parts = cardParts(text);
+  const lineSays = rawTextRestricted(frontmatterText(text));
+  if (!parts) return { space, visibility: lineSays ? 'restricted' : 'everyone', owner: null, team: [] };
+  const valueSays = parts.entries.some(e => e.key === VISIBILITY_KEY && parseVisibility(visibilityValue(e)) === 'restricted');
+  const values = cardValues(parts.entries);
+  const team = Array.isArray(values.team) ? values.team.filter(t => typeof t === 'string')
+    : typeof values.team === 'string' && values.team !== '' ? [values.team] : [];
+  return { space, visibility: lineSays || valueSays ? 'restricted' : 'everyone', owner: cardOwner(values), team };
+}
+
+// The card in a project folder, read for the rule; an open one when there's no plain card to read.
+function cardAccessAt(folderAbs, space) {
+  const open = { space, visibility: 'everyone', owner: null, team: [] };
+  const fileAbs = path.join(folderAbs, PROJECT_CARD_FILE);
+  const st = lstatOrNull(fileAbs);
+  if (!st || st.isSymbolicLink() || !st.isFile()) return open;
+  try {
+    return cardAccessOf(space, decodeFile(fs.readFileSync(fileAbs)).text);
+  } catch {
+    return open;
+  }
+}
+
+// Whether a project folder is hidden from `viewer`: by its own card, or, for a folder with no card
+// (a leftover), by the card its key reads.
+function folderHidden(ctx, folderRel, keyValue, viewer) {
+  const space = folderRel.startsWith('personal/') ? 'personal' : 'client';
+  const folderAbs = path.join(ctx.root, ...folderRel.split('/'));
+  if (cardState(folderAbs) !== false) return !canSeeProject(cardAccessAt(folderAbs, space), viewer);
+  const key = parseKey(keyValue);
+  const read = key ? readFolderOf(ctx, key) : null;
+  return read !== null && read.rel !== folderRel && !canSeeProject(cardAccessAt(read.abs, read.space), viewer);
+}
+
+// Whether a brain path is inside a project folder hidden from `viewer`: a client's live or archive
+// projects folder, an archived client's, or the legacy `projects/` ones (The Digital Stride's). A personal
+// project is never restricted, so `personal/` is never looked at.
+function inHiddenProject(ctx, rel, viewer) {
+  const m = /^(clients\/_archive\/([^/]+)\/projects|clients\/([^/]+)\/projects(?:-archive)?|projects(?:-archive)?)\/([^/]+)\//.exec(rel);
+  if (!m) return false;
+  const client = m[2] || m[3] || INTERNAL_CLIENT;
+  return folderHidden(ctx, `${m[1]}/${m[4]}`, `${client}/${m[4]}`, viewer);
+}
+
+// `locate`, then: a restricted project this Mac's person can't see is refused exactly as a missing key
+// is, so nothing tells them it exists. Identity is only read for a restricted card.
+function locateSeen(ctx, value, opts) {
+  const loc = locate(ctx, value, opts);
+  const read = loc.leftover ? readFolderOf(ctx, parseKey(loc.key)) || loc : loc;
+  const card = cardAccessAt(read.abs, read.space);
+  if (isRestricted(card) && !canSeeProject(card, viewerOf(identity(ctx)))) {
+    if (opts && opts.leftover) throw refuse('not-found', `there is no folder left behind for ${value}`);
+    throw refuse('not-found', `there is no project ${value}`);
+  }
+  return loc;
+}
+
+// Who may switch a shared card between everyone and restricted: ownerChangeRule, the Account Owner's rule.
+function requireMayRestrict(ctx, owner, who) {
+  const rule = ownerChangeRule(ctx, owner, who);
+  if (!rule.allowed) throw refuse('not-allowed', `Only ${rule.allowedWho} can change who sees this project.`);
 }
 
 // ---- where a project lives -----------------------------------------------------------------------------
@@ -1051,6 +1234,10 @@ function checkFields(fields, ctx, requireTitle) {
           return stage;
         });
         break;
+      // 'everyone' is the card with no line (null removes it).
+      case 'visibility':
+        out[key] = oneOf(value, 'visibility', VISIBILITIES, false) === 'everyone' ? null : 'restricted';
+        break;
     }
   }
   if (requireTitle && out.title === undefined) throw refuse('bad-request', 'title is required');
@@ -1267,6 +1454,7 @@ function create(input, ctx) {
   }
   const { values, brief } = checkFields(input.fields, ctx, true);
   checkMerged(values);
+  if (space === 'personal' && values.visibility === 'restricted') throw refuse('bad-request', PERSONAL_NOT_RESTRICTED);
   const who = identity(ctx);
   let client = null;
   let rel;
@@ -1278,6 +1466,16 @@ function create(input, ctx) {
     requireTeam(who);
     requireClientFolder(ctx, client);
     rel = `clients/${client}/projects/${slug}`;
+    // Restricted projects: a creator who wouldn't otherwise see it goes on its team.
+    if (values.visibility === 'restricted' && !isOwnerOrScout(who) && !isPerson(who, values.owner)) {
+      const team = values.team || [];
+      if (!onProject({ owner: null, team }, viewerOf(who))) {
+        if (team.length >= LIMITS.PROJECT_TEAM_MAX) {
+          throw refuse('bad-request', `team can have at most ${LIMITS.PROJECT_TEAM_MAX} entries`);
+        }
+        values.team = [...team, who.slug];
+      }
+    }
   } else {
     if (input.client !== undefined && input.client !== null) throw refuse('bad-request', 'a personal project has no client');
     rel = `personal/projects/${slug}`;
@@ -1316,12 +1514,15 @@ function create(input, ctx) {
 }
 
 function card(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   if (loc.archived) throw refuse('not-allowed', 'archived projects are read only');
   const { values, brief } = checkFields(input.fields, ctx, false);
   checkMerged(values);
+  if (loc.space === 'personal' && values.visibility === 'restricted') throw refuse('bad-request', PERSONAL_NOT_RESTRICTED);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
+  // A card-less folder has no Account Owner, so only an owner or a scout may restrict it.
+  if (values.visibility === 'restricted') requireMayRestrict(ctx, null, who);
   const abs = path.join(loc.abs, PROJECT_CARD_FILE);
   if (lstatOrNull(abs)) throw refuse('exists', `${loc.key} already has a card`);
   if (values.title === undefined) values.title = defaultTitle(loc.abs, loc.slug);
@@ -1347,7 +1548,7 @@ function card(input, ctx) {
 // edit, link and unlink: who, what and where are checked first; the card is read and compared with
 // `expect` last, right before the write, so nothing slow sits between the fingerprint and the swap.
 function edit(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
@@ -1366,6 +1567,18 @@ function edit(input, ctx) {
     }
   }
   let entries = cardFile.parts.entries;
+  // Restricted projects: switching is for the Account Owner (as the card has it now), an owner or a
+  // scout; the same meaning sent back always passes. Setting it leaves one `visibility` line, so a
+  // hand-written `Visibility:` can't keep a project hidden behind the person's back.
+  if (values.visibility !== undefined) {
+    const wanted = values.visibility === null ? 'everyone' : 'restricted';
+    if (loc.space === 'personal') {
+      if (wanted === 'restricted') throw refuse('bad-request', PERSONAL_NOT_RESTRICTED);
+    } else if (cardAccessOf(loc.space, cardFile.shape.text).visibility !== wanted) {
+      requireMayRestrict(ctx, cardOwner(current), who);
+    }
+    entries = entries.filter(e => e.key === null || e.key === VISIBILITY_KEY || e.key.toLowerCase() !== VISIBILITY_KEY);
+  }
   for (const [key, value] of Object.entries(values)) entries = setEntry(entries, key, renderField(key, value));
   const body = brief === undefined ? cardFile.parts.body : bodyWithBrief(cardFile.parts.body, brief);
   const version = writeCard(cardFile, joinCard(entries, body));
@@ -1380,7 +1593,7 @@ function edit(input, ctx) {
 }
 
 function link(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   const rel = linkPathOf(input);
   if (loc.space !== 'personal' && rel.startsWith('personal/')) {
@@ -1395,7 +1608,9 @@ function link(input, ctx) {
   }
   const abs = path.join(ctx.root, ...rel.split('/'));
   const st = lstatOrNull(abs);
-  if (!st) throw refuse('bad-request', `there is no file at ${rel}`);
+  // A file in a restricted project's folder this person can't see is answered as a missing one, so a
+  // guessed path never tells them what is in there.
+  if (!st || inHiddenProject(ctx, rel, viewerOf(who))) throw refuse('bad-request', `there is no file at ${rel}`);
   if (st.isSymbolicLink()) throw refuse('bad-request', `${rel} is a link`);
   if (!st.isFile()) throw refuse('bad-request', `${rel} isn't a file`);
   try {
@@ -1551,7 +1766,7 @@ function movedFromHolders(ctx) {
 }
 
 function unlink(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   const rel = linkPathOf(input);
   const who = identity(ctx);
@@ -1678,7 +1893,7 @@ function movedCardText(cardFile, loc, newRel, newKey, client, drop, newRef) {
 
 // Every check first; then claim the new folder, rewrite the card, rename onto the claim.
 function move(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   const client = input.client;
   if (typeof client !== 'string' || client === 'personal' || !isSlug(client)) {
@@ -2017,7 +2232,7 @@ function removeParent(ctx, to, dev) {
 // remove (delete). A refusal leaves everything as it was.
 function removeAction(kind, input, ctx) {
   const opts = removeOptions(input, kind);
-  const loc = locate(ctx, input.key, { leftover: opts.leftover });
+  const loc = locateSeen(ctx, input.key, { leftover: opts.leftover });
   const verb = REMOVE_VERBS[kind];
   if (loc.readOnly) {
     throw refuse('not-allowed', `${loc.key} belongs to an archived client (${loc.rel}), so it stays read only`);
@@ -2346,7 +2561,7 @@ function checkChat(entry) {
 }
 
 function update(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const entry = input.entry;
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     throw refuse('bad-request', 'entry must be an object');
@@ -2370,7 +2585,7 @@ function update(input, ctx) {
 }
 
 function updateRemove(input, ctx) {
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   const file = input.file;
   const prefix = `${loc.rel}/${UPDATES_DIR}/`;
@@ -2624,7 +2839,8 @@ function diskCards(ctx) {
       const parts = cardParts(text);
       const values = parts ? cardValues(parts.entries) : null;
       const raw = rawRefsOf(text);
-      cards.push({ key, slug: parsed.slug, rel, at, space: loc.space, archived: loc.archived, values, ref: cardRefOf(values), raw });
+      const access = cardAccessOf(loc.space, text);
+      cards.push({ key, slug: parsed.slug, rel, at, space: loc.space, archived: loc.archived, values, ref: cardRefOf(values), raw, access });
     }
   }
   memo.cards = cards;
@@ -2780,7 +2996,7 @@ function refAction(input, ctx) {
     return refAll(ctx);
   }
   const replace = input.replace === true;
-  const loc = locate(ctx, input.key);
+  const loc = locateSeen(ctx, input.key);
   const expect = expectOf(input, true);
   if (loc.space === 'personal') throw refuse('bad-request', "Personal projects don't get codes.");
   if (loc.archived) throw refuse('bad-request', "Archived projects don't get codes.");
@@ -2872,7 +3088,8 @@ function refAll(ctx) {
   return { ok: true, action: 'ref', given, skipped };
 }
 
-// `find-ref`: the codes in `text` that belong to a real project, and near misses. Read only, no git.
+// `find-ref`: the codes in `text` that belong to a real project, and near misses. Read only; git only
+// for who is asking, when a restricted card is met.
 function findRef(input, ctx) {
   const text = input.text;
   if (typeof text !== 'string') throw refuse('bad-request', 'text must be text');
@@ -2884,10 +3101,19 @@ function findRef(input, ctx) {
   const near = [];
   if (candidates.length === 0) return { ok: true, action: 'find-ref', found, near };
   const { byFold } = refIndex(ctx);
-  const resolvable = [...byFold.values()].filter(h => h.length === 1).map(h => h[0].ref).sort();
+  // Restricted projects: codes resolve from every card, then a project this person can't see is as if
+  // no card held its code. Identity (a git call) is read only when a restricted card is met.
+  let viewer = null;
+  const hidden = (c) => {
+    if (!isRestricted(c.access)) return false;
+    if (viewer === null) viewer = viewerOf(identity(ctx));
+    return !canSeeProject(c.access, viewer);
+  };
+  const resolvable = [...byFold.values()].filter(h => h.length === 1 && !hidden(h[0])).map(h => h[0].ref).sort();
   const keys = new Set();
   for (const candidate of candidates) {
-    const holders = byFold.get(foldRef(candidate));
+    const all = byFold.get(foldRef(candidate));
+    const holders = all && !all.every(hidden) ? all : undefined;
     if (holders && holders.length === 1) {
       const c = holders[0];
       if (found.length >= REF_CANDIDATES_MAX || keys.has(c.key)) continue;
@@ -2925,6 +3151,7 @@ function capabilities() {
       PROJECTS_EMAIL_CAPABILITY,
       PROJECTS_CHAT_SUMMARY_CAPABILITY,
       PROJECTS_EMAIL_THREADS_CAPABILITY,
+      PROJECTS_VISIBILITY_CAPABILITY,
     ],
   };
 }
@@ -3393,8 +3620,10 @@ function readDismissed(ctx, folder, slug) {
 // entry holds its `email_key`, every key in its `email_thread_keys`, and an old file's
 // `email_message_id` (as `<id>`, so only a Message-ID finds it). `email_thread_link` holds nothing.
 // Built once per command (overseer S1) and asked with `heldBy`.
-function heldKeys(ctx) {
+// `skip(folderRel, projectKey)`, when given, leaves out every entry in folders it answers true for.
+function heldKeys(ctx, skip) {
   const held = new Map();
+  const skipped = new Map();
   const hold = (k, found) => {
     if (!isText(k) || k === '') return;
     const best = held.get(k);
@@ -3408,6 +3637,11 @@ function heldKeys(ctx) {
       const dirAbs = path.join(ctx.root, ...dirRel.split('/'));
       const st = lstatOrNull(dirAbs);
       if (!st || st.isSymbolicLink() || !st.isDirectory()) continue;
+      if (skip) {
+        const folderRel = `${b.rel}/${name}`;
+        if (!skipped.has(folderRel)) skipped.set(folderRel, skip(folderRel, projectKey));
+        if (skipped.get(folderRel)) continue;
+      }
       let files;
       try {
         files = fs.readdirSync(dirAbs);
@@ -3452,7 +3686,10 @@ function heldBy(held, keys) {
   return null;
 }
 
-function alreadyIn(held) {
+// Restricted projects: still never twice, but a project `who` can't see isn't named.
+function alreadyIn(ctx, held, who) {
+  const folderRel = held.file.slice(0, held.file.lastIndexOf(`/${UPDATES_DIR}/`));
+  if (folderHidden(ctx, folderRel, held.key, viewerOf(who))) return refuse('exists', 'That email is already in another project.');
   return refuse('exists', `That email is already in ${held.key}.`, { file: held.file, key: held.key });
 }
 
@@ -3477,7 +3714,7 @@ function requireRequested(ctx, key) {
   const gone = () => refuse('not-found', `there is no live project ${key} with a card`);
   let loc;
   try {
-    loc = locate(ctx, key);
+    loc = locateSeen(ctx, key);
   } catch (err) {
     if (err instanceof Refusal) throw gone();
     throw err;
@@ -3574,7 +3811,7 @@ function emailDraft(input, ctx) {
   const heldMap = heldKeys(ctx);
   // With a thread, the drafted email is also asked for by its derived key and near key (threads decision 3).
   const held = heldBy(heldMap, thread ? [messageKey, ownKey, ownNear] : [emailKey]);
-  if (held) throw alreadyIn(held);
+  if (held) throw alreadyIn(ctx, held, who);
 
   for (const name of draftNames(folder)) {
     const r = readDraft(folder, name);
@@ -3665,6 +3902,12 @@ function emailDraftRemove(input, ctx) {
   const folder = draftsFolder(ctx, false, [draftsRel(`${id}.json`), dismissedRel]);
   if (folder) sweepDrafts(ctx, folder);
   const r = ownDraft(ctx, folder, id, who);
+  // Restricted projects: a draft asked for a project its owner can no longer see is gone to them.
+  const requested = isText(r.draft.requested) ? parseKey(r.draft.requested) : null;
+  const read = requested ? readFolderOf(ctx, requested) : null;
+  if (read && !canSeeProject(cardAccessAt(read.abs, read.space), viewerOf(who))) {
+    throw refuse('not-found', "That draft isn't waiting any more.");
+  }
   if (input.dismiss) {
     const kept = readDismissed(ctx, folder, who.slug);
     kept[r.draft.email_key] = ukDate(ctx.now);
@@ -3689,7 +3932,9 @@ function emailCheck(input, ctx) {
   const thread = threadOf(input.thread, subject, ctx);
   const who = inboxOwner(ctx);
   requireOwnInbox(who, inboxAddress, 'check its emails against projects');
-  const heldMap = heldKeys(ctx);
+  // Restricted projects: what a project this person can't see holds counts as held by none.
+  const viewer = viewerOf(who);
+  const heldMap = heldKeys(ctx, (folderRel, projectKey) => folderHidden(ctx, folderRel, projectKey, viewer));
   const covered = [];
   const fresh = [];
   const projectsHolding = new Set();
@@ -3786,7 +4031,7 @@ function emailUpdate(input, entry, loc, ctx) {
   const heldMap = heldKeys(ctx);
   const near = draftNearKeys(r.draft);
   const held = heldBy(heldMap, [r.draft.email_key, near[r.draft.email_key], draftMessageId(r.draft)]);
-  if (held) throw alreadyIn(held);
+  if (held) throw alreadyIn(ctx, held, who);
   // The thread's other messages: the ones no entry holds now are this entry's to hold; the newest one
   // some entry holds links it to that conversation, written as that entry has it (overseer B1).
   const threadKeys = [];
@@ -3939,6 +4184,16 @@ module.exports = {
   PROJECTS_EMAIL_CAPABILITY,
   PROJECTS_CHAT_SUMMARY_CAPABILITY,
   PROJECTS_EMAIL_THREADS_CAPABILITY,
+  PROJECTS_VISIBILITY_CAPABILITY,
+  parseVisibility,
+  rawTextRestricted,
+  slugForms,
+  personSlugs,
+  onProject,
+  seesEveryProject,
+  isRestricted,
+  canSeeProject,
+  readCardAccess: cardAccessOf,
   CHAT_ID_PATTERN,
   CHAT_TITLE_MAX,
   EMAIL,

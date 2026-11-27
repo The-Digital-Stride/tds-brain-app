@@ -1,8 +1,8 @@
 ---
 name: tdsapp-projects
-description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, add a dated note or call to a project's updates log (or take your own back), give a project its code (such as AST4K7), find which project a code in some text belongs to, and suggest an email for a project (a draft that waits in the Projects app until the inbox owner approves it) - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update", "give the project a code", "what's the project code", "which project is AST4K7", "link this thread to the project", "add this email to the project", "save this chat to the project", "log this chat on the project", "summarise this chat on the project" (these last three point the person at the **Save to project** button in TDS Cortex; never write the entry yourself). Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
-version: 0.8.0
-last_updated: 2026-11-25
+description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, restrict who sees it in TDS Cortex, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, add a dated note or call to a project's updates log (or take your own back), give a project its code (such as AST4K7), find which project a code in some text belongs to, and suggest an email for a project (a draft that waits in the Projects app until the inbox owner approves it) - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "make this project restricted", "only the project team should see this", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update", "give the project a code", "what's the project code", "which project is AST4K7", "link this thread to the project", "add this email to the project", "save this chat to the project", "log this chat on the project", "summarise this chat on the project" (these last three point the person at the **Save to project** button in TDS Cortex; never write the entry yourself). Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
+version: 0.9.0
+last_updated: 2026-11-27
 roles: owner, scout, team
 maturity: draft
 members: false
@@ -15,8 +15,8 @@ One script that makes projects and changes their cards. TDS Cortex runs it for i
 change made here or in the app comes out the same, and nothing else writes a project card.
 
 It's in testing, and released to the whole team: anyone in `.team-config/roles.json` can make and
-change shared projects. Changing a project's Account Owner is for its Account Owner, an owner or a
-scout, and deleting one is for its Account Owner or the brain's Owner.
+change shared projects. Changing a project's Account Owner, or who sees it, is for its Account Owner,
+an owner or a scout, and deleting one is for its Account Owner or the brain's Owner.
 
 ## Where projects live
 
@@ -68,6 +68,7 @@ comms: amber
 owner: steve-blassberg
 team:
   - "simon-jones"
+visibility: restricted
 service:
   - "seo"
 start: 2026-11-20
@@ -96,6 +97,8 @@ Rebuild the site in two phases.
   `.team-config/roles.json`.
 - `budget_hours` is for the whole project when it's one-off, and per calendar month when it's
   ongoing. An ongoing project has no `end`. `end` can't be before `start`.
+- `visibility: restricted` means TDS Cortex shows the project only to its Account Owner, its team
+  and every owner and scout. No line means everyone sees it. See "Restricted projects" below.
 - `ref` is the project's code (see "Project codes" below). Only this script writes it; never change
   it by hand.
 - `moved_from` lists the keys the project had before it was moved, oldest first, at most 10. Only
@@ -114,9 +117,9 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 
 | Action | Fields | What it does |
 |---|---|---|
-| `create` | `space` (`"client"` or `"personal"`), `client` (for a client project), `slug`, `fields` (with `title`) | Makes the folder and its card. `slug` is the folder name: lower-case letters, numbers and single dashes, at most 60. Refused with `exists` if the name is used anywhere the key could point, archives included. |
-| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. Only an owner or a scout can name an Account Owner here: anyone else's card is written without one, and the reply adds `"ownerDropped":true`. |
-| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. Changing or clearing a shared project's `owner` is for its Account Owner, an owner or a scout (on a card with none, an owner or a scout); sending the same `owner` back is always fine. |
+| `create` | `space` (`"client"` or `"personal"`), `client` (for a client project), `slug`, `fields` (with `title`) | Makes the folder and its card. `slug` is the folder name: lower-case letters, numbers and single dashes, at most 60. Refused with `exists` if the name is used anywhere the key could point, archives included. A restricted project's creator goes on its team unless they're an owner, a scout or its Account Owner. |
+| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. Only an owner or a scout can name an Account Owner here: anyone else's card is written without one, and the reply adds `"ownerDropped":true`. Only an owner or a scout can make it restricted. |
+| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. Changing or clearing a shared project's `owner` is for its Account Owner, an owner or a scout (on a card with none, an owner or a scout); sending the same `owner` back is always fine. `visibility` follows the same rule. |
 | `link` | `key`, `path`, `expect` | Adds a file from the brain to `## Linked files`. `path` is from the brain folder, such as `clients/skyseal/files/Brief.pdf`. Already linked: nothing is written. |
 | `unlink` | `key`, `path`, `expect` | Takes that file's line out, and the section once it's empty. The file itself stays where it is. A line pointing into a project's folder from before it was archived or moved is taken out by the path TDS Cortex shows for it now. |
 | `move` | `key`, `client`, `expect`, optional `dropPersonal: true`, optional `check: true`, optional `filesExpect` | Moves the project's folder to `clients/<client>/projects/` under the same folder name and answers the new key. Works on client projects and personal ones, never into your personal space. See "Moving a project" below. |
@@ -130,10 +133,11 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | `email-draft` | `threadId`, `inboxAddress`, `subject`, `from`, `people`, `sentAt`, `summary`, `newestText`, optional `messageId`, `threadMessageIds`, `requested`, `thread`, `threadCodes` | Suggests one email for a project: a draft that waits on this Mac for the inbox owner's OK in the Projects app. Answers only its `id`. See "Emails" below. |
 | `email-draft-remove` | `id`, `dismiss` | Takes a waiting draft away (the inbox owner only); `dismiss: true` also means "not for a project", so it isn't suggested again. |
 | `email-check` | `inboxAddress`, `threadId`, `subject`, `thread` | Says which messages of a thread a project already has, and which are new. Reads only; changes nothing. See "Emails" below. |
-| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.8.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1","projects-refs-v1","projects-email-v1","projects-chat-summary-v1","projects-email-threads-v1"]}`. |
+| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.8.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1","projects-refs-v1","projects-email-v1","projects-chat-summary-v1","projects-email-threads-v1","projects-visibility-v1"]}`. |
 
 `fields` uses the app's names: `title`, `kind`, `status`, `health`, `comms`, `owner`, `team`,
-`service`, `start`, `end`, `budgetHours`, `billable`, `stages`, `brief`. `expect` is the SHA-256 of
+`service`, `start`, `end`, `budgetHours`, `billable`, `stages`, `brief`, `visibility` (`"everyone"`
+or `"restricted"`). `expect` is the SHA-256 of
 `project.md` as you read it (`shasum -a 256 project.md`): if the card changed since, nothing is
 written and the reply is `changed`.
 
@@ -155,8 +159,38 @@ wrong. Tell the person in a plain sentence what changed, or why it didn't.
 - Bad values: an unknown status or light, someone not on the team, more than 20 people, 12 stages or
   200 linked files, a title over 120 characters, a brief over 20,000 characters or with its own
   `## Linked files` heading, dates that don't exist.
+- `visibility` on a personal project, or any value but `"everyone"` or `"restricted"`.
 - For `link`: anything that isn't a real file of a type the library lists, under `clients/<client>/`,
   `projects/<project>/`, `templates/` or `personal/`, or that goes through a link.
+
+## Restricted projects
+
+Only when `capabilities` lists `projects-visibility-v1`.
+
+This hides a project in the Cortex app only; its folder still syncs to every Mac.
+
+- Send `visibility: "restricted"` with `create`, `card` or `edit` to write `visibility: restricted` on
+  the card (right after `team`), and `visibility: "everyone"` to take the line out. Anything else is
+  refused with `bad-request`, and so is restricting a personal project (it's yours alone already).
+- Who may switch it: the project's Account Owner, an owner or a scout (on a card with no Account
+  Owner, an owner or a scout). Anyone else gets `not-allowed`: "Only <who> can change who sees this
+  project." Sending the same value back is always fine.
+- Who sees a restricted project: its Account Owner, the people on its team (either way their name is
+  written as a slug) and every owner and scout. Someone not in `.team-config/roles.json` sees none.
+- To anyone else it isn't there. Every action on it (`edit`, `card`, `link`, `unlink`, `ref`,
+  `update`, `update-remove`, `archive`, `unarchive`, `delete`, `move`, and `email-draft` with it as
+  `requested`) answers exactly what a project that doesn't exist gets, and `email-draft-remove` of a
+  draft asked for it answers "That draft isn't waiting any more." `find-ref` and `email-check`
+  answer as if no project held its code or its emails, and an email it already holds is refused as
+  "already in another project". `link` of a file inside its folder, to a project they can see, gets
+  "there is no file at <path>", whether or not the file is there.
+- Any value but empty or `everyone` reads as restricted, so a typo never opens a project up. A
+  value written by hand (such as `visibility: team only`) is kept on other changes; sending
+  `visibility` writes the one standard line.
+- People can still find its files in the brain folder on their Mac. Don't open, read or summarise a
+  restricted project's folder for someone who isn't on it.
+- A to-do in a restricted project shouldn't go to someone outside it: add them to the project's
+  team first.
 
 ## Moving a project
 
@@ -427,6 +461,11 @@ with no dash. Internal projects use The Digital Stride's code. Personal projects
 
 ## Backward compatibility
 
+Version 0.9 only adds the optional `visibility` field and the rules above; a card without a
+`visibility` line behaves exactly as in 0.8. An older script refuses the field (`unknown field`)
+and keeps a hand-written line on every change, which is why the app checks `capabilities` for
+`projects-visibility-v1` first. An older Cortex ignores the line and shows the project to everyone.
+
 Version 0.8 only adds `email-check` and the optional `thread` and `threadCodes` on `email-draft`;
 a call without them makes exactly the draft 0.7 made. Approving a draft made with a thread writes two
 new optional lines, which older apps ignore. An older script answers `email-check` with
@@ -443,7 +482,7 @@ other action works exactly as in 0.5. An older script answers the new actions wi
 and refuses an `email` entry, which is why the app checks `capabilities` for `projects-email-v1`
 first. Older apps show an email entry by its kind and summary.
 
-Versions: 0.8.0 email threads: `email-check`, `thread` and `threadCodes` (2026-11-25) · 0.7.0 chat summaries (2026-11-24) · 0.6.0 email drafts and email entries (2026-11-24) · 0.5.0 project codes · 0.4.0 updates
+Versions: 0.9.0 restricted projects: `visibility` (2026-11-27) · 0.8.0 email threads: `email-check`, `thread` and `threadCodes` (2026-11-25) · 0.7.0 chat summaries (2026-11-24) · 0.6.0 email drafts and email entries (2026-11-24) · 0.5.0 project codes · 0.4.0 updates
 log · 0.3.1 projects in their new homes · 0.3 archive and delete · 0.2 move · 0.1 cards.
 
 ## How it writes files

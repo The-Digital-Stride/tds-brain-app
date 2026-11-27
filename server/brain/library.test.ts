@@ -1472,3 +1472,269 @@ describe('claude artifacts in the library (plan 2026-11-23-claude-artifacts-in-p
     });
   });
 });
+
+describe('restricted projects in the library (plan 2026-11-27, decision 5)', () => {
+  const SECRET = `${ACME}projects/secret`;
+  const LINKED = `${ACME}reports/linked.md`;
+  const web = {
+    key: 'acme-heating/web',
+    space: 'client',
+    client: 'acme-heating',
+    folder: `${ACME}projects/web`,
+    links: [] as string[],
+  } as Partial<ProjectCard> as ProjectCard;
+  const secret = { ...web, key: 'acme-heating/secret', folder: SECRET, links: [LINKED] } as ProjectCard;
+
+  /** A stand-in for S1's index that hides SECRET and the older `projects/hush` folder. */
+  function hidingIndex(): () => Promise<ProjectsIndex> {
+    const hidden = (rel: string) => rel.startsWith(`${SECRET}/`) || rel.startsWith('projects/hush/');
+    return async () => ({
+      cards: [web],
+      byKey: (key) => (key === web.key ? web : null),
+      // It still names the hidden key for the linked file: the library must drop it from the stamp.
+      keysForPath: (rel) => [
+        ...(rel.startsWith(`${web.folder}/`) ? [web.key] : []),
+        ...(hidden(rel) || rel === LINKED ? [secret.key] : []),
+      ],
+      resolve: () => ({ how: 'none' }),
+      hiddenPath: hidden,
+      hiddenKey: (key) => key === secret.key,
+      hiddenCount: 2,
+    });
+  }
+  const unreadable = async (): Promise<ProjectsIndex> => {
+    throw new Error('no index');
+  };
+
+  function restrictedRoot(): string {
+    const root = copyFixture();
+    put(root, `${SECRET}/plan.md`, '# Plan');
+    put(root, `${SECRET}/mock.png`);
+    put(root, `${ACME}projects/web/brief.md`, '# Brief');
+    put(root, LINKED, '# Linked');
+    put(root, 'projects/hush/notes.md', '# Hush');
+    put(root, 'projects/old-site/notes.md', '# Notes');
+    return root;
+  }
+  const paths = (items: LibraryItem[] | undefined) => (items ?? []).map((i) => i.path);
+
+  it("leaves a hidden project's files out of every listing, and its folder out of the groups", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    const client = await l.list('client:acme-heating');
+    expect(paths(client?.items).filter((p) => p.startsWith(SECRET))).toEqual([]);
+    expect(paths(client?.items)).toContain(`${ACME}projects/web/brief.md`);
+    const legacy = await l.list(LEGACY_PROJECTS_SCOPE);
+    expect(paths(legacy?.items)).toEqual(['projects/old-site/notes.md']);
+    expect(legacy?.groups).toEqual(['Old site']);
+  });
+
+  it('keeps a linked file outside the folder, with no stamp for the hidden project', async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    const client = await l.list('client:acme-heating');
+    expect(byPath(client?.items ?? []).get(LINKED)?.projects).toEqual([]);
+    expect((await l.itemForPath(LINKED))?.item?.projects).toEqual([]);
+  });
+
+  it('refuses every by-id and by-path read of a hidden file as not found', async () => {
+    const root = restrictedRoot();
+    const plain = lib(root);
+    const ids = paths((await plain.list('client:acme-heating'))?.items)
+      .filter((p) => p.startsWith(SECRET))
+      .map((p) => idFor('client:acme-heating', p));
+    expect(ids).toHaveLength(2);
+    // Before the index says so, the ids are real files.
+    for (const id of ids) expect(await plain.file(id)).not.toBeNull();
+    const l = lib(root, { projects: hidingIndex() });
+    for (const id of ids) expect(await l.file(id), id).toBeNull();
+    expect(await l.itemForPath(`${SECRET}/plan.md`)).toBeNull();
+    // A file not there yet answers the same: nothing confirms the folder.
+    expect(await l.itemForPath(`${SECRET}/later.md`)).toBeNull();
+    expect(await l.file(idFor(LEGACY_PROJECTS_SCOPE, 'projects/hush/notes.md'))).toBeNull();
+  });
+
+  it("gives a hidden project's folder no files, and never serves a hidden file through a link", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    // Its own folder's files are left out; the visible file it links is not the folder's to hide.
+    expect(paths((await l.projectFiles(secret, 'document')).items)).toEqual([LINKED]);
+    const linking = { ...web, links: [`${SECRET}/plan.md`] } as ProjectCard;
+    const out = await l.projectFiles(linking, 'document');
+    expect(paths(out.items)).toEqual([`${ACME}projects/web/brief.md`]);
+  });
+
+  it("hides every project folder when the index can't be read", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: unreadable });
+    const client = await l.list('client:acme-heating');
+    expect(paths(client?.items).some((p) => p.includes('/projects/'))).toBe(false);
+    expect(paths(client?.items)).toContain(LINKED);
+    expect((await l.list(LEGACY_PROJECTS_SCOPE))?.items).toEqual([]);
+    expect((await l.list(LEGACY_PROJECTS_SCOPE))?.groups).toEqual([]);
+    expect(await l.file(idFor('client:acme-heating', `${ACME}projects/web/brief.md`))).toBeNull();
+    expect(await l.itemForPath(`${ACME}projects/web/brief.md`)).toBeNull();
+  });
+
+  it('serves exactly what it did before when nothing is hidden', async () => {
+    const root = restrictedRoot();
+    const before = lib(root, {
+      projects: async () => ({ ...(await hidingIndex()()), hiddenPath: undefined, hiddenKey: undefined }),
+    });
+    const after = lib(root, {
+      projects: async () => ({ ...(await hidingIndex()()), hiddenPath: () => false, hiddenKey: () => false }),
+    });
+    for (const scope of ['client:acme-heating', LEGACY_PROJECTS_SCOPE, 'personal'])
+      expect(await after.list(scope), scope).toEqual(await before.list(scope));
+    expect(await after.search('plan', 'document')).toEqual(await before.search('plan', 'document'));
+  });
+});
+
+describe("restricted projects: a hidden project's call notes filed outside its folder", () => {
+  const NOTES = `${ACME}call-notes`;
+  const KICKOFF = `${NOTES}/2026-11-01-secret-kickoff.md`;
+  const TRANSCRIPT = `${NOTES}/2026-11-01-secret-kickoff-transcript.md`;
+  const DEEP = `${NOTES}/2026/2026-11-02-secret-deep-dive.md`;
+  const WEB = `${NOTES}/2026-11-03-web-kickoff.md`;
+  const PLAIN = `${NOTES}/2026-11-04-kickoff-catch-up.md`;
+  const SECRET_NOTES = [KICKOFF, TRANSCRIPT, DEEP];
+  const tagged = (project: string, title: string) =>
+    `---\ntype: call-note\nproject: ${project}\n---\n# ${title}\n`;
+
+  /**
+   * A stand-in for S1's index. `seen`: this person can see the secret project (resolve answers its key),
+   * though another project is still hidden from them (hiddenCount 1).
+   */
+  function index(opts: { seen?: boolean; hiddenCount?: number } = {}): () => Promise<ProjectsIndex> {
+    return async () => ({
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: (value, client) => {
+        const v = value ?? '';
+        const key = v.includes('/') ? v : `${client}/${v}`;
+        if (key === 'acme-heating/secret')
+          return opts.seen ? { how: 'key', key } : { how: 'restricted' as const };
+        if (key === 'acme-heating/web') return { how: 'key', key };
+        return { how: 'none' };
+      },
+      hiddenPath: (rel) => rel.startsWith(`${ACME}projects/hush/`),
+      hiddenKey: () => false,
+      hiddenCount: opts.hiddenCount ?? 1,
+    });
+  }
+  const unreadable = async (): Promise<ProjectsIndex> => {
+    throw new Error('no index');
+  };
+
+  function notesRoot(): string {
+    const root = copyFixture();
+    put(root, KICKOFF, tagged('secret', 'Secret kickoff'));
+    put(root, TRANSCRIPT, tagged('acme-heating/secret', 'Secret kickoff transcript'));
+    put(root, DEEP, tagged('"secret"', 'Secret deep dive'));
+    put(root, WEB, tagged('web', 'Web kickoff'));
+    put(root, PLAIN, '---\ntype: call-note\n---\n# Kickoff catch-up\n');
+    return root;
+  }
+  const paths = (items: LibraryItem[] | undefined) => (items ?? []).map((i) => i.path);
+  const notesIn = (items: LibraryItem[] | undefined) =>
+    paths(items)
+      .filter((p) => p.startsWith(NOTES))
+      .sort();
+  const idOf = (rel: string) => idFor('client:acme-heating', rel);
+
+  it('leaves them out of the listing, search and every by-id or by-path read for an outsider', async () => {
+    const root = notesRoot();
+    const plain = lib(root);
+    for (const rel of SECRET_NOTES) expect(await plain.file(idOf(rel)), rel).not.toBeNull();
+    const l = lib(root, { projects: index() });
+    expect(notesIn((await l.list('client:acme-heating'))?.items)).toEqual([PLAIN, WEB].sort());
+    const found = await l.search('kickoff', 'document');
+    expect(found.hits.map((h) => h.item.path).sort()).toEqual([PLAIN, WEB].sort());
+    expect(found.total).toBe(2);
+    for (const rel of SECRET_NOTES) {
+      expect(await l.file(idOf(rel)), rel).toBeNull();
+      // Answered as a note that isn't there: the same key, no item.
+      expect(await l.itemForPath(rel), rel).toEqual({
+        key: idOf(rel),
+        scope: { id: 'client:acme-heating', name: expect.any(String), kind: 'client' },
+        item: null,
+      });
+    }
+    expect((await l.itemForPath(WEB))?.item?.path).toBe(WEB);
+    expect(await l.file(idOf(PLAIN))).not.toBeNull();
+    // Linked from a visible project, a hidden note is not served either.
+    const card = {
+      key: 'acme-heating/web',
+      space: 'client',
+      client: 'acme-heating',
+      folder: `${ACME}projects/web`,
+      links: [KICKOFF, PLAIN],
+    } as Partial<ProjectCard> as ProjectCard;
+    const out = await l.projectFiles(card, 'document');
+    expect(paths(out.items)).toEqual([PLAIN]);
+    expect(out.hidden).toBe(1);
+  });
+
+  it('shows them to someone who can see the project', async () => {
+    const root = notesRoot();
+    const l = lib(root, { projects: index({ seen: true }) });
+    expect(notesIn((await l.list('client:acme-heating'))?.items)).toEqual(
+      [...SECRET_NOTES, WEB, PLAIN].sort(),
+    );
+    for (const rel of SECRET_NOTES) expect(await l.file(idOf(rel)), rel).not.toBeNull();
+  });
+
+  it('opens no file for this when nothing is restricted, and serves exactly what it did', async () => {
+    const root = notesRoot();
+    const reads: string[] = [];
+    const none = lib(root, { projects: index({ hiddenCount: 0 }), onNoteRead: (rel) => reads.push(rel) });
+    const noCount = lib(root, {
+      projects: async () => ({ ...(await index()()), hiddenCount: undefined }),
+      onNoteRead: (rel) => reads.push(rel),
+    });
+    const before = lib(root, {
+      projects: async () => ({ ...(await index()()), hiddenPath: undefined, hiddenCount: 0 }),
+    });
+    for (const l of [none, noCount]) {
+      expect(await l.list('client:acme-heating')).toEqual(await before.list('client:acme-heating'));
+      expect(await l.search('kickoff', 'document')).toEqual(await before.search('kickoff', 'document'));
+      for (const rel of SECRET_NOTES) expect(await l.file(idOf(rel))).not.toBeNull();
+    }
+    expect(reads).toEqual([]);
+  });
+
+  it('reads each note once per version, and again when it changes', async () => {
+    const root = notesRoot();
+    const reads: string[] = [];
+    const l = lib(root, { projects: index(), onNoteRead: (rel) => reads.push(rel) });
+    await l.list('client:acme-heating');
+    await l.list('client:acme-heating');
+    await l.search('kickoff', 'document');
+    expect(reads.filter((r) => r === PLAIN)).toHaveLength(1);
+    // Tagged later (a different size): the next read by id sees the new line at once.
+    put(root, PLAIN, tagged('secret', 'Kickoff catch-up, now tagged'));
+    expect(await l.file(idOf(PLAIN))).toBeNull();
+  });
+
+  it("hides every tagged note when the index can't be read, and keeps untagged ones", async () => {
+    const root = notesRoot();
+    const l = lib(root, { projects: unreadable });
+    expect(notesIn((await l.list('client:acme-heating'))?.items)).toEqual([PLAIN]);
+    expect(await l.file(idOf(WEB))).toBeNull();
+    expect(await l.file(idOf(PLAIN))).not.toBeNull();
+  });
+
+  it("hides a note whose frontmatter can't be read while something is restricted", async () => {
+    const root = notesRoot();
+    const LONG = `${NOTES}/2026-11-05-long.md`;
+    // A block that never closes within what is read: its project line could be anywhere below.
+    put(root, LONG, `---\n${'note: x\n'.repeat(5000)}project: secret\n---\n# Long\n`);
+    expect(
+      notesIn((await lib(root, { projects: index() }).list('client:acme-heating'))?.items),
+    ).not.toContain(LONG);
+    expect(
+      notesIn((await lib(root, { projects: index({ hiddenCount: 0 }) }).list('client:acme-heating'))?.items),
+    ).toContain(LONG);
+  });
+});

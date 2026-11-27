@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
+import { isRestricted } from '../../../../shared/project-visibility.ts';
 import type { ProjectCard, ProjectList as ProjectListData } from '../../../../shared/projects-contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
+import { RestrictedBadge } from '../../shell/RestrictedBadge.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import {
   ARCHIVED,
@@ -65,7 +67,10 @@ function Row({ card, onOpen }: { card: ProjectCard; onOpen: () => void }) {
       <button type="button" className="proj-open" data-focus={`proj:${card.key}`} onClick={onOpen}>
         <span className="dot" data-state={dot} aria-hidden="true" />
         <span className="line-text">
-          <span className="line-title">{card.title}</span>
+          <span className="line-title">
+            {card.title}
+            {isRestricted(card) ? <RestrictedBadge /> : null}
+          </span>
           <span className="line-meta">{rowMeta(card)}</span>
         </span>
       </button>

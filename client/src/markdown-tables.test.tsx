@@ -35,6 +35,12 @@ describe('pipes inside code in a table', () => {
     expect(t.box.querySelectorAll('td code')).toHaveLength(2);
   });
 
+  it('keeps the column alignment the table asks for', () => {
+    const t = table(HEAD, RULE, '| A | 1 | 2 |');
+    const align = Array.from(t.box.querySelectorAll('td'), (c) => c.getAttribute('align'));
+    expect(align).toEqual([null, 'right', 'right']);
+  });
+
   it('leaves an already escaped pipe as one pipe', () => {
     const t = table(HEAD, RULE, '| `A \\| B | C` | 1 | 2 |', '| `D \\| E` | 3 | 4 |');
     expect(t.rows).toEqual([

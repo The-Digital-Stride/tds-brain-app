@@ -92,7 +92,7 @@ export function renderMarkdown(text: string, link?: FileLinker): string {
         'math',
       ],
       // An allow list: no class or id, so a reply cannot borrow the app's own look.
-      ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'start', 'colspan', 'rowspan'],
+      ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'start', 'colspan', 'rowspan', 'align'],
       ALLOW_DATA_ATTR: false,
       ALLOW_ARIA_ATTR: false,
     });

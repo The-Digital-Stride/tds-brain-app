@@ -148,6 +148,11 @@
     padding: 1px 5px;
     border-radius: var(--r-6);
   }
+  /* A long name that wraps keeps its padding and corners on each line. */
+  .markdown td code {
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
   .markdown pre {
     background: var(--tray);
     border-radius: var(--r-10);
@@ -183,6 +188,13 @@
     font-weight: 600;
     color: var(--iron);
     border-bottom: 1.5px solid var(--navy);
+  }
+  /* A column's alignment, as the table's rule row sets it (`---:`). */
+  .markdown :is(th, td)[align="right"] {
+    text-align: right;
+  }
+  .markdown :is(th, td)[align="center"] {
+    text-align: center;
   }
   .markdown blockquote {
     border-left: 2px solid var(--line-strong);

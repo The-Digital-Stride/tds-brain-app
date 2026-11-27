@@ -11,6 +11,13 @@ import {
   type TodoItem,
   type TodoList,
 } from '../../../shared/contract.ts';
+import { isTodoLinkUrl } from '../../../shared/todo-updates.ts';
+import {
+  TODO_LINK_NAME_MAX,
+  TODO_LINK_URL_MAX,
+  TODO_LINKS_MAX,
+  type TodoLink,
+} from '../../../shared/todo-updates-contract.ts';
 import { api, discardUpload, uploadFile } from '../api.ts';
 import { useStore } from '../store.tsx';
 import { Confirm } from './Confirm.tsx';
@@ -84,29 +91,49 @@ export interface TodoFilesProps {
   team: TeamMember[];
   /** Another change is running: Add and Remove wait. */
   busy: boolean;
-  /** Other lines under the `## Files` heading (a web link, a note), shown as plain text. */
+  /** Other lines under the `## Files` heading (a note), shown as plain text. */
   extras?: string[];
+  /** The web links in the `## Files` section. Absent from an older server. */
+  links?: TodoLink[];
+  /** TodoList.canLink (and `todo` is given): "Add a link" and Remove on a link are shown. */
+  canLink?: boolean;
   /** Says a line in the panel's status region. */
   onStatus: (text: string, isError?: boolean) => void;
+}
+
+/** The host of a web address, without a leading "www.": "drive.google.com". '' when it can't be read. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
 }
 
 /**
  * The Files block under a to-do's details: the files linked in its `## Files` section, each opening in the
  * file viewer, with Remove and "Add a file" when files can be changed. Plan 2026-11-16-todo-attachments.
+ * With web links (plan 2026-11-27-task-updates-handback) it is "Files and links": each link opens in a new
+ * tab, with Remove and "Add a link" for the person who can change the task.
  */
 export function TodoFiles(props: TodoFilesProps) {
   const { attachments, todo, canAttach, me, team, onStatus } = props;
   const extras = props.extras ?? [];
+  const links = props.links ?? [];
   const change = canAttach && todo !== null;
+  const changeLinks = props.canLink === true && todo !== null;
+  const combined = changeLinks || links.length > 0;
   const { changeTodos } = useStore();
   const { dispatch } = useShell();
   const headId = useId();
   const addButton = useRef<HTMLButtonElement>(null);
+  const linkButton = useRef<HTMLButtonElement>(null);
   const headRef = useRef<HTMLHeadingElement>(null);
   const [working, setWorking] = useState(false);
   const busy = props.busy || working;
 
-  if (attachments.length === 0 && extras.length === 0 && !change) return null;
+  if (attachments.length === 0 && extras.length === 0 && links.length === 0 && !change && !changeLinks)
+    return null;
 
   const open = async (a: TodoAttachment) => {
     if (a.libraryId === null) return;
@@ -146,14 +173,32 @@ export function TodoFiles(props: TodoFilesProps) {
     requestAnimationFrame(() => addButton.current?.focus({ preventScroll: true }));
   };
 
+  const unlink = async (l: TodoLink) => {
+    if (!changeLinks || busy || todo === null) return;
+    setWorking(true);
+    const r = await changeTodos([
+      {
+        kind: 'unlink',
+        id: todo.id,
+        url: l.url,
+        expect: todo.version,
+        ...(todo.scope === 'personal' ? { scope: 'personal' as const } : {}),
+      },
+    ]);
+    setWorking(false);
+    if (r.error) onStatus(r.error.message, true);
+    else onStatus(`Removed ${l.name} from this task.`);
+    requestAnimationFrame(() => (linkButton.current ?? headRef.current)?.focus({ preventScroll: true }));
+  };
+
   return (
     <section className="todo-files" aria-labelledby={headId}>
       <h3 className="todo-files-head" id={headId} ref={headRef} tabIndex={-1}>
-        Files
+        {combined ? 'Files and links' : 'Files'}
       </h3>
       {attachments.length === 0 ? (
-        extras.length === 0 ? (
-          <p className="todo-empty">No files yet.</p>
+        extras.length === 0 && links.length === 0 ? (
+          <p className="todo-empty">{combined ? 'No files or links yet.' : 'No files yet.'}</p>
         ) : null
       ) : (
         <ul className="todo-files-list">
@@ -188,6 +233,32 @@ export function TodoFiles(props: TodoFilesProps) {
           })}
         </ul>
       )}
+      {links.length > 0 ? (
+        <ul className="todo-files-list" aria-label="Links">
+          {links.map((l) => (
+            <li key={l.url} className="todo-file">
+              <Icon name="link" size={16} />
+              <a className="btn" data-size="small" href={l.url} target="_blank" rel="noopener noreferrer">
+                {l.name}
+                <span className="visually-hidden"> (opens in a new tab)</span>
+              </a>
+              <span className="todo-file-note">{hostOf(l.url)}</span>
+              {changeLinks ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove ${l.name} from this task`}
+                  data-tip="Remove from this task"
+                  aria-disabled={busy ? true : undefined}
+                  onClick={() => void unlink(l)}
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {extras.length > 0 ? (
         <ul className="todo-files-extras">
           {extras.map((line, i) => (
@@ -196,18 +267,195 @@ export function TodoFiles(props: TodoFilesProps) {
           ))}
         </ul>
       ) : null}
-      {change ? (
-        <AddFile
-          {...props}
-          todo={todo}
-          busy={busy}
-          addButton={addButton}
-          headRef={headRef}
-          setWorking={setWorking}
-          atMax={attachments.length >= TODO_ATTACHMENTS_MAX}
-        />
+      {change || changeLinks ? (
+        <div className="todo-add-row">
+          {change ? (
+            <AddFile
+              {...props}
+              todo={todo}
+              busy={busy}
+              addButton={addButton}
+              headRef={headRef}
+              setWorking={setWorking}
+              atMax={attachments.length >= TODO_ATTACHMENTS_MAX}
+            />
+          ) : null}
+          {changeLinks && todo !== null ? (
+            <AddLink
+              todo={todo}
+              busy={busy}
+              onStatus={onStatus}
+              linkButton={linkButton}
+              headRef={headRef}
+              setWorking={setWorking}
+              atMax={links.length >= TODO_LINKS_MAX}
+            />
+          ) : null}
+        </div>
       ) : null}
     </section>
+  );
+}
+
+/** Why a link's address or name can't be added, in plain words; null when both are fine. */
+function linkProblem(url: string, name: string): string | null {
+  if (url === '') return 'Type the web address of the link.';
+  if (url.length > TODO_LINK_URL_MAX || !isTodoLinkUrl(url))
+    return "That isn't a web address that can be linked. It needs to start with http:// or https://, and hold no spaces.";
+  if (name.length > TODO_LINK_NAME_MAX) return `Keep the name to ${TODO_LINK_NAME_MAX} characters or fewer.`;
+  if (/[[\]]/.test(name)) return "The name can't hold square brackets.";
+  return null;
+}
+
+/** "Add a link": a web address and an optional name, added to the task's `## Files` section. */
+function AddLink({
+  todo,
+  busy,
+  onStatus,
+  linkButton,
+  headRef,
+  setWorking,
+  atMax,
+}: {
+  todo: TodoItem;
+  busy: boolean;
+  onStatus: (text: string, isError?: boolean) => void;
+  linkButton: React.RefObject<HTMLButtonElement | null>;
+  headRef: React.RefObject<HTMLHeadingElement | null>;
+  setWorking: (on: boolean) => void;
+  atMax: boolean;
+}) {
+  const { changeTodos } = useStore();
+  const uid = useId();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const urlInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (open) urlInput.current?.focus();
+  }, [open]);
+
+  const close = () => {
+    setOpen(false);
+    setUrl('');
+    setName('');
+    setProblem(null);
+    requestAnimationFrame(() => (linkButton.current ?? headRef.current)?.focus({ preventScroll: true }));
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const address = url.trim();
+    const label = name.trim();
+    const why = linkProblem(address, label);
+    if (why) {
+      setProblem(why);
+      urlInput.current?.focus();
+      return;
+    }
+    setProblem(null);
+    setWorking(true);
+    const r = await changeTodos([
+      {
+        kind: 'link',
+        id: todo.id,
+        url: address,
+        ...(label ? { name: label } : {}),
+        expect: todo.version,
+        ...(todo.scope === 'personal' ? { scope: 'personal' as const } : {}),
+      },
+    ]);
+    setWorking(false);
+    if (r.error) {
+      setProblem(r.error.message);
+      onStatus(r.error.message, true);
+      return;
+    }
+    onStatus(`Added a link: ${label || hostOf(address)}.`);
+    close();
+  };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !open) return;
+    // One Esc closes the form, not the panel.
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+  };
+
+  if (atMax && !open) return <p className="todo-note">This task has the most links it can hold.</p>;
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: only listens for Esc bubbling from its own buttons and fields.
+    <div className="todo-addfile" onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        className="btn"
+        data-size="small"
+        ref={linkButton}
+        aria-expanded={open}
+        aria-disabled={busy ? true : undefined}
+        onClick={() => {
+          if (busy) return;
+          if (open) close();
+          else setOpen(true);
+        }}
+      >
+        <Icon name="plus" size={14} />
+        Add a link
+      </button>
+      {open ? (
+        <form className="todo-picker" onSubmit={(e) => void submit(e)} aria-label="Add a link" noValidate>
+          <div className="form-field">
+            <label htmlFor={`${uid}-url`}>Web address</label>
+            <input
+              id={`${uid}-url`}
+              ref={urlInput}
+              className="field"
+              inputMode="url"
+              autoComplete="off"
+              placeholder="https://"
+              value={url}
+              aria-invalid={problem ? true : undefined}
+              aria-describedby={problem ? `${uid}-problem` : undefined}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <div className="form-field">
+            <label htmlFor={`${uid}-name`}>Name (optional)</label>
+            <input
+              id={`${uid}-name`}
+              className="field"
+              autoComplete="off"
+              value={name}
+              maxLength={TODO_LINK_NAME_MAX}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          {problem ? (
+            <p className="error" id={`${uid}-problem`} role="alert">
+              {problem}
+            </p>
+          ) : null}
+          <div className="todo-actions">
+            <button
+              type="submit"
+              className="btn"
+              data-variant="primary"
+              data-size="small"
+              aria-disabled={busy ? true : undefined}
+              onClick={(e) => {
+                if (busy) e.preventDefault();
+              }}
+            >
+              Add link
+            </button>
+            <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={close}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </div>
   );
 }
 

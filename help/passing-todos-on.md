@@ -6,9 +6,9 @@ order: 3
 summary: Hand a task to a teammate, or leave it open for anyone to pick up.
 benefit: Work reaches the right person, and nobody has to chase it by message.
 roles: all
-related: [todos, adding-todos, sharing-with-your-team, personal-todos, asked-of-others]
+related: [todos, adding-todos, sharing-with-your-team, personal-todos, asked-of-others, task-updates]
 since: 0.38.0
-reviewed: 2026-11-24
+reviewed: 2026-11-27
 ---
 
 ## What it does
@@ -26,7 +26,8 @@ You can give a task to a teammate, or make it **Open to anyone** so the first fr
 1. Switch on **Let the app change tasks** in Settings (**General** tab), if it is off.
 2. Press the task's title in the Tasks drawer, then press **Edit** in the panel.
 3. Pick a name in the **Assigned to** box. Pick **Open to anyone** to leave it for the team.
-4. Press **Save**. The task leaves your list for a few seconds, with **Undo** showing. Then it is sent.
+4. Add a note for your teammate if you like. It is saved in the task's updates.
+5. Press **Save**. The task leaves your list for a few seconds, with **Undo** showing. Then it is sent.
 
 ![A task open for editing in the panel beside the drawer, with the Assigned to field.](images/todo-edit.webp)
 
@@ -37,6 +38,7 @@ You can give a task to a teammate, or make it **Open to anyone** so the first fr
 - Passing a personal task on makes it a TDS task, so your teammate can see it.
 - To follow a task after you've passed it on, open the **Asked** tab. See Asked of others.
 - To take an open job yourself, open it and choose **Me** in **Assigned to**.
+- To return a task to the person who gave it to you, press **Hand back**. See Updates and handing back.
 
 ## Try this
 

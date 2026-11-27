@@ -10,6 +10,7 @@ import {
 import { isRestricted } from '../../../shared/project-visibility.ts';
 import { parseProjectKey } from '../../../shared/projects.ts';
 import { splitTodoFiles } from '../../../shared/todo-files.ts';
+import { splitTodoSections } from '../../../shared/todo-updates.ts';
 import { dueInWords } from '../format.ts';
 import { useProjectChoice } from '../state/client-choice.ts';
 import { assignNote, todoProjectOptions, useProjects } from '../state/projects.ts';
@@ -23,13 +24,17 @@ export const PERSONAL_WARNING =
   "Personal tasks stay on this Mac. They aren't backed up, and the Workbench, Reminders and teammates stop seeing them.";
 /** Said when a personal to-do is given to someone else. */
 export const PASS_ON_NOTE = 'Passing it on makes it a TDS task so they can see it.';
+/** Said when a personal task becomes a TDS one: what it holds goes with it. */
+export const MOVE_TO_TDS_NOTE = 'Its updates and links go with it, and the team can read them.';
 
 /**
  * The details the panel shows and the editor edits. With `canAttach` that is the body without its
- * `## Files` section (the section is shown as a Files block and kept by the skill); otherwise the whole body.
+ * `## Files` section (the section is shown as a Files block and kept by the skill); with `canUpdate` too, without
+ * its `## Updates` section (shown as the Updates block, and kept by the skill); otherwise the whole body.
  */
-export function detailsText(todo: { details: string }, canAttach: boolean): string {
-  return canAttach ? splitTodoFiles(todo.details).details : todo.details;
+export function detailsText(todo: { details: string }, canAttach: boolean, canUpdate = false): string {
+  if (!canAttach) return todo.details;
+  return canUpdate ? splitTodoSections(todo.details).details : splitTodoFiles(todo.details).details;
 }
 
 /** Said before moving a personal to-do that sits in a private project to the team (decision 8). */
@@ -418,6 +423,7 @@ export function buildEditActions(
   detailsEditable: boolean,
   canAttach = false,
   canProject = false,
+  canUpdate = false,
 ): TodoAction[] {
   const actions: TodoAction[] = [];
   const at = (scope: TodoScope) => (scope === 'personal' ? { scope } : {});
@@ -425,7 +431,7 @@ export function buildEditActions(
   const titleChanged = title !== todo.title;
   // With canAttach the draft holds only the details part: that is what is compared and what is sent, so
   // saving never touches the `## Files` section.
-  const detailsChanged = detailsEditable && draft.details !== detailsText(todo, canAttach);
+  const detailsChanged = detailsEditable && draft.details !== detailsText(todo, canAttach, canUpdate);
   if (titleChanged || detailsChanged) {
     actions.push({
       kind: 'edit',
@@ -477,7 +483,15 @@ export function buildEditActions(
     }
   }
   if (draft.assignee !== (todo.assignee ?? '')) {
-    actions.push({ kind: 'assignee', id: todo.id, assignee: draft.assignee || null, ...at(draft.scope) });
+    // An optional note for the person it goes to (only with updates on, and only to a person, not to nobody).
+    const note = canUpdate && draft.assignee !== '' ? (draft.note ?? '').trim() : '';
+    actions.push({
+      kind: 'assignee',
+      id: todo.id,
+      assignee: draft.assignee || null,
+      ...(note ? { note } : {}),
+      ...at(draft.scope),
+    });
   }
   // Only the first step carries the version the editor opened with; the store gives each later step
   // the version the one before it left behind.
@@ -499,6 +513,8 @@ export interface EditDraft {
    */
   project?: string;
   stage?: string;
+  /** A note for the person it is passed to (updates on); sent with the pass-on, as an update. */
+  note?: string;
   /** TodoItem.version when the editor opened (or the fresh one adopted after a 'changed' refusal). */
   version: string;
   /** The field values the editor opened with (or last rebased on), to tell what the person edited. */

@@ -251,6 +251,8 @@ export interface HeldTodo {
    * (`api.completeTodo` with `{id, scope: 'personal', expect}`). Absent = the app's own tick of `todoId`.
    */
   tick?: { id: string; scope: TodoScope; expect: string };
+  /** For a tick: an update written with it ("Add update and mark as done"). */
+  note?: string;
   /** Set by the store once the undo time is up and the change is on its way: Undo no longer works. */
   sending?: boolean;
 }
@@ -1731,13 +1733,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** Starts the request for a held change. The queue has already taken it out of its entries. */
   const sendHeld = useCallback(async (held: HeldTodo, opts?: { keepalive: true }) => {
+    const note = held.note ? { note: held.note } : {};
     const send = () =>
       held.kind === 'tick' || held.action === null
         ? held.tick && held.tick.scope === 'personal'
-          ? api.completeTodo(held.tick.id, opts, { scope: 'personal', expect: held.tick.expect })
-          : opts
-            ? api.completeTodo(held.todoId, opts)
-            : api.completeTodo(held.todoId)
+          ? api.completeTodo(held.tick.id, opts, { scope: 'personal', expect: held.tick.expect, ...note })
+          : held.note
+            ? api.completeTodo(held.todoId, opts, note)
+            : opts
+              ? api.completeTodo(held.todoId, opts)
+              : api.completeTodo(held.todoId)
         : opts
           ? api.changeTodo(held.action, opts)
           : api.changeTodo(held.action);

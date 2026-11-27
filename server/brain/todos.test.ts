@@ -20,7 +20,7 @@ import { createBrainReaders } from './index.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, person } from './test-helpers.ts';
 import { TODO_ATTACH_CAPABILITY } from './todo-skill.ts';
-import { listTodos } from './todos.ts';
+import { changeTodo, listTodos } from './todos.ts';
 
 const sam = person('sam-example', 'scout');
 
@@ -65,6 +65,12 @@ describe('todos', () => {
         .update(readFileSync(join(fixtureRoot, 'todo', '20261101-renew-contract.md')))
         .digest('hex'),
       attachments: [],
+      updates: [],
+      updatesMore: false,
+      updateExtras: [],
+      links: [],
+      lastChange: null,
+      createdAt: null,
     });
     expect(byId['20261105-send-report.md']?.title).toBe('Send the monthly report');
     expect(byId['20261010-undated-thing.md']?.title).toBe('Undated thing');
@@ -160,6 +166,8 @@ describe('todos', () => {
       canAttach: false,
       canUpload: false,
       canProject: false,
+      canUpdate: false,
+      canLink: false,
     });
   });
 });
@@ -340,7 +348,17 @@ describe('changeTodo', () => {
     await brain.changeTodo({ kind: 'due', id: '20261101-renew-contract.md', due: null }, sam);
     await brain.changeTodo({ kind: 'delete', id: '20261010-undated-thing.md' }, sam);
     expect(calls()).toEqual([
-      { command: 'edit', body: { file: '20261105-send-report.md', title: 'Send it', body: 'Soon' } },
+      {
+        command: 'edit',
+        body: {
+          file: '20261105-send-report.md',
+          title: 'Send it',
+          body: 'Soon',
+          by: 'sam-example',
+          by_name: 'sam-example',
+          via: 'TDS Cortex',
+        },
+      },
       {
         command: 'assignee',
         body: {
@@ -362,7 +380,16 @@ describe('changeTodo', () => {
           by_name: 'sam-example',
         },
       },
-      { command: 'due', body: { file: '20261101-renew-contract.md', due: '' } },
+      {
+        command: 'due',
+        body: {
+          file: '20261101-renew-contract.md',
+          due: '',
+          by: 'sam-example',
+          by_name: 'sam-example',
+          via: 'TDS Cortex',
+        },
+      },
       {
         command: 'delete',
         body: {
@@ -549,7 +576,19 @@ describe('changeTodo: expect, open adds and the older skill', () => {
     const { brain, calls, version } = setup();
     const expectV = await version();
     await brain.changeTodo({ kind: 'due', id: FILE, due: '2026-12-01', expect: expectV }, sam);
-    expect(calls()).toEqual([{ command: 'due', body: { file: FILE, due: '2026-12-01', expect: expectV } }]);
+    expect(calls()).toEqual([
+      {
+        command: 'due',
+        body: {
+          file: FILE,
+          due: '2026-12-01',
+          expect: expectV,
+          by: 'sam-example',
+          by_name: 'sam-example',
+          via: 'TDS Cortex',
+        },
+      },
+    ]);
   });
 
   it("refuses with 'changed' before anything runs when the version differs", async () => {
@@ -610,7 +649,19 @@ describe('changeTodo: expect, open adds and the older skill', () => {
     const { root, brain, calls, version } = setup('todo');
     const v = await version();
     await brain.changeTodo({ kind: 'edit', id: FILE, title: 'New', expect: v }, sam);
-    expect(calls()).toEqual([{ command: 'edit', body: { file: FILE, title: 'New', expect: v } }]);
+    expect(calls()).toEqual([
+      {
+        command: 'edit',
+        body: {
+          file: FILE,
+          title: 'New',
+          expect: v,
+          by: 'sam-example',
+          by_name: 'sam-example',
+          via: 'TDS Cortex',
+        },
+      },
+    ]);
     writeFileSync(join(root, 'todo', FILE), '---\nassignee: sam-example\n---\n# Edited by someone\n');
     expect(await codeOf(brain.changeTodo({ kind: 'delete', id: FILE, expect: v }, sam))).toBe('changed');
     expect(calls()).toHaveLength(1);
@@ -1642,6 +1693,481 @@ describe('restricted projects: the task rule and the assign block', () => {
         const open: ProjectsIndex = { ...index, hiddenPath: () => false, hiddenCount: 0 };
         await changeTodo(root, attach(NOTE), sam, runner, { ...deps, projects: async () => open });
         expect(run).toHaveBeenCalledTimes(3);
+      });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task updates (plan 2026-11-27-task-updates-handback, release 1, server side).
+// ---------------------------------------------------------------------------
+
+describe('task updates: what the server sends and lets through', () => {
+  const ID = '20261120-quote.md';
+  const SECRET = 'acme-heating/secret';
+  const entry = (time: string, who: string, slug: string, what: string) =>
+    `- 27 Nov 2026, ${time} UK: ${who} (${slug}) ${what}`;
+  const LOG = [
+    entry('14:05', 'Alex Sample', 'alex-sample', 'wrote: Sent the quote.'),
+    '  They want it signed.',
+    entry('14:09', 'Zed Stranger', 'zed-stranger', 'added a link: Quote on Drive (TDS Brain App).'),
+  ].join('\n');
+  const BODY = [
+    '# Quote',
+    '',
+    'Send it today.',
+    '',
+    '## Files',
+    '',
+    '- [Quote on Drive](https://drive.google.com/file/d/abc/view)',
+    '',
+    '## Updates',
+    '',
+    LOG,
+    '',
+    '## Handover history',
+    '',
+    '- 26 Nov 2026, 09:00 UK: Alex Sample passed it from alex-sample to sam-example (TDS Brain App).',
+    '',
+  ].join('\n');
+  const task = (lines: string[], body = BODY) => `---\n${lines.join('\n')}\n---\n${body}`;
+  const MINE = [
+    'assignee: sam-example',
+    'created_by: alex-sample',
+    'created: 2026-11-20',
+    'created_at: 2026-11-20T09:00:00+00:00',
+  ];
+
+  function setup(files: Record<string, string>, caps: string[] = ['scope', 'updates-v1', 'links-v1']) {
+    const root = copyFixture();
+    addTodoSkill(root);
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(root, 'todo', name), text);
+    const run = vi.fn(async (_action: unknown) => ({ file: null }));
+    const runner = { capabilities: async () => caps, run };
+    return { root, run, runner };
+  }
+
+  it('sends the timeline on a listed task: entries by time, links, lastChange, createdAt', async () => {
+    const { root } = setup({ [ID]: task(MINE) });
+    const list = await listTodos(root, sam, { capabilities: async () => ['updates-v1', 'links-v1'] });
+    const t = list.mine.find((x) => x.id === ID);
+    expect(t?.createdAt).toBe('2026-11-20T09:00:00+00:00');
+    expect(t?.links).toEqual([{ url: 'https://drive.google.com/file/d/abc/view', name: 'Quote on Drive' }]);
+    expect(t?.updatesMore).toBe(false);
+    expect(t?.updateExtras).toEqual([]);
+    expect(t?.updates?.map((u) => [u.kind, u.by, u.byName])).toEqual([
+      ['handover', null, 'Alex Sample'],
+      ['note', 'alex-sample', 'Alex Sample'],
+      ['auto', null, 'Zed Stranger'],
+    ]);
+    expect(t?.updates?.[1]?.text).toBe('Sent the quote.\nThey want it signed.');
+    // A slug that isn't on the team is `by: null`; the name stays as written.
+    expect(t?.lastChange).toMatchObject({ by: null, byName: 'Zed Stranger' });
+    expect(list.canUpdate).toBe(true);
+    expect(list.canLink).toBe(true);
+  });
+
+  it('has no update or link flags from an older script, and empty timeline fields for a plain task', async () => {
+    const { root } = setup({ [ID]: task(['assignee: sam-example'], '# Quote\n') }, ['scope']);
+    const list = await listTodos(root, sam, { capabilities: async () => ['scope'] });
+    expect(list.canUpdate).toBe(false);
+    expect(list.canLink).toBe(false);
+    expect(list.mine.find((x) => x.id === ID)).toMatchObject({
+      updates: [],
+      updatesMore: false,
+      updateExtras: [],
+      links: [],
+      lastChange: null,
+      createdAt: null,
+    });
+  });
+
+  it('keeps the newest TODO_UPDATES_SHOWN_MAX entries and says there are more', async () => {
+    const lines = Array.from({ length: 205 }, (_, i) => {
+      const minute = String(i % 60).padStart(2, '0');
+      const hour = String(Math.floor(i / 60) + 8).padStart(2, '0');
+      return entry(`${hour}:${minute}`, 'Alex Sample', 'alex-sample', `wrote: Note ${i}`);
+    });
+    const body = `# Quote\n\n## Updates\n\n${lines.join('\n')}\n`;
+    const { root } = setup({ [ID]: task(['assignee: sam-example'], body) });
+    const t = (await listTodos(root, sam)).mine.find((x) => x.id === ID);
+    expect(t?.updates).toHaveLength(200);
+    expect(t?.updatesMore).toBe(true);
+    expect(t?.updates?.[0]?.text).toBe('Note 5');
+    expect(t?.updates?.[199]?.text).toBe('Note 204');
+    expect(t?.lastChange?.at).toBe(t?.updates?.[199]?.at);
+  });
+
+  it('reads the last copy of a key a union merge doubled, and the hand back mark', async () => {
+    const { root } = setup({
+      [ID]: task([
+        'assignee: ben-mcadam',
+        'title: Old title',
+        'assignee: sam-example',
+        'title: New title',
+        'assigned_to: sam-example',
+        'assigned_at: 2026-11-26T09:00:00+00:00',
+        'assigned_by: alex-sample',
+        'assigned_back: true',
+      ]),
+    });
+    const t = (await listTodos(root, sam)).mine.find((x) => x.id === ID);
+    expect(t).toMatchObject({ assignee: 'sam-example', title: 'New title' });
+    expect(t?.handover).toMatchObject({ by: 'alex-sample', back: true, source: 'stamp' });
+  });
+
+  describe('completeTodoWithNote (Add update and mark as done)', () => {
+    const FILE = '20261105-send-report.md';
+    function wired(caps: string[]) {
+      const root = copyFixture();
+      addTodoSkill(root);
+      const fake = fakeEnv({}, caps);
+      const brain = createBrainReaders(root, { todoSkill: { env: fake.env } });
+      return { root, brain, calls: fake.calls };
+    }
+
+    it("runs the script's tick with the note, and leaves the file where it is (the script moves it)", async () => {
+      const { root, brain, calls } = wired(['scope', 'updates-v1']);
+      await brain.completeTodoWithNote?.({ id: FILE, scope: 'tds', note: 'All done.' }, sam);
+      expect(calls()).toEqual([
+        {
+          command: 'tick',
+          body: {
+            file: FILE,
+            via: 'TDS Cortex',
+            note: 'All done.',
+            by: 'sam-example',
+            by_name: 'sam-example',
+          },
+        },
+      ]);
+      expect(existsSync(join(root, 'todo', FILE))).toBe(true);
+    });
+
+    it('checks the version, the note and the capability like any change, before the script', async () => {
+      const { brain, calls } = wired(['scope', 'updates-v1']);
+      const tick = (note: string, expect?: string, scope: 'tds' | 'personal' = 'tds') =>
+        codeOf(
+          brain.completeTodoWithNote?.({ id: FILE, scope, note, ...(expect ? { expect } : {}) }, sam) ??
+            Promise.resolve(),
+        );
+      expect(await tick('x', 'f'.repeat(64))).toBe('changed');
+      expect(await tick('   ')).toBe('bad-request');
+      expect(await tick('x', undefined, 'personal')).toBe('bad-request');
+      expect(await tick('x', undefined)).toBeNull();
+      expect(calls()).toHaveLength(1);
+      const old = wired(['scope']);
+      expect(
+        await codeOf(
+          old.brain.completeTodoWithNote?.({ id: FILE, scope: 'tds', note: 'x' }, sam) ?? Promise.resolve(),
+        ),
+      ).toBe('bad-request');
+      expect(old.calls()).toEqual([]);
+    });
+  });
+
+  describe('changeTodo', () => {
+    const OTHER = 'alex-sample';
+    const filed = () => ({ [ID]: task(MINE) });
+    const go = (
+      s: ReturnType<typeof setup>,
+      action: TodoAction | { kind: 'tick'; id: string; scope: 'tds' | 'personal'; note?: string },
+      deps: object = {},
+    ) => changeTodo(s.root, action, sam, s.runner, deps);
+
+    it('runs update, link and unlink for a listed task', async () => {
+      const s = setup(filed());
+      await go(s, { kind: 'update', id: ID, text: '  Sent it.  ' });
+      await go(s, { kind: 'link', id: ID, url: 'https://example.com/a_(b)', name: 'Spec' });
+      await go(s, { kind: 'link', id: ID, url: 'https://example.com/b' });
+      await go(s, { kind: 'unlink', id: ID, url: 'https://example.com/b' });
+      expect(s.run.mock.calls.map((c) => (c[0] as { kind: string }).kind)).toEqual([
+        'update',
+        'link',
+        'link',
+        'unlink',
+      ]);
+    });
+
+    it('refuses update, link and unlink without the capability (not-allowed), before the script', async () => {
+      const s = setup(filed(), ['scope']);
+      expect(await codeOf(go(s, { kind: 'update', id: ID, text: 'Hi' }))).toBe('not-allowed');
+      expect(await codeOf(go(s, { kind: 'link', id: ID, url: 'https://example.com' }))).toBe('not-allowed');
+      expect(await codeOf(go(s, { kind: 'unlink', id: ID, url: 'https://example.com' }))).toBe('not-allowed');
+      const links = setup(filed(), ['scope', 'updates-v1']);
+      expect(await codeOf(go(links, { kind: 'link', id: ID, url: 'https://example.com' }))).toBe(
+        'not-allowed',
+      );
+      expect(await codeOf(go(links, { kind: 'update', id: ID, text: 'Hi' }))).toBeNull();
+      expect(s.run).not.toHaveBeenCalled();
+    });
+
+    it('checks the update text', async () => {
+      const s = setup(filed());
+      for (const text of [
+        '',
+        '   \n ',
+        'x'.repeat(2001),
+        'bad\u0000char',
+        'bell\u0007',
+        5 as unknown as string,
+      ])
+        expect(await codeOf(go(s, { kind: 'update', id: ID, text })), String(text).slice(0, 8)).toBe(
+          'bad-request',
+        );
+      for (const text of ['x'.repeat(2000), 'two\nlines\twith a tab\r\n'])
+        expect(await codeOf(go(s, { kind: 'update', id: ID, text }))).toBeNull();
+    });
+
+    it('checks the link URL and name', async () => {
+      const s = setup(filed());
+      const bad = [
+        'javascript:alert(1)',
+        'ftp://example.com/a',
+        'example.com',
+        'https://',
+        'https://exa mple.com',
+        'https://example.com/<b>',
+        'https://example.com/\\a',
+        `https://example.com/${'a'.repeat(2000)}`,
+        '',
+      ];
+      for (const url of bad)
+        expect(await codeOf(go(s, { kind: 'link', id: ID, url })), url.slice(0, 30)).toBe('bad-request');
+      expect(await codeOf(go(s, { kind: 'unlink', id: ID, url: 'javascript:x' }))).toBe('bad-request');
+      for (const name of ['', '  ', 'a'.repeat(121), 'two\nlines', 'a [b]', 'a]b'])
+        expect(await codeOf(go(s, { kind: 'link', id: ID, url: 'https://example.com', name })), name).toBe(
+          'bad-request',
+        );
+      expect(
+        await codeOf(go(s, { kind: 'link', id: ID, url: 'https://example.com', name: 'a'.repeat(120) })),
+      ).toBeNull();
+    });
+
+    it('needs canUpdate for a note or back on assignee and a note on tick (bad-request)', async () => {
+      const s = setup(filed(), ['scope']);
+      expect(await codeOf(go(s, { kind: 'assignee', id: ID, assignee: OTHER, note: 'Done.' }))).toBe(
+        'bad-request',
+      );
+      expect(await codeOf(go(s, { kind: 'assignee', id: ID, assignee: OTHER, back: true }))).toBe(
+        'bad-request',
+      );
+      expect(await codeOf(go(s, { kind: 'tick', id: ID, scope: 'tds', note: 'Done.' }))).toBe('bad-request');
+      expect(await codeOf(go(s, { kind: 'assignee', id: ID, assignee: OTHER }))).toBeNull();
+      expect(await codeOf(go(s, { kind: 'tick', id: ID, scope: 'tds' }))).toBeNull();
+    });
+
+    it('passes a note on assignee and on tick, and checks it like an update', async () => {
+      const s = setup(filed());
+      expect(
+        await codeOf(go(s, { kind: 'assignee', id: ID, assignee: 'jo-owner', note: 'See notes.' })),
+      ).toBeNull();
+      expect(await codeOf(go(s, { kind: 'tick', id: ID, scope: 'tds', note: 'All done.' }))).toBeNull();
+      expect(await codeOf(go(s, { kind: 'tick', id: ID, scope: 'tds', note: '  ' }))).toBe('bad-request');
+      expect(
+        await codeOf(go(s, { kind: 'assignee', id: ID, assignee: 'jo-owner', note: 'x'.repeat(2001) })),
+      ).toBe('bad-request');
+      // A note to the person who already has it passes nothing on: the script refuses, so the server does.
+      expect(await codeOf(go(s, { kind: 'assignee', id: ID, assignee: 'sam-example', note: 'Hi' }))).toBe(
+        'bad-request',
+      );
+    });
+
+    it('lets back go only to the hand-back target', async () => {
+      // alex-sample created it and is the pass-on stamp's `by`: the target.
+      const stamped = [
+        ...MINE,
+        'assigned_to: sam-example',
+        'assigned_at: 2026-11-26T09:00:00+00:00',
+        'assigned_by: alex-sample',
+      ];
+      const s = setup({ [ID]: task(stamped) });
+      const hand = (assignee: string | null, extra: object = {}) =>
+        go(s, {
+          kind: 'assignee',
+          id: ID,
+          assignee,
+          back: true,
+          note: 'Back to you.',
+          ...extra,
+        } as TodoAction);
+      expect(await codeOf(hand('jo-owner'))).toBe('bad-request');
+      expect(await codeOf(hand(null))).toBe('bad-request');
+      expect(await codeOf(hand('sam-example'))).toBe('bad-request');
+      expect(s.run).not.toHaveBeenCalled();
+      expect(await codeOf(hand('alex-sample'))).toBeNull();
+      expect(s.run).toHaveBeenCalledTimes(1);
+      expect(s.run.mock.calls[0]?.[0]).toMatchObject({
+        assignee: 'alex-sample',
+        back: true,
+        note: 'Back to you.',
+      });
+    });
+
+    it('has no hand-back target for a task that was itself handed back, or one nobody passed on', async () => {
+      const handedBack = setup({
+        [ID]: task([
+          'assignee: sam-example',
+          'created_by: sam-example',
+          'assigned_to: sam-example',
+          'assigned_at: 2026-11-26T09:00:00+00:00',
+          'assigned_by: alex-sample',
+          'assigned_back: true',
+        ]),
+      });
+      expect(
+        await codeOf(go(handedBack, { kind: 'assignee', id: ID, assignee: 'alex-sample', back: true })),
+      ).toBe('bad-request');
+      const own = setup({ [ID]: task(['assignee: sam-example', 'created_by: sam-example']) });
+      expect(await codeOf(go(own, { kind: 'assignee', id: ID, assignee: 'alex-sample', back: true }))).toBe(
+        'bad-request',
+      );
+    });
+
+    it('refuses an `## Updates` heading in typed details when the task has none on disk, mirroring Files', async () => {
+      const s = setup({
+        [ID]: task(['assignee: sam-example'], '# Quote\n\nPlain.\n'),
+        '20261121-logged.md': task(MINE),
+      });
+      const heading = 'Notes.\n\n## Updates\n\n- mine';
+      const edit = (id: string, details: string): TodoAction => ({
+        kind: 'edit',
+        id,
+        title: 'Quote',
+        details,
+      });
+      const refused = await go(s, edit(ID, heading)).catch((e: TodoChangeError) => e);
+      expect(refused).toBeInstanceOf(TodoChangeError);
+      expect((refused as TodoChangeError).code).toBe('bad-request');
+      expect((refused as TodoChangeError).message).toMatch(/Updates/);
+      // With a section on disk the script keeps its own, so an older app's whole details still go through.
+      expect(await codeOf(go(s, edit('20261121-logged.md', heading)))).toBeNull();
+      // An add has no section to keep.
+      expect(
+        await codeOf(
+          go(s, { kind: 'add', title: 'T', due: null, assignee: 'sam-example', details: heading }),
+        ),
+      ).toBe('bad-request');
+      // Without the capability the words are ordinary text, as before.
+      const old = setup({ [ID]: task(['assignee: sam-example'], '# Quote\n') }, ['scope']);
+      expect(await codeOf(go(old, edit(ID, heading)))).toBeNull();
+    });
+
+    describe('a task this person passed on (Asked)', () => {
+      const ASKED = '20261122-asked.md';
+      const askedFile = (extra: string[] = []) =>
+        task(
+          [
+            'assignee: alex-sample',
+            'assigned_to: alex-sample',
+            'assigned_at: 2026-11-26T09:00:00+00:00',
+            'assigned_by: sam-example',
+            ...extra,
+          ],
+          '# Asked\n',
+        );
+      async function askedSetup(extra: string[] = [], caps?: string[]) {
+        const s = setup({ [ASKED]: askedFile(extra) }, caps);
+        const { createAskedTodos } = await import('./todo-asked.ts');
+        const asked = createAskedTodos(async () => ({ stdout: '', cut: false }));
+        const deps = {
+          asked: (who: typeof sam) =>
+            asked.list(s.root, who, new Date('2026-11-27T12:00:00Z'), undefined, true),
+        };
+        return { s, deps };
+      }
+
+      it('lets `update` through while it waits, and runs the script', async () => {
+        const { s, deps } = await askedSetup();
+        const version = createHash('sha256')
+          .update(readFileSync(join(s.root, 'todo', ASKED)))
+          .digest('hex');
+        expect(
+          await codeOf(go(s, { kind: 'update', id: ASKED, text: 'Any news?', expect: version }, deps)),
+        ).toBeNull();
+        expect(s.run).toHaveBeenCalledTimes(1);
+        expect(
+          await codeOf(go(s, { kind: 'update', id: ASKED, text: 'x', expect: 'f'.repeat(64) }, deps)),
+        ).toBe('changed');
+      });
+
+      it('refuses every other kind, before the script', async () => {
+        // Every capability on, so only the Asked rule can refuse.
+        const { s, deps } = await askedSetup(
+          [],
+          ['scope', 'updates-v1', 'links-v1', TODO_ATTACH_CAPABILITY, TODO_PROJECT_CAPABILITY],
+        );
+        const actions: TodoAction[] = [
+          { kind: 'edit', id: ASKED, title: 'New' },
+          { kind: 'due', id: ASKED, due: null },
+          { kind: 'assignee', id: ASKED, assignee: 'sam-example' },
+          { kind: 'assignee', id: ASKED, assignee: 'sam-example', back: true, note: 'x' },
+          { kind: 'delete', id: ASKED },
+          { kind: 'link', id: ASKED, url: 'https://example.com' },
+          { kind: 'unlink', id: ASKED, url: 'https://example.com' },
+          { kind: 'attach', id: ASKED, path: 'clients/acme/files/a.pdf' },
+          { kind: 'project', id: ASKED, client: null, project: null, stage: null },
+        ];
+        for (const a of actions) expect(await codeOf(go(s, a, deps)), a.kind).toBe('not-found');
+        expect(await codeOf(go(s, { kind: 'tick', id: ASKED, scope: 'tds', note: 'x' }, deps))).toBe(
+          'not-found',
+        );
+        expect(
+          await codeOf(
+            go(s, { kind: 'update', id: ASKED, text: 'x', scope: 'personal', expect: 'a'.repeat(64) }, deps),
+          ),
+        ).toBe('not-found');
+        expect(s.run).not.toHaveBeenCalled();
+      });
+
+      it('is not reachable without the Asked list, without the capability, or once finished', async () => {
+        const { s } = await askedSetup();
+        expect(await codeOf(go(s, { kind: 'update', id: ASKED, text: 'x' }))).toBe('not-found');
+        const old = await askedSetup([], ['scope']);
+        expect(await codeOf(go(old.s, { kind: 'update', id: ASKED, text: 'x' }, old.deps))).toBe(
+          'not-allowed',
+        );
+        const done = setup({});
+        mkdirSync(join(done.root, 'todo', 'done'), { recursive: true });
+        writeFileSync(join(done.root, 'todo', 'done', ASKED), askedFile(['status: done']));
+        const { createAskedTodos } = await import('./todo-asked.ts');
+        const asked = createAskedTodos(async () => ({ stdout: '', cut: false }));
+        const deps = {
+          asked: (who: typeof sam) =>
+            asked.list(done.root, who, new Date('2026-11-27T12:00:00Z'), undefined, true),
+        };
+        expect(await codeOf(go(done, { kind: 'update', id: ASKED, text: 'x' }, deps))).toBe('not-found');
+      });
+
+      it("stays refused for a task in a project hidden from this person, and when the index can't be read", async () => {
+        const hidden: ProjectsIndex = {
+          cards: [],
+          byKey: () => null,
+          keysForPath: () => [],
+          resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+          hiddenPath: () => false,
+          hiddenKey: (key) => key === SECRET,
+          hiddenCount: 1,
+        };
+        const { s } = await askedSetup([`project: ${SECRET}`, 'client: acme-heating']);
+        const { createAskedTodos } = await import('./todo-asked.ts');
+        const asked = createAskedTodos(async () => ({ stdout: '', cut: false }));
+        const withIndex = {
+          projects: async () => hidden,
+          asked: (who: typeof sam) =>
+            asked.list(s.root, who, new Date('2026-11-27T12:00:00Z'), async () => hidden, true),
+        };
+        expect(await codeOf(go(s, { kind: 'update', id: ASKED, text: 'x' }, withIndex))).toBe('not-found');
+        const unreadable = async (): Promise<ProjectsIndex> => {
+          throw new Error('no index');
+        };
+        const noIndex = {
+          projects: unreadable,
+          asked: (who: typeof sam) =>
+            asked.list(s.root, who, new Date('2026-11-27T12:00:00Z'), unreadable, true),
+        };
+        expect(await codeOf(go(s, { kind: 'update', id: ASKED, text: 'x' }, noIndex))).toBe('not-found');
+        expect(s.run).not.toHaveBeenCalled();
       });
     });
   });

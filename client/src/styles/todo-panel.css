@@ -626,4 +626,75 @@
   .panel-head.todo-head > h2 {
     margin: var(--sp-4) var(--sp-8) 0 0;
   }
+
+  /* Add a file and Add a link side by side; whichever opens its choices takes the whole line. */
+  .todo-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--sp-8);
+  }
+  .todo-add-row > .todo-addfile:has(form),
+  .todo-add-row > .todo-addfile:has(.confirm),
+  .todo-add-row > .todo-addfile:has(.todo-addfile-choices) {
+    flex-basis: 100%;
+  }
+
+  /* Updates: a quiet log under the files, newest first (plan 2026-11-27-task-updates-handback). */
+  .todo-updates {
+    display: grid;
+    gap: var(--sp-8);
+    min-width: 0;
+  }
+  .todo-update-list {
+    display: grid;
+    gap: var(--sp-8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-control);
+  }
+  .todo-update[data-kind="note"] {
+    display: grid;
+    gap: var(--sp-2);
+    padding: var(--sp-8) var(--sp-12);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+  }
+  .todo-update-meta {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-4) var(--sp-8);
+  }
+  .todo-update-who {
+    font-weight: 600;
+  }
+  .todo-update-when {
+    font-size: var(--fs-small);
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
+  .todo-update-text {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .todo-update-line {
+    margin: 0;
+    color: var(--iron);
+    overflow-wrap: anywhere;
+  }
+  .todo-update-form {
+    display: grid;
+    gap: var(--sp-8);
+  }
+  .todo-handback {
+    display: grid;
+    gap: var(--sp-8);
+    margin: 0 18px;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+  }
 }

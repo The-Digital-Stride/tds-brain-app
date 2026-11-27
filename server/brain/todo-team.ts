@@ -19,6 +19,7 @@ import {
   readTeam,
   SAFE_ID,
   taskRule,
+  timelineFields,
   todoTitle,
   usableIndex,
 } from './todos.ts';
@@ -78,6 +79,7 @@ export async function readTeamTodo(
     project,
     stage: asString(data.stage).trim() || null,
     ...(projectMatch ? { projectMatch } : {}),
+    ...timelineFields(data, body, team),
   };
   return seen === 'mask' ? maskTask(item) : item;
 }

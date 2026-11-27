@@ -325,3 +325,26 @@ export function eventWords(e: TodoEvent, team: readonly Pick<TeamMember, 'slug' 
       return 'changed it';
   }
 }
+
+/** The first word of a name: "Ben McAdam" is "Ben". */
+export function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
+}
+
+/** "27 Nov 2026, 14:05" in UK time, from an update's ISO time; '' when it can't be read. */
+export function updateWhen(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  const month = MONTHS[Number(get('month')) - 1] ?? '';
+  return `${Number(get('day'))} ${month} ${get('year')}, ${get('hour')}:${get('minute')}`;
+}

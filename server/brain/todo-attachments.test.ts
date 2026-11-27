@@ -410,8 +410,23 @@ describe('changeTodo with canAttach (decisions 2 and 6)', () => {
     await brain.changeTodo({ kind: 'edit', id: MINE, title: 'Send it', details: 'Only details' }, sam);
     await brain.changeTodo({ kind: 'edit', id: MINE, title: 'Send it' }, sam);
     expect(calls().map((c) => c.body)).toEqual([
-      { file: MINE, title: 'Send it', body: 'Only details', keep_files: true },
-      { file: MINE, title: 'Send it', keep_files: true },
+      {
+        file: MINE,
+        title: 'Send it',
+        body: 'Only details',
+        keep_files: true,
+        by: 'sam-example',
+        by_name: 'sam-example',
+        via: 'TDS Cortex',
+      },
+      {
+        file: MINE,
+        title: 'Send it',
+        keep_files: true,
+        by: 'sam-example',
+        by_name: 'sam-example',
+        via: 'TDS Cortex',
+      },
     ]);
   });
 
@@ -465,7 +480,16 @@ describe('changeTodo with canAttach (decisions 2 and 6)', () => {
   it('without canAttach, edit is unchanged and a ## Files heading is allowed (the whole body)', async () => {
     const { brain, calls } = setup({ todoCaps: ['handover', 'scope'] });
     await brain.changeTodo({ kind: 'edit', id: MINE, title: 'T', details: 'A\n\n## Files\n' }, sam);
-    expect(calls().map((c) => c.body)).toEqual([{ file: MINE, title: 'T', body: 'A\n\n## Files\n' }]);
+    expect(calls().map((c) => c.body)).toEqual([
+      {
+        file: MINE,
+        title: 'T',
+        body: 'A\n\n## Files\n',
+        by: 'sam-example',
+        by_name: 'sam-example',
+        via: 'TDS Cortex',
+      },
+    ]);
   });
 
   it('add passes details as body with canAttach, and drops them without', async () => {

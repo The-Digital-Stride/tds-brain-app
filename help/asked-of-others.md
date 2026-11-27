@@ -6,9 +6,9 @@ order: 4
 summary: See the tasks you passed on, who has them, and when they were finished.
 benefit: You don't lose track of a job once it's someone else's.
 roles: all
-related: [todos, files-on-todos, passing-todos-on, personal-todos]
+related: [todos, files-on-todos, passing-todos-on, personal-todos, task-updates]
 since: 0.43.0
-reviewed: 2026-11-24
+reviewed: 2026-11-27
 ---
 
 ## What it does
@@ -25,9 +25,10 @@ The **Asked** tab in the Tasks drawer lists the tasks you passed on to a teammat
 
 1. Open the Tasks drawer and press **Asked**. The number is how many are still waiting.
 2. **Waiting** shows what hasn't been done yet, longest-waiting first. **Done in the last 60 days** starts closed.
-3. Press a task's title to read it in the panel. It is read only: it belongs to someone else now.
-4. Any files added to it are listed under its details, in **Files**. You can open them, but not change them.
-5. Open **History** at the bottom of the panel to see how it got here. It shows who added it, who it was passed to, and when it changed. Personal tasks have none.
+3. Press a task's title to read it in the panel. It belongs to someone else now, so you can't change it.
+4. While it is waiting, you can add an update, for example to answer a question. See Updates and handing back.
+5. Any files added to it are listed under its details, in **Files**. You can open them, but not change them.
+6. Open **History** at the bottom of the panel to see how it got here. It shows who added it, who it was passed to, and when it changed. Personal tasks have none.
 
 ## Good to know
 

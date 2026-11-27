@@ -198,6 +198,89 @@ describe('POST /api/todos/complete', () => {
   });
 });
 
+describe('POST /api/todos/complete with a note (task updates)', () => {
+  async function complete(body: object, brain: Record<string, unknown>, directWrites = true) {
+    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+      method: 'POST',
+      headers: {},
+    });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    const full = {
+      identity: async () => ({ name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true }),
+      todos: async () => ({ mine: [], open: [], changes: 'on' }),
+      ...brain,
+    };
+    const ctx = { brain: full, store: { get: async () => ({ directWrites }) }, log: () => {} };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL('http://127.0.0.1:3877/api/todos/complete'),
+      ctx as unknown as RouteContext,
+    );
+    return sent;
+  }
+
+  it("runs the script's tick with the note, never the app's own write", async () => {
+    const completeTodo = vi.fn(async () => {});
+    const completeTodoWithNote = vi.fn(async () => {});
+    const sent = await complete(
+      { id: 'a.md', note: 'All done.', expect: 'a'.repeat(64) },
+      { completeTodo, completeTodoWithNote },
+    );
+    expect(sent.status).toBe(200);
+    expect(completeTodo).not.toHaveBeenCalled();
+    expect(completeTodoWithNote).toHaveBeenCalledWith(
+      { id: 'a.md', scope: 'tds', note: 'All done.', expect: 'a'.repeat(64) },
+      expect.objectContaining({ slug: 'sam-example' }),
+    );
+    await complete(
+      { id: 'a.md', note: 'x', scope: 'personal', expect: 'b'.repeat(64) },
+      { completeTodoWithNote },
+    );
+    expect(completeTodoWithNote).toHaveBeenLastCalledWith(
+      { id: 'a.md', scope: 'personal', note: 'x', expect: 'b'.repeat(64) },
+      expect.anything(),
+    );
+  });
+
+  it('is unchanged without a note, and refuses a note that is not text', async () => {
+    const completeTodo = vi.fn(async () => {});
+    const completeTodoWithNote = vi.fn(async () => {});
+    expect((await complete({ id: 'a.md' }, { completeTodo, completeTodoWithNote })).status).toBe(200);
+    expect(completeTodo).toHaveBeenCalledTimes(1);
+    expect(completeTodoWithNote).not.toHaveBeenCalled();
+    expect((await complete({ id: 'a.md', note: 5 }, { completeTodo, completeTodoWithNote })).status).toBe(
+      400,
+    );
+  });
+
+  it("answers the script's refusals with their status, and is switched off with the rest", async () => {
+    const refuse = (code: 'bad-request' | 'changed' | 'not-allowed') => async () => {
+      throw new TodoChangeError(code, 'Nope.');
+    };
+    expect(
+      (await complete({ id: 'a.md', note: 'x' }, { completeTodoWithNote: refuse('changed') })).status,
+    ).toBe(409);
+    expect(
+      (await complete({ id: 'a.md', note: 'x' }, { completeTodoWithNote: refuse('bad-request') })).status,
+    ).toBe(400);
+    expect(
+      (await complete({ id: 'a.md', note: 'x' }, { completeTodoWithNote: async () => {} }, false)).status,
+    ).toBe(403);
+    // Wiring without the method (an older brain) is refused, not ticked without the note.
+    expect((await complete({ id: 'a.md', note: 'x' }, {})).status).toBe(403);
+  });
+});
+
 describe('parseTodoAction', () => {
   it('passes each action shape through', () => {
     const good = [
@@ -221,6 +304,13 @@ describe('parseTodoAction', () => {
       { kind: 'delete', id: 'a.md', scope: 'personal', expect: 'a'.repeat(64) },
       { kind: 'move', id: 'a.md', scope: 'personal', to: 'tds', expect: 'a'.repeat(64) },
       { kind: 'move', id: 'a.md', scope: 'tds', to: 'personal' },
+      { kind: 'update', id: 'a.md', text: 'Sent it.' },
+      { kind: 'update', id: 'a.md', text: 'Sent it.', expect: 'a'.repeat(64), scope: 'personal' },
+      { kind: 'link', id: 'a.md', url: 'https://example.com/a' },
+      { kind: 'link', id: 'a.md', url: 'https://example.com/a', name: 'Spec', expect: 'a'.repeat(64) },
+      { kind: 'unlink', id: 'a.md', url: 'https://example.com/a', scope: 'personal' },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam', note: 'Over to you.' },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam', note: 'Back.', back: true },
     ];
     for (const body of good) expect(parseTodoAction(body), JSON.stringify(body)).toEqual(body);
   });
@@ -257,6 +347,15 @@ describe('parseTodoAction', () => {
       { kind: 'move', id: 'a.md', to: 'personal' },
       { kind: 'move', id: 'a.md', scope: 'tds', to: 'elsewhere' },
       { kind: 'move', id: 'a.md', scope: 'tds', to: 'personal', title: 'x' },
+      { kind: 'update', id: 'a.md' },
+      { kind: 'update', id: 'a.md', text: 5 },
+      { kind: 'update', id: 'a.md', text: 'x', url: 'https://example.com' },
+      { kind: 'link', id: 'a.md' },
+      { kind: 'link', id: 'a.md', url: 'https://example.com', name: null },
+      { kind: 'unlink', id: 'a.md', url: 'https://example.com', name: 'x' },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben', note: 5 },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben', back: false },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben', back: 'yes' },
     ];
     for (const body of bad) {
       expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow(

@@ -20,12 +20,31 @@ const ROLES = {
 
 export interface Brain {
   root: string;
-  run(command: string, input?: unknown): { code: number | null; json: Record<string, unknown> };
+  /** `env` is added to the script's environment (v0.7: NODE_ENV and TDSAPP_TODO_TEST_NOW set the clock). */
+  run(
+    command: string,
+    input?: unknown,
+    env?: Record<string, string>,
+  ): { code: number | null; json: Record<string, unknown> };
   put(rel: string, text: string | Buffer): void;
+  /** The file without the lines v0.7 adds to every change (see withoutLog). */
   read(rel: string): string;
+  /** The file as it is. */
+  raw(rel: string): string;
   sha(rel: string): string;
   folder(rel: string): void;
   remove(): void;
+}
+
+/**
+ * v0.7 (plan 2026-11-27-task-updates-handback, decision 14): every real change also appends an entry
+ * under "## Updates", and add writes `created_at:`. The v0.6 cases read files without those lines, so
+ * they still pin v0.6's behaviour; updates.test.ts pins the log itself.
+ */
+export function withoutLog(text: string): string {
+  return text
+    .replace(/\r?\n## Updates\r?\n\r?\n(?:- [^\r\n]*\r?\n(?: {2}[^\r\n]*\r?\n)*)+/g, '')
+    .replace(/^created_at: [^\r\n]*\r?\n/m, '');
 }
 
 export function makeBrain(): Brain {
@@ -36,7 +55,7 @@ export function makeBrain(): Brain {
   const abs = (rel: string) => join(root, ...rel.split('/'));
   return {
     root,
-    run(command, input = {}) {
+    run(command, input = {}, extra = {}) {
       const r = spawnSync(process.execPath, [SCRIPT, command], {
         input: typeof input === 'string' ? input : JSON.stringify(input),
         env: {
@@ -48,6 +67,7 @@ export function makeBrain(): Brain {
           GIT_CONFIG_COUNT: '1',
           GIT_CONFIG_KEY_0: 'user.name',
           GIT_CONFIG_VALUE_0: 'Sam Example',
+          ...extra,
         },
         cwd: root,
         encoding: 'utf8',
@@ -60,7 +80,8 @@ export function makeBrain(): Brain {
       mkdirSync(dirname(abs(rel)), { recursive: true });
       writeFileSync(abs(rel), text);
     },
-    read: (rel) => readFileSync(abs(rel), 'utf8'),
+    read: (rel) => withoutLog(readFileSync(abs(rel), 'utf8')),
+    raw: (rel) => readFileSync(abs(rel), 'utf8'),
     sha: (rel) => createHash('sha256').update(readFileSync(abs(rel))).digest('hex'),
     folder: (rel) => mkdirSync(abs(rel), { recursive: true }),
     remove: () => rmSync(root, { recursive: true, force: true }),

@@ -94,11 +94,44 @@
 //   - attach of a file under personal/projects/ to a TDS to-do is refused (403). Other personal/
 //     files stay allowed there, as in v0.5.
 //
+// v0.7 differences (docs/plans/2026-11-27-task-updates-handback.md, decisions 1-7, 5a, 11 and 14; the
+// format is the app's shared/todo-updates-contract.ts). Every new field is optional, but results are no
+// longer byte-identical to v0.6: a real change now also appends a line under "## Updates".
+//   - capabilities: features add "updates-v1" and "links-v1"; version "0.7".
+//   - A "## Updates" section, written only by this script and only ever appended to: one entry per
+//     line, `- D Mon YYYY, HH:mm UK: Name (slug) <what> (<via>).` A note is `… (slug) wrote: <text>`,
+//     its further lines indented by two spaces. A new section goes after the details and "## Files",
+//     before the first "## Title history", "## Handover history", "## Done <date>" or
+//     "## Deleted <date>" heading, else at the end; a new "## Files" section goes before it.
+//   - Every command that really changes an open to-do appends exactly one entry: edit ("changed the
+//     title" / "the details" / "the title and the details"), due, attach, detach, link, unlink,
+//     project ("changed the project", never naming it) and update. Nothing changed → nothing written.
+//     In a personal to-do the file and link entries leave the name out. assignee keeps its
+//     "## Handover history" line instead; add writes `created_at:` (UK offset) after `created:`.
+//     Who: `by` and `by_name`, else the git user; the tool: `via`, else "todo skill" (edit, due,
+//     attach, detach and project now read them too).
+//   - update {file, text, scope?, expect?, by?, by_name?, via?} adds a note. assignee and tick take an
+//     optional `note`, written in the same file write; assignee with a note to whoever has it already
+//     → 400. assignee `back: true` is a hand back: `assigned_back: true` in the record and "handed it
+//     back to <slug>" in the history line.
+//   - link {file, url, name?, …} adds `- [name](url)` (`<url>` when it holds a bracket) to "## Files":
+//     http(s) only; the name defaults to the host. An URL already linked is a no-op; a 21st link →
+//     400. unlink {file, url, …} removes every line linking that exact URL (the section once empty).
+//   - edit never changes "## Updates": with one on disk, a section in `body` is dropped and the one on
+//     disk kept (the 8,000 limit counts the body without it); with none on disk, a body holding that
+//     heading → 400, as on add.
+//   - Built for the brain's `todo/*.md merge=union`: readers read every "## Updates" and "## Files"
+//     section and take the last copy of a frontmatter key; every write first folds later sections
+//     into the first (exact duplicate entries dropped) and removes every copy of a key it sets.
+//   The log's read rules mirror the app's shared/todo-updates.ts and web links mirror
+//   shared/todo-files.ts; both test suites run shared/todo-updates.fixtures.json and
+//   shared/todo-files.fixtures.json.
+//
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
 //
-//   <command>  add | edit | due | assignee | delete | tick | move | attach | detach | project | roster |
-//              list | capabilities
+//   <command>  add | edit | due | assignee | delete | tick | move | attach | detach | project | update |
+//              link | unlink | roster | list | capabilities
 //   stdin      one JSON object: the Workbench route's request body, same field names (file, title,
 //              body, due, assignee), plus the optional fields above. roster and list need none ({}).
 //   stdout     one JSON line.
@@ -110,9 +143,10 @@
 // .claude → brain), so the old `todo` shim that requires this file still finds the brain.
 // `list` honours WORKBENCH_AS (as the Workbench's /api/misc-todos does); `add` does not.
 //
-// Test hook: with NODE_ENV=test, TDSAPP_TODO_TEST_FAIL="<op>:<CODE>[:<times>],..." makes `link` or
-// `rename` fail with that error code (every time, or the first <times> times). It is ignored
-// otherwise, and the app's scrubbed environment never sets it.
+// Test hooks: with NODE_ENV=test, TDSAPP_TODO_TEST_FAIL="<op>:<CODE>[:<times>],..." makes `link` or
+// `rename` fail with that error code (every time, or the first <times> times), and (v0.7)
+// TDSAPP_TODO_TEST_NOW=<ISO time> sets the clock. Both are ignored otherwise, and the app's scrubbed
+// environment never sets them.
 
 'use strict';
 
@@ -125,9 +159,13 @@ const BRAIN_ROOT = process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..',
 const TODO_DIR = path.join(BRAIN_ROOT, 'todo');
 // v0.4: personal to-dos, kept out of git by the brain's own ignore rules.
 const PERSONAL_DIR = path.join(BRAIN_ROOT, 'personal', 'todo');
-const SCRIPT_VERSION = '0.6';
+const SCRIPT_VERSION = '0.7';
 // v0.6: the capability the app looks for before it offers Project and Stage fields.
 const PROJECT_CAPABILITY = 'todo-project-v1';
+// v0.7: update, note and back on assignee, note on tick, and the "## Updates" log (TODO_UPDATES_CAPABILITY).
+const UPDATES_CAPABILITY = 'updates-v1';
+// v0.7: link and unlink (TODO_LINKS_CAPABILITY).
+const LINKS_CAPABILITY = 'links-v1';
 
 // WORKBENCH_AS=<name-slug> previews another person's list (server.cjs VIEW_AS).
 const VIEW_AS = /^[a-z0-9-]+$/.test(process.env.WORKBENCH_AS || '') ? process.env.WORKBENCH_AS : null;
@@ -141,6 +179,11 @@ const RULES_FILES = new Set(['claude.md', 'readme.md', 'agents.md']);
 // v0.5: most files one to-do's "## Files" section may hold (the app's TODO_ATTACHMENTS_MAX).
 const FILES_MAX = 20;
 const FILE_PATH_MAX = 1024;
+// v0.7: the app's TODO_UPDATE_MAX, TODO_LINK_URL_MAX, TODO_LINK_NAME_MAX and TODO_LINKS_MAX.
+const UPDATE_MAX = 2000;
+const LINK_URL_MAX = 2000;
+const LINK_NAME_MAX = 120;
+const LINKS_MAX = 20;
 
 // The response being built: mirrors Express's res.status(n).json(body).
 class Reply {
@@ -537,6 +580,13 @@ function injectedFailure(op) {
   err.code = fail.code;
   throw err;
 }
+// v0.7: the test clock (see the header); the real time otherwise.
+const TEST_NOW = process.env.NODE_ENV === 'test' && process.env.TDSAPP_TODO_TEST_NOW
+  ? Date.parse(process.env.TDSAPP_TODO_TEST_NOW)
+  : NaN;
+function now() {
+  return Number.isNaN(TEST_NOW) ? new Date() : new Date(TEST_NOW);
+}
 const io = {
   link(from, to) { injectedFailure('link'); fs.linkSync(from, to); },
   rename(from, to) { injectedFailure('rename'); fs.renameSync(from, to); },
@@ -729,7 +779,7 @@ function retitleBody(lines, oldTitle, newTitle) {
     out[heading.index] = '# ' + newTitle;
   }
   if (normalTitle(newTitle) !== normalTitle(oldTitle)) {
-    addToSection(out, 'Title history', `- ${ukTime(new Date()).date}: was "${oldTitle}"`);
+    addToSection(out, 'Title history', `- ${ukTime(now()).date}: was "${oldTitle}"`);
   }
   return out;
 }
@@ -747,8 +797,11 @@ const FILES_NEXT_HEADING = /^#{1,2}[ \t]/;
 const FILE_ITEM = /^[ \t]*[-*][ \t]+\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^\s()<>]+))\)(?:[ \t]+\(only on ([a-z0-9]+(?:-[a-z0-9]+)*)'s Mac\))?[ \t]*$/;
 // v0.6: projects/ too, for the legacy project folders.
 const FILE_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/'];
-// Where a new section goes: before the first of the sections this script writes after the details.
-const FILES_ANCHOR = /^##[ \t]+(?:title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
+// Where a new "## Updates" section goes (v0.7): before the first of the sections this script writes
+// after the details and "## Files".
+const UPDATES_ANCHOR = /^##[ \t]+(?:title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
+// Where a new "## Files" section goes: the same, and before "## Updates" too (v0.7).
+const FILES_ANCHOR = /^##[ \t]+(?:updates|title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
 
 // A link target as a brain path, or null: every leading `../` dropped, then it must start with
 // clients/, templates/ or personal/ and have no empty, `.` or `..` segment, backslash, colon or `%`.
@@ -761,17 +814,31 @@ function resolveFilePath(target) {
   return rest;
 }
 
-// The [start, end) line range of the first "## Files" section, or null.
-function filesRange(lines) {
-  // Headings inside ``` or ~~~ code fences don't count, the same as shared/todo-files.ts.
-  const outside = linesOutsideFences(lines);
-  const at = outside.findIndex(i => FILES_HEADING.test(lines[i]));
-  if (at === -1) return null;
-  const start = outside[at];
-  for (let k = at + 1; k < outside.length; k++) {
-    if (FILES_NEXT_HEADING.test(lines[outside[k]])) return [start, outside[k]];
+// v0.7: the [start, end) line range of EVERY section whose heading matches, outside code fences, in
+// order (the app's todoSectionRanges). A union merge can leave two.
+function sectionRanges(lines, heading) {
+  const out = [];
+  let start = -1;
+  for (const i of linesOutsideFences(lines)) {
+    if (!FILES_NEXT_HEADING.test(lines[i])) continue;
+    if (start !== -1) out.push([start, i]);
+    start = heading.test(lines[i]) ? i : -1;
   }
-  return [start, lines.length];
+  if (start !== -1) out.push([start, lines.length]);
+  return out;
+}
+
+// Every line index inside a section (headings left out), in order.
+function sectionLineIndexes(lines, heading) {
+  const out = [];
+  for (const [start, end] of sectionRanges(lines, heading)) for (let i = start + 1; i < end; i++) out.push(i);
+  return out;
+}
+
+// The [start, end) line range of the first "## Files" section, or null. Writers use it after
+// foldSections, when there is only one. Headings inside ``` or ~~~ code fences don't count.
+function filesRange(lines) {
+  return sectionRanges(lines, FILES_HEADING)[0] || null;
 }
 
 // One section line as a link, or null when it isn't a well-formed item with a brain path.
@@ -783,14 +850,12 @@ function fileLinkOf(line) {
   return { path, name: m[1].trim(), holder: path.startsWith('personal/') ? (m[4] || null) : null };
 }
 
-// The files linked in the body's first section, in written order, each path once.
+// The files linked in the body's sections (every one, v0.7), in written order, each path once.
 function parseFiles(body) {
   const lines = String(body == null ? '' : body).split(/\r?\n/);
-  const range = filesRange(lines);
-  if (!range) return [];
   const out = [];
   const seen = new Set();
-  for (let i = range[0] + 1; i < range[1]; i++) {
+  for (const i of sectionLineIndexes(lines, FILES_HEADING)) {
     const link = fileLinkOf(lines[i]);
     if (!link || seen.has(link.path)) continue;
     seen.add(link.path);
@@ -799,18 +864,32 @@ function parseFiles(body) {
   return out;
 }
 
-// The body without its first section (`details`, trimmed) and that section's source (`files`).
-function splitFiles(body) {
+// v0.7: the body with every section matching one of `headings` taken out (`details`, trimmed, the
+// pieces either side joined by one blank line) and each heading's sections as written (joined by a
+// blank line). The app's cutTodoSections.
+function cutSections(body, headings) {
   const text = String(body == null ? '' : body);
   const lines = text.split(/\r?\n/);
-  const range = filesRange(lines);
-  if (!range) return { details: text.trim(), files: '' };
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const before = lines.slice(0, range[0]).join(eol).trimEnd();
-  const after = lines.slice(range[1]).join(eol).trimStart();
-  const files = lines.slice(range[0], range[1]).join(eol).trimEnd();
-  const details = [before, after].filter(s => s !== '').join(eol + eol);
-  return { details: details.trim(), files };
+  const perHeading = headings.map(h => sectionRanges(lines, h));
+  const all = perHeading.flat().sort((a, b) => a[0] - b[0]);
+  if (all.length === 0) return { details: text.trim(), sections: headings.map(() => '') };
+  const pieces = [];
+  let cursor = 0;
+  for (const [start, end] of all) {
+    pieces.push(lines.slice(cursor, start).join(eol).trim());
+    cursor = end;
+  }
+  pieces.push(lines.slice(cursor).join(eol).trim());
+  const sections = perHeading.map(ranges =>
+    ranges.map(([start, end]) => lines.slice(start, end).join(eol).trimEnd()).join(eol + eol));
+  return { details: pieces.filter(p => p !== '').join(eol + eol).trim(), sections };
+}
+
+// The body without its sections (`details`, trimmed) and their source (`files`).
+function splitFiles(body) {
+  const { details, sections } = cutSections(body, [FILES_HEADING]);
+  return { details, files: sections[0] };
 }
 
 // Details sent by a caller may not hold the section: only attach and detach change it. A heading inside a
@@ -823,12 +902,13 @@ function refuseFilesHeading(text) {
 }
 
 // `lines` (a body, no frontmatter) with a section added: after the details, before the first
-// history, done or deleted heading outside a code fence (else at the end), one blank line either
-// side. `afterHead`: a frontmatter block comes first, so a section at the top still gets its blank line.
-function placeSection(lines, section, afterHead) {
+// updates, history, done or deleted heading outside a code fence (else at the end), one blank line
+// either side. `afterHead`: a frontmatter block comes first, so a section at the top still gets its
+// blank line. v0.7: `anchor` and `from` (the first line an anchor may be on) for "## Updates".
+function placeSection(lines, section, afterHead, anchor = FILES_ANCHOR, from = 0) {
   let at = lines.length;
   for (const i of linesOutsideFences(lines)) {
-    if (FILES_ANCHOR.test(lines[i])) { at = i; break; }
+    if (i >= from && anchor.test(lines[i])) { at = i; break; }
   }
   const before = lines.slice(0, at);
   while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
@@ -850,12 +930,355 @@ function dropSection(lines, start, end, afterHead) {
 
 // The to-do's text as frontmatter lines (or none) and body lines (plain \n).
 function todoParts(todo, file) {
-  const lines = todo.text.split('\n');
-  if (!/^---\n/.test(todo.text)) return { head: [], body: lines };
+  return textParts(todo.text, file);
+}
+
+// v0.7: as textParts, but frontmatter that never closes is read as body (tick and delete take such a file).
+function looseParts(text) {
+  try {
+    return textParts(text, '');
+  } catch {
+    return { head: [], body: text.split('\n') };
+  }
+}
+
+// v0.7: any text (plain \n lines) as frontmatter lines (or none) and body lines.
+function textParts(text, file) {
+  const lines = text.split('\n');
+  if (!/^---\n/.test(text)) return { head: [], body: lines };
   const close = closingLine(lines);
   if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
   return { head: lines.slice(0, close + 1), body: lines.slice(close + 1) };
 }
+
+// ---- the "## Updates" log and web links (v0.7) ------------------------------------------------
+//
+// Read rules, line for line from the app's shared/todo-updates.ts and (for links) shared/todo-files.ts;
+// both test suites run shared/todo-updates.fixtures.json and shared/todo-files.fixtures.json, so they
+// can't drift. This script is the log's only writer, and only ever appends to it.
+
+// The log starts at a level-2 heading that says exactly "Updates" (any case).
+const UPDATES_HEADING = /^##[ \t]+updates[ \t]*$/i;
+const HANDOVER_HEADING = /^##[ \t]+handover history[ \t]*$/i;
+// `- D Mon YYYY, HH:mm UK: ` at column 0, then the rest of the line.
+const ENTRY_STAMP = /^- (\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}), (\d{2}):(\d{2}) UK: (.+)$/;
+// After the stamp in "## Updates": `Name (slug) ` and the rest. The name never holds "(" or ")".
+const ENTRY_ACTOR = /^([^()]+) \(([a-z0-9]+(?:-[a-z0-9]+)*)\) (.+)$/;
+// After the stamp in "## Handover history": the name, then what happened.
+const HANDOVER_WHAT = /^(.+?) ((?:passed|made|picked|handed) it\b.*)$/;
+// The tool at the end of an auto or handover line: ` (<via>).`
+const ENTRY_VIA = /^(.*) \(([^()]+)\)\.$/;
+const NOTE_MARK = 'wrote: ';
+// A note's further lines: indented by two spaces, straight after it. The two are dropped.
+const NOTE_CONTINUATION = /^ {2}/;
+const ENTRY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The UK wall clock at `ms`, as "YYYY-MM-DD HH:mm".
+let londonFormat = null;
+function londonWall(ms) {
+  londonFormat = londonFormat || new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  const p = {};
+  for (const part of londonFormat.formatToParts(new Date(ms))) p[part.type] = part.value;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+// UK wall time ("2026-11-27", "14:05") → ISO with the UK offset, seconds 00; null for an impossible
+// time (the hour the clocks skip). In the hour that happens twice, the first one (BST).
+function ukWallToIso(date, time) {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date));
+  const t = /^(\d{2}):(\d{2})$/.exec(String(time));
+  if (!d || !t) return null;
+  const [y, m, day, h, min] = [d[1], d[2], d[3], t[1], t[2]].map(Number);
+  if (h > 23 || min > 59 || m < 1 || m > 12 || day < 1) return null;
+  const wall = Date.UTC(y, m - 1, day, h, min);
+  if (new Date(wall).getUTCDate() !== day) return null;
+  for (const offset of [1, 0]) {
+    if (londonWall(wall - offset * 3600000) === `${date} ${time}`) return `${date}T${time}:00+0${offset}:00`;
+  }
+  return null;
+}
+
+// An entry line's stamp as ISO, and the rest of the line; null when it isn't one or isn't a real time.
+function entryStampOf(line) {
+  const m = ENTRY_STAMP.exec(line);
+  if (!m) return null;
+  const month = String(ENTRY_MONTHS.indexOf(m[2]) + 1).padStart(2, '0');
+  const at = ukWallToIso(`${m[3]}-${month}-${m[1].padStart(2, '0')}`, `${m[4]}:${m[5]}`);
+  return at === null ? null : { at, rest: m[6] };
+}
+
+// "what (via)." → its words and the tool; without a tool, the words less a final full stop.
+function viaParts(rest) {
+  const m = ENTRY_VIA.exec(rest);
+  if (m) return { text: m[1], via: m[2] };
+  return { text: rest.replace(/\.$/, ''), via: null };
+}
+
+// The action an auto entry's wording stands for (the wordings this script writes), or null.
+function autoAction(text) {
+  if (/^(?:set the due date to |changed the due date from |cleared the due date(?: |$))/.test(text)) return 'due';
+  if (text === 'changed the title' || text === 'changed the title and the details') return 'title';
+  if (text === 'changed the details') return 'details';
+  if (/^(?:added|removed) a file(?:: .+)?$/.test(text)) return 'files';
+  if (/^(?:added|removed) a link(?:: .+)?$/.test(text)) return 'links';
+  if (text === 'changed the project') return 'project';
+  return null;
+}
+
+// Notes and auto entries from every "## Updates" section, in written order, and the other lines.
+function parseUpdates(body) {
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  const entries = [];
+  const extras = [];
+  for (const [start, end] of sectionRanges(lines, UPDATES_HEADING)) {
+    let note = null;
+    for (let i = start + 1; i < end; i++) {
+      const line = lines[i].trimEnd();
+      if (line === '') { note = null; continue; }
+      if (note && NOTE_CONTINUATION.test(line)) { note.text += '\n' + line.slice(2); continue; }
+      note = null;
+      const stamp = entryStampOf(line);
+      const who = stamp ? ENTRY_ACTOR.exec(stamp.rest) : null;
+      if (!stamp || !who) { extras.push(line.trim()); continue; }
+      const base = { at: stamp.at, by: who[2], byName: who[1].trim() };
+      if (who[3].startsWith(NOTE_MARK)) {
+        note = { kind: 'note', ...base, text: who[3].slice(NOTE_MARK.length), via: null, action: 'update' };
+        entries.push(note);
+      } else {
+        const { text, via } = viaParts(who[3]);
+        entries.push({ kind: 'auto', ...base, text, via, action: autoAction(text) });
+      }
+    }
+  }
+  return { entries, extras };
+}
+
+// The lines of every "## Handover history" section as entries, in written order.
+function parseHandovers(body) {
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  const out = [];
+  for (const [start, end] of sectionRanges(lines, HANDOVER_HEADING)) {
+    for (let i = start + 1; i < end; i++) {
+      const stamp = entryStampOf(lines[i].trimEnd());
+      const what = stamp ? HANDOVER_WHAT.exec(stamp.rest) : null;
+      if (!stamp || !what) continue;
+      const { text, via } = viaParts(what[2]);
+      out.push({
+        kind: 'handover', at: stamp.at, by: null, byName: what[1].trim(), text, via,
+        action: /^handed it back to /.test(text) ? 'handback' : 'assignee',
+      });
+    }
+  }
+  return out;
+}
+
+// Both, oldest first; equal minutes keep file order, "## Updates" first (sort is stable).
+function timeline(body) {
+  const { entries, extras } = parseUpdates(body);
+  const updates = [...entries, ...parseHandovers(body)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return { updates, extras };
+}
+
+// The body without its "## Files" and "## Updates" sections, and those sections as written.
+function splitSections(body) {
+  const { details, sections } = cutSections(body, [FILES_HEADING, UPDATES_HEADING]);
+  return { details, files: sections[0], updates: sections[1] };
+}
+
+// A web link's URL: http(s) with `//` and a host, at most LINK_URL_MAX characters, and no
+// whitespace, control character, "<", ">" or backslash (the app's isTodoLinkUrl).
+function isLinkUrl(url) {
+  if (typeof url !== 'string' || url === '' || url.length > LINK_URL_MAX) return false;
+  if (/[\s\p{Cc}<>\\]/u.test(url) || !/^https?:\/\//i.test(url)) return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname !== '';
+}
+
+// One "## Files" line as a web link, or null: an item with no "(only on …'s Mac)" and a good URL.
+function webLinkOf(line) {
+  const m = FILE_ITEM.exec(line);
+  if (!m || m[4] !== undefined) return null;
+  const url = m[2] !== undefined ? m[2] : m[3];
+  const name = m[1].trim();
+  return name !== '' && isLinkUrl(url) ? { url, name } : null;
+}
+
+// The web links in every "## Files" section, in written order, each URL once.
+function parseLinks(body) {
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  const out = [];
+  const seen = new Set();
+  for (const i of sectionLineIndexes(lines, FILES_HEADING)) {
+    const link = webLinkOf(lines[i]);
+    if (!link || seen.has(link.url)) continue;
+    seen.add(link.url);
+    out.push(link);
+  }
+  return out;
+}
+
+// The other non-blank lines of every "## Files" section, trimmed (the app's todoFileExtras).
+function fileExtras(body) {
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  return sectionLineIndexes(lines, FILES_HEADING)
+    .filter(i => lines[i].trim() !== '' && !fileLinkOf(lines[i]) && !webLinkOf(lines[i]))
+    .map(i => lines[i].trim());
+}
+
+// ---- writing the log, and folding what a union merge doubled (v0.7) ---------------------------
+
+// A section's lines as blocks: a line at column 0 with the indented lines straight after it.
+function sectionBlocks(lines, range) {
+  const blocks = [];
+  let current = null;
+  for (let i = range[0] + 1; i < range[1]; i++) {
+    const line = lines[i];
+    if (line.trim() === '') { current = null; continue; }
+    if (current && /^\s/.test(line)) { current.push(line); continue; }
+    current = [line];
+    blocks.push(current);
+  }
+  return blocks;
+}
+
+// `lines` with `added` after the section's last line that isn't blank (after a blank line when the
+// section is only a heading), and a blank line kept before a heading that follows.
+function appendToSection(lines, range, added) {
+  const out = lines.slice();
+  let last = range[1] - 1;
+  while (last > range[0] && out[last].trim() === '') last--;
+  const insert = last === range[0] ? ['', ...added] : added;
+  out.splice(last + 1, 0, ...insert);
+  const next = last + 1 + insert.length;
+  if (next < out.length && FILES_NEXT_HEADING.test(out[next])) out.splice(next, 0, '');
+  return out;
+}
+
+// Body lines with every later "## Files" and "## Updates" section folded into the first of its kind:
+// its blocks appended there, exact duplicates dropped, the later section removed.
+function foldSections(lines) {
+  let out = lines;
+  for (const heading of [FILES_HEADING, UPDATES_HEADING]) {
+    const ranges = sectionRanges(out, heading);
+    if (ranges.length < 2) continue;
+    const seen = new Set(sectionBlocks(out, ranges[0]).map(b => b.join('\n')));
+    const moved = [];
+    for (const range of ranges.slice(1)) {
+      for (const block of sectionBlocks(out, range)) {
+        const key = block.join('\n');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        moved.push(...block);
+      }
+    }
+    for (const [start, end] of ranges.slice(1).reverse()) out = dropSection(out, start, end, false);
+    if (moved.length > 0) out = appendToSection(out, sectionRanges(out, heading)[0], moved);
+  }
+  return out;
+}
+
+// The to-do's text (plain \n lines) with its doubled sections folded.
+function foldText(text, file) {
+  const { head, body } = textParts(text, file);
+  const folded = foldSections(body);
+  return folded === body ? text : [...head, ...folded].join('\n');
+}
+
+// Body lines with `entry` (its lines) appended to the first "## Updates" section, or in a new one:
+// after the details and the last "## Files" section, before the first history, done or deleted heading.
+function addEntry(bodyLines, entry, afterHead) {
+  const ranges = sectionRanges(bodyLines, UPDATES_HEADING);
+  if (ranges.length > 0) return appendToSection(bodyLines, ranges[0], entry);
+  return placeUpdates(bodyLines, ['## Updates', '', ...entry], afterHead);
+}
+
+// Body lines with an "## Updates" section (its lines, heading first) placed by the rule above.
+function placeUpdates(bodyLines, section, afterHead) {
+  const files = sectionRanges(bodyLines, FILES_HEADING);
+  const from = files.length > 0 ? files[files.length - 1][1] : 0;
+  return placeSection(bodyLines, section, afterHead, UPDATES_ANCHOR, from);
+}
+
+// `text` (plain \n lines) with `entry` logged.
+function withEntry(text, file, entry) {
+  const { head, body } = textParts(text, file);
+  return [...head, ...addEntry(body, entry, head.length > 0)].join('\n');
+}
+
+// Writes `text` with `entry` logged, unless it is still `before` (nothing really changed: nothing is
+// written). True when written.
+function writeLogged(todo, file, before, text, entry) {
+  if (text === before) return false;
+  replaceTodo(todo, withEntry(text, file, entry));
+  return true;
+}
+
+// Who acted and with which tool, as the log writes them: the name without "(" or ")", the slug, and
+// the tool (`via`, else "todo skill").
+function logActor(body) {
+  const who = actor(body);
+  const name = who.name.replace(/[()]/g, '').replace(/\s+/g, ' ').trim() || who.slug;
+  const via = viaOf(body).replace(/[()]/g, '').trim() || 'todo skill';
+  return { name, slug: who.slug, via };
+}
+
+// "- 27 Nov 2026, 14:05 UK"
+function entryStamp(at) {
+  const when = ukTime(at);
+  const [y, m, d] = when.date.split('-');
+  return `- ${Number(d)} ${ENTRY_MONTHS[Number(m) - 1]} ${y}, ${when.time} UK`;
+}
+
+// One auto entry: "- … UK: Name (slug) <words> (<via>)."
+function autoEntry(who, words) {
+  return [`${entryStamp(now())}: ${who.name} (${who.slug}) ${words} (${who.via}).`];
+}
+
+// One note: "- … UK: Name (slug) wrote: <first line>", then "  <line>" for each further line.
+function noteEntry(who, text) {
+  const [first, ...rest] = text.split('\n');
+  return [`${entryStamp(now())}: ${who.name} (${who.slug}) wrote: ${first}`, ...rest.map(l => '  ' + l)];
+}
+
+// "1 Dec 2026" for a YYYY-MM-DD date; anything else as one line of text.
+function shortDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m || !isRealDate(value)) return oneLine(value);
+  return `${Number(m[3])} ${ENTRY_MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+}
+
+// An update's text (`text` on update, `note` on assignee and tick), normalised: CR and CRLF become
+// LF, tabs spaces; each line loses its trailing spaces, blank lines go, and the whole is trimmed.
+function updateTextOf(value, name) {
+  if (typeof value !== 'string') throw new Refusal(400, `${name} must be text`);
+  const text = value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ')
+    .split('\n').map(l => l.trimEnd()).filter(l => l !== '').join('\n').trim();
+  if (!text) throw new Refusal(400, `${name} is required`);
+  if (text.length > UPDATE_MAX) throw new Refusal(400, `${name} is too long (over ${UPDATE_MAX} characters)`);
+  if (/\p{Cc}/u.test(text.replace(/\n/g, ''))) throw new Refusal(400, `${name} can't hold control characters`);
+  if (text.split('\n').some(l => /^\s*(?:```|~~~)/.test(l))) throw new Refusal(400, "an update can't hold a code block");
+  return text;
+}
+
+// The optional `note` of assignee and tick: null when not sent.
+function noteOf(body) {
+  return body.note === undefined || body.note === null ? null : updateTextOf(body.note, 'note');
+}
+
+// Details sent by a caller may not hold the log: only this script writes it.
+function hasUpdatesHeading(text) {
+  const lines = text.split('\n');
+  return linesOutsideFences(lines).some(i => UPDATES_HEADING.test(lines[i]));
+}
+const UPDATES_IN_DETAILS = 'details can\'t hold an "## Updates" section: updates are added with update';
 
 // The library's rules (the app's server/brain/library-rules.ts), as tdsapp-files has them.
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
@@ -938,26 +1361,31 @@ function attach(body, res) {
   }
   const todo = openTodo(dir, file, expectOf(body), true);
   const line = fileLineFor(rel, dir, rel.startsWith('personal/') ? adderOf(body) : '');
-  const { head, body: lines } = todoParts(todo, file);
-  const range = filesRange(lines);
-  const links = range ? parseFiles(lines.join('\n')) : [];
+  const before = foldText(todo.text, file);
+  const { head, body: lines } = textParts(before, file);
+  const links = parseFiles(lines.join('\n'));
   if (links.some(l => l.path === rel)) return res.json({ ok: true, file, path: rel, changed: false });
   if (links.length >= FILES_MAX) throw new Refusal(400, `a to-do can have at most ${FILES_MAX} files`);
-  let out;
-  if (!range) {
-    out = placeSection(lines, ['## Files', '', line], head.length > 0);
-  } else {
-    // After the section's last line that isn't blank (or a blank line after a bare heading).
-    out = lines.slice();
-    let last = range[1] - 1;
-    while (last > range[0] && out[last].trim() === '') last--;
-    const added = last === range[0] ? ['', line] : [line];
-    out.splice(last + 1, 0, ...added);
-    const next = last + 1 + added.length;
-    if (next < out.length && FILES_NEXT_HEADING.test(out[next])) out.splice(next, 0, '');
-  }
-  replaceTodo(todo, [...head, ...out].join('\n'));
+  const out = addToFiles(lines, line, head.length > 0);
+  // v0.7: a personal to-do's entry never names the file.
+  const words = dir === PERSONAL_DIR ? 'added a file' : `added a file: ${fileLinkOf(line).name}`;
+  writeLogged(todo, file, before, [...head, ...out].join('\n'), autoEntry(logActor(body), words));
   res.json({ ok: true, file, path: rel, changed: true });
+}
+
+// Body lines with `line` added to the "## Files" section, or in a new one (see placeSection).
+function addToFiles(lines, line, afterHead) {
+  const range = filesRange(lines);
+  if (!range) return placeSection(lines, ['## Files', '', line], afterHead);
+  return appendToSection(lines, range, [line]);
+}
+
+// Body lines with the "## Files" lines at `hits` removed, and the section once nothing is left in it.
+function removeFromFiles(lines, range, hits, afterHead) {
+  let out = lines.filter((_, i) => !hits.has(i));
+  const end = range[1] - hits.size;
+  if (out.slice(range[0] + 1, end).every(l => l.trim() === '')) out = dropSection(out, range[0], end, afterHead);
+  return out;
 }
 
 // detach: { file, path, scope?, expect? } → every line linking that file removed; the section goes
@@ -965,24 +1393,115 @@ function attach(body, res) {
 function detach(body, res) {
   const file = fileOf(body);
   const rel = filePathOf(body);
-  const todo = openTodo(dirOf(body), file, expectOf(body), true);
-  const { head, body: lines } = todoParts(todo, file);
+  const dir = dirOf(body);
+  const todo = openTodo(dir, file, expectOf(body), true);
+  const before = foldText(todo.text, file);
+  const { head, body: lines } = textParts(before, file);
   const range = filesRange(lines);
   const hits = new Set();
+  let name = '';
   if (range) {
     for (let i = range[0] + 1; i < range[1]; i++) {
       const link = fileLinkOf(lines[i]);
-      if (link && link.path === rel) hits.add(i);
+      if (link && link.path === rel) {
+        hits.add(i);
+        name = name || link.name;
+      }
     }
   }
   if (hits.size === 0) return res.json({ ok: true, file, path: rel, changed: false });
-  let out = lines.filter((_, i) => !hits.has(i));
-  const end = range[1] - hits.size;
-  if (out.slice(range[0] + 1, end).every(l => l.trim() === '')) {
-    out = dropSection(out, range[0], end, head.length > 0);
-  }
-  replaceTodo(todo, [...head, ...out].join('\n'));
+  const out = removeFromFiles(lines, range, hits, head.length > 0);
+  const words = dir === PERSONAL_DIR ? 'removed a file' : `removed a file: ${name}`;
+  writeLogged(todo, file, before, [...head, ...out].join('\n'), autoEntry(logActor(body), words));
   res.json({ ok: true, file, path: rel, changed: true });
+}
+
+// ---- update, link and unlink (v0.7) -------------------------------------------------------------
+
+// update: { file, text, scope?, expect?, by?, by_name?, via? } → a note added to "## Updates".
+function update(body, res) {
+  const file = fileOf(body);
+  const text = updateTextOf(body.text, 'text');
+  const todo = openTodo(dirOf(body), file, expectOf(body), true);
+  replaceTodo(todo, withEntry(foldText(todo.text, file), file, noteEntry(logActor(body), text)));
+  res.json({ ok: true, file });
+}
+
+// The URL a link or unlink names, checked.
+function linkUrlOf(body) {
+  const url = body.url;
+  if (typeof url !== 'string' || url === '') throw new Refusal(400, 'url is required');
+  if (!isLinkUrl(url)) {
+    throw new Refusal(400, `url must be an http:// or https:// web address of at most ${LINK_URL_MAX} characters, with no spaces`);
+  }
+  return url;
+}
+
+// The link's name: `name` when sent (one line, at most LINK_NAME_MAX characters, no "[" or "]"),
+// else the URL's host name without a leading "www.".
+function linkNameOf(body, url) {
+  const value = body.name;
+  if (value !== undefined && value !== null) {
+    if (typeof value !== 'string') throw new Refusal(400, 'name must be text');
+    if (/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value)) throw new Refusal(400, 'name must be one line');
+    const name = value.trim();
+    if (name !== '') {
+      if (name.length > LINK_NAME_MAX) throw new Refusal(400, `name is too long (over ${LINK_NAME_MAX} characters)`);
+      if (/[[\]]/.test(name)) throw new Refusal(400, 'name can\'t hold "[" or "]"');
+      return name;
+    }
+  }
+  return new URL(url).hostname.replace(/^www\./i, '').replace(/[[\]]/g, '').slice(0, LINK_NAME_MAX);
+}
+
+// link: { file, url, name?, scope?, expect?, by?, by_name?, via? } → the web link added to "## Files".
+function link(body, res) {
+  const file = fileOf(body);
+  const url = linkUrlOf(body);
+  const name = linkNameOf(body, url);
+  const line = `- [${name}](${/[()]/.test(url) ? `<${url}>` : url})`;
+  const read = webLinkOf(line);
+  if (!read || read.url !== url || read.name !== name) throw new Refusal(400, "that link can't be written");
+  const dir = dirOf(body);
+  const todo = openTodo(dir, file, expectOf(body), true);
+  const before = foldText(todo.text, file);
+  const { head, body: lines } = textParts(before, file);
+  const links = parseLinks(lines.join('\n'));
+  const there = links.find(l => l.url === url);
+  if (there) return res.json({ ok: true, file, url, name: there.name, changed: false });
+  if (links.length >= LINKS_MAX) throw new Refusal(400, `a to-do can have at most ${LINKS_MAX} links`);
+  const out = addToFiles(lines, line, head.length > 0);
+  const words = dir === PERSONAL_DIR ? 'added a link' : `added a link: ${name}`;
+  writeLogged(todo, file, before, [...head, ...out].join('\n'), autoEntry(logActor(body), words));
+  res.json({ ok: true, file, url, name, changed: true });
+}
+
+// unlink: { file, url, scope?, expect?, by?, by_name?, via? } → every line linking that exact URL
+// removed, and the section once nothing is left in it. A URL not linked is a no-op.
+function unlink(body, res) {
+  const file = fileOf(body);
+  const url = linkUrlOf(body);
+  const dir = dirOf(body);
+  const todo = openTodo(dir, file, expectOf(body), true);
+  const before = foldText(todo.text, file);
+  const { head, body: lines } = textParts(before, file);
+  const range = filesRange(lines);
+  const hits = new Set();
+  let name = '';
+  if (range) {
+    for (let i = range[0] + 1; i < range[1]; i++) {
+      const found = webLinkOf(lines[i]);
+      if (found && found.url === url) {
+        hits.add(i);
+        name = name || found.name;
+      }
+    }
+  }
+  if (hits.size === 0) return res.json({ ok: true, file, url, changed: false });
+  const out = removeFromFiles(lines, range, hits, head.length > 0);
+  const words = dir === PERSONAL_DIR ? 'removed a link' : `removed a link: ${name}`;
+  writeLogged(todo, file, before, [...head, ...out].join('\n'), autoEntry(logActor(body), words));
+  res.json({ ok: true, file, url, changed: true });
 }
 
 // ---- server.cjs routes ------------------------------------------------------
@@ -1032,6 +1551,8 @@ function add(body, res) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
   refuseFilesHeading(details);
+  // v0.7: only this script writes the log.
+  if (hasUpdatesHeading(details)) throw new Refusal(400, UPDATES_IN_DETAILS);
   const scope = scopeValue(body.scope, 'scope');
   const open = body.open === true;
   const adder = adderOf(body);
@@ -1049,7 +1570,7 @@ function add(body, res) {
   const placed = projectFieldsOf(body, scope);
   const dir = dirOfScope(scope);
 
-  const d = new Date();
+  const d = now();
   const pad = (n) => String(n).padStart(2, '0');
   const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
@@ -1061,14 +1582,16 @@ function add(body, res) {
   if (scope === 'personal') requireInside(dir, PERSONAL_DIR);
   const fm = ['---'];
   if (assignee) fm.push('assignee: ' + assignee);
-  fm.push('title: ' + yamlText(title), 'created: ' + today);
+  // v0.7: created_at, the moment in UK time with its offset, like assigned_at.
+  const made = ukTime(d);
+  fm.push('title: ' + yamlText(title), 'created: ' + today, `created_at: ${made.date}T${made.time}:${made.seconds}${made.offset}`);
   if (adder) fm.push('created_by: ' + adder);
   if (due) fm.push('due: ' + due);
   for (const [key, value] of projectLines(placed)) if (value !== null) fm.push(`${key}: ${value}`);
   fm.push('source: ' + yamlText(via ? `added from ${via}` : 'added with the todo skill'));
   // Made for someone else: a handover, with nobody it came from.
   if (adder && assignee && assignee !== adder) {
-    fm.push(...handoverRecord({ to: assignee, by: adder, via: via || 'todo skill', at: new Date() }));
+    fm.push(...handoverRecord({ to: assignee, by: adder, via: via || 'todo skill', at: d }));
   }
   fm.push('---', '');
   const text = fm.join('\n') + (details ? `\n${details}\n` : '');
@@ -1089,61 +1612,74 @@ function add(body, res) {
 }
 
 // POST /api/todos/due: rewrites the `due:` line (adds a frontmatter block if none).
+// v0.7: every copy of the line goes before one is written; a real change is logged, none writes nothing.
 function due(body, res) {
   const file = fileOf(body);
   const due = dueOf(body);
   const todo = openTodo(dirOf(body), file, expectOf(body), true);
-  let content = todo.text;
-  if (/^---\n/.test(content)) {
-    const lines = content.split('\n');
-    const close = closingLine(lines);
-    if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
-    let idx = -1;
-    for (let i = 1; i < close; i++) { if (/^due:/.test(lines[i])) { idx = i; break; } }
-    if (idx !== -1) { if (due) lines[idx] = 'due: ' + due; else lines.splice(idx, 1); }
-    else if (due) lines.splice(close, 0, 'due: ' + due);
-    content = lines.join('\n');
-  } else if (due) {
-    content = `---\ndue: ${due}\n---\n\n` + content;
-  }
-  replaceTodo(todo, content);
+  const before = foldText(todo.text, file);
+  // The last copy, as every reader takes it.
+  const old = String(parseFrontmatter(before).frontmatter.due || '');
+  if (old === due) return res.json({ ok: true, file, due: due || null });
+  let words;
+  if (!old) words = `set the due date to ${shortDate(due)}`;
+  else if (!due) words = `cleared the due date (it was ${shortDate(old)})`;
+  else words = `changed the due date from ${shortDate(old)} to ${shortDate(due)}`;
+  writeLogged(todo, file, before, setFrontmatterLines(before, [['due', due || null]]), autoEntry(logActor(body), words));
   res.json({ ok: true, file, due: due || null });
 }
 
 // POST /api/todos/assignee: rewrites the `assignee:` line (adds one if missing;
 // clearing removes it, which leaves the todo open).
 // v0.4: a real change is stamped as a handover (see stampHandover); no change writes nothing.
+// v0.7: `note` is logged in the same write (a note with no change → 400); `back: true` is a hand back.
+// The last `assignee:` copy is the one read, and every other copy goes.
 function assignee(body, res) {
   const file = fileOf(body);
   const scope = scopeValue(body.scope, 'scope');
   if (scope === 'personal') throw new Refusal(400, "a personal to-do can't be passed on: move it to TDS first");
   const assignee = assigneeOf(body);
+  const note = noteOf(body);
+  if (body.back !== undefined && body.back !== true) throw new Refusal(400, 'back must be true');
+  const back = body.back === true;
+  if (back && !assignee) throw new Refusal(400, 'a to-do can only be handed back to a person');
   const todo = openTodo(TODO_DIR, file, expectOf(body), true);
-  let content = todo.text;
+  let content = foldText(todo.text, file);
   let from = '';
+  const unchanged = () => {
+    if (note) {
+      throw new Refusal(400, assignee
+        ? `nothing to pass on: the to-do is already with ${assignee}`
+        : 'nothing to pass on: the to-do is already open to anyone');
+    }
+    return res.json({ ok: true, file, assignee: assignee || null });
+  };
   if (/^---\n/.test(content)) {
     const lines = content.split('\n');
     const close = closingLine(lines);
-    if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
-    let idx = -1;
-    for (let i = 1; i < close; i++) { if (/^assignee:/.test(lines[i])) { idx = i; break; } }
-    if (idx !== -1) from = workbenchSlug(unquote(lines[idx].slice('assignee:'.length)));
-    if (from === assignee) return res.json({ ok: true, file, assignee: assignee || null });
+    const copies = [];
+    for (let i = 1; i < close; i++) { if (/^assignee:/.test(lines[i])) copies.push(i); }
+    if (copies.length > 0) from = workbenchSlug(unquote(lines[copies[copies.length - 1]].slice('assignee:'.length)));
+    if (from === assignee) return unchanged();
+    for (const i of copies.slice(1).reverse()) lines.splice(i, 1);
+    const idx = copies.length > 0 ? copies[0] : -1;
     if (idx !== -1) { if (assignee) lines[idx] = 'assignee: ' + assignee; else lines.splice(idx, 1); }
     else if (assignee) lines.splice(1, 0, 'assignee: ' + assignee);
     content = lines.join('\n');
   } else if (assignee) {
     content = `---\nassignee: ${assignee}\n---\n\n` + content;
   } else {
-    return res.json({ ok: true, file, assignee: null });
+    return unchanged();
   }
   content = stampHandover(content, {
     to: assignee,
     from,
     by: actor(body),
     via: viaOf(body) || 'todo skill',
-    at: new Date(),
+    at: now(),
+    back,
   });
+  if (note) content = withEntry(content, file, noteEntry(logActor(body), note));
   replaceTodo(todo, content);
   res.json({ ok: true, file, assignee: assignee || null });
 }
@@ -1151,36 +1687,44 @@ function assignee(body, res) {
 // POST /api/todos/edit: rewrites the `title:` line (adds one if missing; creates a
 // frontmatter block if none). A string `body` replaces everything below the frontmatter.
 // A real title change also follows todo/AGENTS.md (see retitleBody). The reply's `body` is the
-// details as written, title history included.
+// details as written, title history included (v0.7: without the "## Updates" log).
 // v0.5: with `keep_files: true`, `body` is the details only: the "## Files" section on disk is put
 // back (see placeSection), and a body holding that heading is refused.
+// v0.7: the "## Updates" section on disk is always kept (an incoming one is dropped; with none on
+// disk, a body holding that heading is refused), the last `title:` copy is the one read and every
+// other copy goes, and a real change is logged.
 function edit(body, res) {
   const file = fileOf(body);
   const title = titleOf(body);
   // Optional: the long description. Omit the field to leave the body alone.
   const hasBody = typeof body.body === 'string';
-  const newBody = hasBody ? body.body.replace(/\r\n/g, '\n').trim() : null;
+  const sent = hasBody ? body.body.replace(/\r\n/g, '\n').trim() : null;
+  // An "## Updates" section sent back (an older app shows it in the details) never reaches the file,
+  // so the limit counts the body without it.
+  const sentLog = hasBody && hasUpdatesHeading(sent);
+  const newBody = sentLog ? cutSections(sent, [UPDATES_HEADING]).details : sent;
   if (hasBody && newBody.length > DETAILS_MAX) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
   const keepFiles = hasBody && body.keep_files === true;
   if (keepFiles) refuseFilesHeading(newBody);
   const todo = openTodo(dirOf(body), file, expectOf(body), true);
+  const before = foldText(todo.text, file);
   const titleLine = 'title: ' + yamlText(title);
   let headLines = null; // the frontmatter lines, when the file has a block
   let prefix = ''; // else the new block put in front
   let oldBody;
   let newBodyLines;
   let oldTitle = '';
-  if (/^---\n/.test(todo.text)) {
-    const lines = todo.text.split('\n');
+  if (/^---\n/.test(before)) {
+    const lines = before.split('\n');
     let close = closingLine(lines);
-    if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
-    let idx = -1;
-    for (let i = 1; i < close; i++) { if (/^title:/.test(lines[i])) { idx = i; break; } }
-    if (idx !== -1) {
-      oldTitle = unquote(lines[idx].slice('title:'.length));
-      lines[idx] = titleLine;
+    const copies = [];
+    for (let i = 1; i < close; i++) { if (/^title:/.test(lines[i])) copies.push(i); }
+    if (copies.length > 0) {
+      oldTitle = unquote(lines[copies[copies.length - 1]].slice('title:'.length));
+      for (const i of copies.slice(1).reverse()) { lines.splice(i, 1); close--; }
+      lines[copies[0]] = titleLine;
     } else {
       lines.splice(1, 0, titleLine);
       close++;
@@ -1190,18 +1734,35 @@ function edit(body, res) {
     newBodyLines = newBody ? ['', ...newBody.split('\n'), ''] : [''];
   } else {
     prefix = `---\n${titleLine}\n---\n\n`;
-    oldBody = todo.text.split('\n');
+    oldBody = before.split('\n');
     newBodyLines = hasBody ? [...newBody.split('\n'), ''] : null;
   }
+  const oldText = oldBody.join('\n');
+  const log = cutSections(oldText, [UPDATES_HEADING]).sections[0];
+  // Told rather than losing text: with no log on disk, the heading can only be the person's own.
+  if (sentLog && !log) throw new Refusal(400, UPDATES_IN_DETAILS);
   if (!oldTitle) {
     const heading = firstHeading(oldBody);
     oldTitle = heading ? heading.text : '';
   }
   let bodyLines = retitleBody(hasBody ? newBodyLines : oldBody, oldTitle, title);
-  const kept = keepFiles ? splitFiles(oldBody.join('\n')).files : '';
+  const kept = keepFiles ? splitFiles(oldText).files : '';
   if (kept) bodyLines = placeSection(bodyLines, kept.split('\n'), headLines !== null);
-  replaceTodo(todo, headLines ? [...headLines, ...bodyLines].join('\n') : prefix + bodyLines.join('\n'));
-  res.json({ ok: true, file, title, body: hasBody ? bodyLines.join('\n').trim() : undefined });
+  if (hasBody && log) bodyLines = placeUpdates(bodyLines, log.split('\n'), headLines !== null);
+  const titleChanged = oldTitle !== title;
+  const oldDetails = (keepFiles ? splitSections(oldText) : cutSections(oldText, [UPDATES_HEADING])).details;
+  const detailsChanged = hasBody && newBody !== oldDetails;
+  let words = 'changed the details';
+  if (titleChanged) words = detailsChanged ? 'changed the title and the details' : 'changed the title';
+  const text = headLines ? [...headLines, ...bodyLines].join('\n') : prefix + bodyLines.join('\n');
+  // Only a real change is written (and logged): the same title and details write nothing, even when
+  // the bytes would differ (a doubled title: line, quoting).
+  const real = (titleChanged || detailsChanged) && text !== before;
+  const written = real ? withEntry(text, file, autoEntry(logActor(body), words)) : before;
+  if (real) replaceTodo(todo, written);
+  // The details as written, as before: the log is left out, as an older app never sent it.
+  const reply = hasBody ? cutSections(textParts(written, file).body.join('\n'), [UPDATES_HEADING]).details : undefined;
+  res.json({ ok: true, file, title, body: reply });
 }
 
 // ---- tick and delete: stamped, then moved (BCR-05, BCR-09) -----------------------------
@@ -1310,12 +1871,19 @@ function stampDeleted(text, by, via, at) {
 
 // Writes the stamped copy into todo/<folder>/ (never over an earlier one: a clash gets a
 // timestamp suffix), then removes the original. If that fails, the copy goes too.
-function moveStamped(body, res, folder, stamp) {
+// v0.7: `note` (tick only) is logged in the same write; doubled sections are folded first.
+function moveStamped(body, res, folder, stamp, note) {
   const file = fileOf(body);
   const home = dirOf(body);
   const todo = openTodo(home, file, expectOf(body), false);
   const via = viaOf(body) || 'todo skill';
-  const stamped = stamp(todo.bytes.toString('utf8'), actor(body), via, new Date());
+  // A file with frontmatter that never closes is still ticked or deleted, as before: its text is all body.
+  const { head, body: lines } = looseParts(todo.text);
+  let bodyLines = foldSections(lines);
+  if (note) bodyLines = addEntry(bodyLines, noteEntry(logActor(body), note), head.length > 0);
+  // Untouched otherwise, so its bytes (line endings and all) are stamped as before.
+  const source = bodyLines === lines ? todo.bytes.toString('utf8') : encodeFile(todo.shape, [...head, ...bodyLines].join('\n'));
+  const stamped = stamp(source, actor(body), via, now());
   const dir = path.join(home, folder);
   fs.mkdirSync(dir, { recursive: true });
   // A personal one stays private: its done/ or deleted/ folder is real and every name is ignored.
@@ -1343,8 +1911,10 @@ function moveStamped(body, res, folder, stamp) {
 
 // tick: { file, scope?, expect?, via?, by?, by_name? } → todo/done/ (or personal/todo/done/),
 // stamped as the app's own tick.
+// v0.7: an optional `note` is logged under "## Updates" in the done copy.
 function tick(body, res) {
-  moveStamped(body, res, 'done', stampDone);
+  const note = noteOf(body);
+  moveStamped(body, res, 'done', stampDone, note);
 }
 
 // delete: { file, scope?, expect?, via?, by?, by_name? } → todo/deleted/ (or personal/todo/deleted/),
@@ -1363,7 +1933,8 @@ const HANDOVER_KEY_LINE = /^assigned_[A-Za-z0-9_-]*\s*:/;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // The frontmatter lines. `from` is left out when undefined (a new to-do came from nobody).
-function handoverRecord({ to, from, by, via, at }) {
+// v0.7: `back` (a hand back) adds `assigned_back: true`.
+function handoverRecord({ to, from, by, via, at, back }) {
   const when = ukTime(at);
   const lines = [
     `assigned_to: ${to || 'open'}`,
@@ -1371,16 +1942,19 @@ function handoverRecord({ to, from, by, via, at }) {
     `assigned_by: ${by}`,
   ];
   if (from !== undefined) lines.push(`assigned_from: ${from || 'open'}`);
+  if (back) lines.push('assigned_back: true');
   lines.push(`assigned_via: ${yamlValue(via)}`);
   return lines;
 }
 
 // "- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Brain App)."
-function handoverLine({ to, from, by, via, at }) {
+// v0.7: a hand back reads "handed it back to <slug>".
+function handoverLine({ to, from, by, via, at, back }) {
   const when = ukTime(at);
   const [y, m, d] = when.date.split('-');
   let what;
-  if (!to) what = `made it open to anyone; it was with ${from}`;
+  if (back) what = `handed it back to ${to}`;
+  else if (!to) what = `made it open to anyone; it was with ${from}`;
   else if (!from && to === by.slug) what = 'picked it up from the open list';
   else if (!from) what = `passed it from the open list to ${to}`;
   else what = `passed it from ${from} to ${to}`;
@@ -1525,13 +2099,12 @@ function personalProjectNames() {
 }
 
 // The lines of the body's "## Files" section that point under personal/projects/, and the section.
+// v0.7: every "## Files" section is checked (`range` is the first, the only one once folded).
 function personalFileLines(bodyLines) {
   const range = filesRange(bodyLines);
   const hits = new Set();
-  if (range) {
-    for (let i = range[0] + 1; i < range[1]; i++) {
-      if (bodyLines[i].toLowerCase().includes(PERSONAL_PROJECTS_PREFIX)) hits.add(i);
-    }
+  for (const i of sectionLineIndexes(bodyLines, FILES_HEADING)) {
+    if (bodyLines[i].toLowerCase().includes(PERSONAL_PROJECTS_PREFIX)) hits.add(i);
   }
   return { range, hits };
 }
@@ -1569,7 +2142,8 @@ function withoutProjectTraces(text) {
     bodyStart = close - drop.size + 1;
   }
   const head = lines.slice(0, bodyStart);
-  let body = lines.slice(bodyStart);
+  // v0.7: doubled "## Files" sections folded first, so every such line is in the one section.
+  let body = foldSections(lines.slice(bodyStart));
   const { range, hits } = personalFileLines(body);
   if (hits.size > 0) {
     body = body.filter((_, i) => !hits.has(i));
@@ -1717,15 +2291,18 @@ function project(body, res) {
   const scope = scopeValue(body.scope, 'scope');
   const placed = projectFieldsOf(body, scope);
   const todo = openTodo(dirOfScope(scope), file, expectOf(body), true);
-  replaceTodo(todo, setFrontmatterLines(todo.text, projectLines(placed)));
+  const before = foldText(todo.text, file);
+  // v0.7: logged without naming the project, its client or its stage.
+  writeLogged(todo, file, before, setFrontmatterLines(before, projectLines(placed)), autoEntry(logActor(body), 'changed the project'));
   res.json({ ok: true, file, client: placed.client, project: placed.project, stage: placed.stage });
 }
 
 // capabilities: {} → what this script can do, so a caller can tell v0.4 from v0.3 (which answers
-// "unknown command"), v0.5 ("attach") from v0.4, v0.6 ("todo-project-v1") from v0.5, and whether
+// "unknown command"), v0.5 ("attach") from v0.4, v0.6 ("todo-project-v1") from v0.5, v0.7
+// ("updates-v1", "links-v1") from v0.6, and whether
 // personal to-dos are safe to use here.
 function capabilities(body, res) {
-  const features = ['handover', 'attach', PROJECT_CAPABILITY];
+  const features = ['handover', 'attach', PROJECT_CAPABILITY, UPDATES_CAPABILITY, LINKS_CAPABILITY];
   if (!personalProblem()) features.push('scope');
   res.json({ version: SCRIPT_VERSION, features });
 }
@@ -1733,7 +2310,8 @@ function capabilities(body, res) {
 // ---- command line -----------------------------------------------------------
 
 const COMMANDS = {
-  add, edit, due, assignee, delete: remove, tick, move, attach, detach, project, roster, list, capabilities,
+  add, edit, due, assignee, delete: remove, tick, move, attach, detach, project, update, link, unlink, roster,
+  list, capabilities,
 };
 
 function finish(code, body) {
@@ -1764,9 +2342,13 @@ function run(command, raw) {
   return finish(res.code, res.body);
 }
 
-// The "## Files" read rules, for the app repo's tests (they set globalThis.TDSAPP_TODO_LIBRARY
-// before requiring this file, so no command runs). Run directly or through the `todo` shim, as before.
-module.exports = { parseFiles, splitFiles, resolveFilePath, isNeverListed, LIBRARY_EXTENSIONS };
+// The "## Files" and (v0.7) "## Updates" read rules, for the app repo's tests (they set
+// globalThis.TDSAPP_TODO_LIBRARY before requiring this file, so no command runs). Run directly or
+// through the `todo` shim, as before.
+module.exports = {
+  parseFiles, splitFiles, resolveFilePath, isNeverListed, LIBRARY_EXTENSIONS,
+  parseLinks, fileExtras, parseUpdates, parseHandovers, timeline, splitSections, isLinkUrl, ukWallToIso,
+};
 
 if (!globalThis.TDSAPP_TODO_LIBRARY) {
   // Read stdin to the end first, so a caller writing a body never meets a closed pipe.

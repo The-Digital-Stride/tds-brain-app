@@ -8,12 +8,18 @@
  *
  *   - [logo.png](../clients/acme/images/logo.png)
  *   - [My notes.pdf](<../personal/files/My notes.pdf>) (only on ian-hancock's Mac)
+ *
+ * Since the task-updates plan (docs/plans/2026-11-27-task-updates-handback.md, decisions 5a and 6) the
+ * section also holds web links (`- [name](https://…)`, written by `link`), and EVERY `## Files` section is
+ * read: the brain's `todo/*.md merge=union` rule can leave two after a merge.
  */
 
-/** The section starts at a level-2 heading that says exactly "Files" (any case). */
-const FILES_HEADING = /^##[ \t]+files[ \t]*$/i;
-/** It ends at the next level-1 or level-2 heading. */
-const NEXT_HEADING = /^#{1,2}[ \t]/;
+import { cutTodoSections, isTodoLinkUrl, TODO_FILES_HEADING, todoSectionRanges } from './todo-updates.ts';
+import type { TodoLink } from './todo-updates-contract.ts';
+
+// The section starts at a level-2 heading that says exactly "Files" (any case) and ends at the next
+// level-1 or level-2 heading, outside code fences (TODO_FILES_HEADING, todoSectionRanges).
+
 /**
  * `- [name](path)` or `- [name](<path>)`, optionally followed by ` (only on <slug>'s Mac)`.
  * `*` bullets are read too (a hand edit), but the skill writes `-`.
@@ -46,50 +52,34 @@ export function resolveTodoFilePath(target: string): string | null {
   return rest;
 }
 
-/** Indexes of the lines outside ``` and ~~~ code fences (the skill's `linesOutsideFences`). */
-function linesOutsideFences(lines: string[]): number[] {
+/** Every line index inside a `## Files` section (headings excluded), outside code fences, in order. */
+function sectionLines(lines: string[]): number[] {
   const out: number[] = [];
-  let fence: string | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    const m = (lines[i] as string).match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fence !== null) {
-      if (m && (m[1] as string)[0] === fence[0] && (m[1] as string).length >= fence.length) fence = null;
-      continue;
-    }
-    if (m) {
-      fence = m[1] as string;
-      continue;
-    }
-    out.push(i);
+  for (const [start, end] of todoSectionRanges(lines, TODO_FILES_HEADING)) {
+    for (let i = start + 1; i < end; i++) out.push(i);
   }
   return out;
 }
 
-/** The [start, end) line range of the first `## Files` section outside code fences, or null. */
-function sectionRange(lines: string[]): [number, number] | null {
-  const outside = linesOutsideFences(lines);
-  const at = outside.findIndex((i) => FILES_HEADING.test(lines[i] as string));
-  if (at === -1) return null;
-  const start = outside[at] as number;
-  for (let k = at + 1; k < outside.length; k++) {
-    const i = outside[k] as number;
-    if (NEXT_HEADING.test(lines[i] as string)) return [start, i];
-  }
-  return [start, lines.length];
+/** One section line as a web link, or null: an item with no holder whose target passes isTodoLinkUrl. */
+function webLinkOf(line: string): TodoLink | null {
+  const m = ITEM.exec(line);
+  if (!m || m[4] !== undefined) return null;
+  const url = (m[2] ?? m[3]) as string;
+  const name = (m[1] as string).trim();
+  return name !== '' && isTodoLinkUrl(url) ? { url, name } : null;
 }
 
 /**
- * The files linked in the body's first `## Files` section, in written order, each path once. Lines that
+ * The files linked in the body's `## Files` sections, in written order, each path once. Lines that
  * aren't a well-formed item, or whose target doesn't resolve, are skipped. `personal/` links keep their
  * holder; other links never have one.
  */
 export function parseTodoFiles(body: string): TodoFileLink[] {
   const lines = String(body ?? '').split(/\r?\n/);
-  const range = sectionRange(lines);
-  if (!range) return [];
   const out: TodoFileLink[] = [];
   const seen = new Set<string>();
-  for (let i = range[0] + 1; i < range[1]; i++) {
+  for (const i of sectionLines(lines)) {
     const m = ITEM.exec(lines[i] as string);
     if (!m) continue;
     const path = resolveTodoFilePath((m[2] ?? m[3]) as string);
@@ -102,39 +92,50 @@ export function parseTodoFiles(body: string): TodoFileLink[] {
 }
 
 /**
- * Non-blank lines of the first `## Files` section that aren't a brain-file link `parseTodoFiles` reads
- * (a web link, a sub-heading, a note written by hand), trimmed, in order. The skill keeps them on disk;
- * the panel shows them as plain text so nothing in the section is hidden.
+ * The web links in the body's `## Files` sections, in written order, each URL once (the first name
+ * kept). A line is a link when it is a well-formed item with no "(only on …'s Mac)" and its target passes
+ * `isTodoLinkUrl`; anything else stays an extra.
+ */
+export function parseTodoLinks(body: string): TodoLink[] {
+  const lines = String(body ?? '').split(/\r?\n/);
+  const out: TodoLink[] = [];
+  const seen = new Set<string>();
+  for (const i of sectionLines(lines)) {
+    const link = webLinkOf(lines[i] as string);
+    if (link === null || seen.has(link.url)) continue;
+    seen.add(link.url);
+    out.push(link);
+  }
+  return out;
+}
+
+/**
+ * Non-blank lines of the `## Files` sections that are neither a brain-file link `parseTodoFiles` reads
+ * nor a web link `parseTodoLinks` reads (a sub-heading, a note written by hand, a link it refuses),
+ * trimmed, in order. The skill keeps them on disk; the panel shows them as plain text so nothing in the
+ * section is hidden.
  */
 export function todoFileExtras(body: string): string[] {
   const lines = String(body ?? '').split(/\r?\n/);
-  const range = sectionRange(lines);
-  if (!range) return [];
   const out: string[] = [];
-  for (let i = range[0] + 1; i < range[1]; i++) {
+  for (const i of sectionLines(lines)) {
     const line = (lines[i] as string).trim();
     if (line === '') continue;
     const m = ITEM.exec(lines[i] as string);
     if (m && resolveTodoFilePath((m[2] ?? m[3]) as string) !== null) continue;
+    if (webLinkOf(lines[i] as string) !== null) continue;
     out.push(line);
   }
   return out;
 }
 
 /**
- * The body without its first `## Files` section (`details`, what the panel shows and the editor edits),
- * and that section's exact source (`files`, '' when there is none). Blank lines either side of the
- * removed section collapse to one blank line; `details` is trimmed at both ends.
+ * The body without its `## Files` sections (`details`, what the panel shows and the editor edits), and
+ * their exact source (`files`, two sections joined by a blank line; '' when there is none). Blank lines
+ * either side of a removed section collapse to one blank line; `details` is trimmed at both ends. An
+ * `## Updates` section stays in `details`: `splitTodoSections` (shared/todo-updates.ts) takes both out.
  */
 export function splitTodoFiles(body: string): { details: string; files: string } {
-  const text = String(body ?? '');
-  const lines = text.split(/\r?\n/);
-  const range = sectionRange(lines);
-  if (!range) return { details: text.trim(), files: '' };
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const before = lines.slice(0, range[0]).join(eol).trimEnd();
-  const after = lines.slice(range[1]).join(eol).trimStart();
-  const files = lines.slice(range[0], range[1]).join(eol).trimEnd();
-  const details = [before, after].filter((s) => s !== '').join(`${eol}${eol}`);
-  return { details: details.trim(), files };
+  const { details, sections } = cutTodoSections(body, [TODO_FILES_HEADING]);
+  return { details, files: sections[0] as string };
 }

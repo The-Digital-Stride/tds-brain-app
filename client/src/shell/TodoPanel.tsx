@@ -21,6 +21,8 @@ import {
   type TodoScope,
 } from '../../../shared/contract.ts';
 import { splitTodoFiles, todoFileExtras } from '../../../shared/todo-files.ts';
+import { handBackTarget, splitTodoSections } from '../../../shared/todo-updates.ts';
+import { TODO_UPDATE_MAX, type TodoLink, type TodoUpdate } from '../../../shared/todo-updates-contract.ts';
 import { dueInWords, isOverdue } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatProject } from '../state/chat-project.ts';
@@ -45,6 +47,7 @@ import {
   detailsText,
   dropProjectQuestion,
   type EditDraft,
+  MOVE_TO_TDS_NOTE,
   PASS_ON_NOTE,
   PERSONAL_WARNING,
   ProjectFields,
@@ -52,9 +55,11 @@ import {
   useAssignGate,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
+import { type TodoUpdateCompose, TodoUpdates } from './TodoUpdates.tsx';
 import {
   askedStatusLine,
   doneStatusLine,
+  firstName,
   handoverLine,
   teamNote,
   teamStatusLine,
@@ -93,6 +98,16 @@ export interface TodoPanelProps {
   canAttach: boolean;
   /** TodoList.canUpload: "Add a file" offers Upload. */
   canUpload: boolean;
+  /** TodoList.canUpdate: updates, hand back and a note with a pass-on. Absent = off. */
+  canUpdate?: boolean;
+  /** TodoList.canLink: "Add a link" and Remove on a link. Absent = off. */
+  canLink?: boolean;
+  /** Adds an update to a task of yours; with `markDone` it is held with the tick. True when it went. */
+  onUpdate?: (todo: TodoItem, text: string, markDone: boolean) => Promise<boolean>;
+  /** Adds an update to a task you passed on, while it waits. True when it went. */
+  onAskedUpdate?: (asked: AskedTodo, text: string) => Promise<boolean>;
+  /** Hands the task back to the person who passed it on, with an optional note (held, with Undo). */
+  onHandBack?: (todo: TodoItem, target: { slug: string; name: string }, note: string) => void;
   /** Says a line in the panel's status region (the drawer's status line, shown while the panel is open). */
   onStatus: (text: string, isError?: boolean) => void;
   /** Add form: start personal (the Personal filter is showing). */
@@ -143,15 +158,31 @@ export default function TodoPanel(props: TodoPanelProps) {
 
   const draft = props.draft;
   // With canAttach the panel works on the details part only: the Files section is its own block.
-  const body = todo !== null ? detailsText(todo, props.canAttach) : '';
+  const canUpdate = props.canUpdate === true;
+  const body = todo !== null ? detailsText(todo, props.canAttach, canUpdate) : '';
   const tooLong = todo !== null && body.length > TODO_DETAILS_MAX;
   const faithful = useMemo(() => todo !== null && !tooLong && isFaithful(body), [todo, tooLong, body]);
   const detailsEditable = faithful;
   const actions =
     todo !== null && mode === 'edit'
-      ? buildEditActions(todo, draft, detailsEditable, props.canAttach, canProject)
+      ? buildEditActions(todo, draft, detailsEditable, props.canAttach, canProject, canUpdate)
       : [];
-  const dirty = mode === 'add' ? addDirty : mode === 'edit' && actions.length > 0;
+  // Typed but not sent: an update, or a hand back note. Kept here (by task) so editing doesn't lose it.
+  const key = todo?.key ?? asked?.key ?? done?.key ?? teamTodo?.key ?? '';
+  const [typed, setTyped] = useState<{ key: string; update: string; back: string | null }>({
+    key: '',
+    update: '',
+    back: null,
+  });
+  const here = typed.key === key ? typed : { key, update: '', back: null };
+  const drafts: DraftProps = {
+    updateText: here.update,
+    setUpdateText: (update) => setTyped({ ...here, update }),
+    backNote: here.back,
+    setBackNote: (back) => setTyped({ ...here, back }),
+  };
+  const readDirty = mode === 'read' && (here.update.trim() !== '' || (here.back ?? '').trim() !== '');
+  const dirty = mode === 'add' ? addDirty : mode === 'edit' ? actions.length > 0 : readDirty;
   const overLimit = mode === 'edit' && detailsEditable && draft.details.length > TODO_DETAILS_MAX;
 
   // The shell asks before anything that would lose the draft (close, previous, next, a drawer swap).
@@ -162,7 +193,6 @@ export default function TodoPanel(props: TodoPanelProps) {
   const ask = panel?.ask ?? null;
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
-  const key = todo?.key ?? asked?.key ?? done?.key ?? teamTodo?.key ?? '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: restart when the to-do or mode changes only.
   useEffect(() => {
     if (mode === 'edit') titleInput.current?.focus();
@@ -296,7 +326,14 @@ export default function TodoPanel(props: TodoPanelProps) {
             />
           </div>
         ) : asked ? (
-          <AskedReadView asked={asked} team={props.team} me={props.me} onStatus={props.onStatus} />
+          <AskedReadView
+            asked={asked}
+            team={props.team}
+            me={props.me}
+            onStatus={props.onStatus}
+            drafts={drafts}
+            onAskedUpdate={props.onAskedUpdate}
+          />
         ) : done ? (
           <DoneReadView done={done} team={props.team} me={props.me} onStatus={props.onStatus} />
         ) : teamTodo ? (
@@ -314,11 +351,26 @@ export default function TodoPanel(props: TodoPanelProps) {
             titleInput={titleInput}
           />
         ) : (
-          <ReadView {...props} todo={todo} faithful={faithful} tooLong={tooLong} editButton={editButton} />
+          <ReadView
+            {...props}
+            todo={todo}
+            faithful={faithful}
+            tooLong={tooLong}
+            editButton={editButton}
+            drafts={drafts}
+          />
         )}
       </section>
     </div>
   );
+}
+
+/** What was typed in the read view and not sent, held by the panel (see `typed`). `backNote` null = no hand back form. */
+interface DraftProps {
+  updateText: string;
+  setUpdateText: (text: string) => void;
+  backNote: string | null;
+  setBackNote: (text: string | null) => void;
 }
 
 function Status({ message, isError }: { message: string; isError: boolean }) {
@@ -440,20 +492,43 @@ function ReadView({
   faithful,
   tooLong,
   editButton,
+  drafts,
   ...p
 }: TodoPanelProps & {
   todo: TodoItem;
   faithful: boolean;
   tooLong: boolean;
   editButton: React.RefObject<HTMLButtonElement | null>;
+  drafts: DraftProps;
 }) {
   const chat = useChat(todo);
   const uid = useId();
+  const handBackButton = useRef<HTMLButtonElement>(null);
+  const links = todo.links ?? [];
+  const canChangeLinks = p.canEdit && p.canLink === true;
   // The Files block shows whenever files can be added, and read only to anyone who can't edit here (a
   // teammate on the team role, or with changes switched off), so linked files can still be opened. Only a
   // person who edits without the attach capability sees the whole body, section included (overseer).
-  const filesBlock = p.canAttach || (!p.canEdit && splitTodoFiles(todo.details).files !== '');
-  const shown = detailsText(todo, filesBlock);
+  const filesBlock =
+    p.canAttach ||
+    canChangeLinks ||
+    links.length > 0 ||
+    (!p.canEdit && splitTodoFiles(todo.details).files !== '');
+  // Someone who can't edit never sends the details back, so the Updates block can always take its section out.
+  const shown = detailsText(todo, filesBlock, p.canUpdate === true || !p.canEdit);
+  const canUpdate = p.canEdit && p.canUpdate === true && p.onUpdate !== undefined;
+  const compose: TodoUpdateCompose | null = canUpdate
+    ? {
+        text: drafts.updateText,
+        setText: drafts.setUpdateText,
+        busy: p.busy,
+        canDone: p.canEdit || p.canTick,
+        onAdd: (text, markDone) => (p.onUpdate ? p.onUpdate(todo, text, markDone) : Promise.resolve(false)),
+      }
+    : null;
+  const target = canUpdate && p.onHandBack ? handBackTarget(todo, p.me, p.team) : null;
+  const targetFirst = target ? firstName(target.name) : '';
+  const backNote = target ? drafts.backNote : null;
   const canTickDetails = p.canEdit && faithful && !tooLong;
   const note = tooLong ? LONG_NOTE : faithful ? null : UNFAITHFUL_NOTE;
   // A tick shows at once, while it saves, and only while the details it was made on are still the ones shown.
@@ -495,8 +570,10 @@ function ReadView({
             <TodoFiles
               key={`files:${todo.key}`}
               attachments={todo.attachments}
-              todo={p.canEdit && p.canAttach ? todo : null}
+              todo={p.canEdit && (p.canAttach || canChangeLinks) ? todo : null}
               canAttach={p.canEdit && p.canAttach}
+              canLink={canChangeLinks}
+              links={links}
               extras={todoFileExtras(todo.details)}
               canUpload={p.canUpload}
               me={p.me}
@@ -505,10 +582,31 @@ function ReadView({
               onStatus={p.onStatus}
             />
           ) : null}
+          <TodoUpdates
+            updates={todo.updates}
+            more={todo.updatesMore}
+            extras={todo.updateExtras}
+            team={p.team}
+            compose={compose}
+            onStatus={p.onStatus}
+          />
           {todo.scope !== 'personal' ? <TodoHistory key={todo.key} todoKey={todo.key} team={p.team} /> : null}
         </div>
         <Facts todo={todo} me={p.me} team={p.team} canUsePersonal={p.canUsePersonal} />
       </div>
+      {target && backNote !== null ? (
+        <HandBackForm
+          first={targetFirst}
+          note={backNote}
+          busy={p.busy}
+          setNote={drafts.setBackNote}
+          onSend={() => p.onHandBack?.(todo, target, backNote.trim())}
+          onCancel={() => {
+            drafts.setBackNote(null);
+            requestAnimationFrame(() => handBackButton.current?.focus({ preventScroll: true }));
+          }}
+        />
+      ) : null}
       <footer className="todo-foot">
         <div className="todo-foot-group">
           <button type="button" className="btn" data-variant="primary" onClick={chat.go}>
@@ -524,6 +622,21 @@ function ReadView({
               }}
             >
               Mark as done
+            </button>
+          ) : null}
+          {target ? (
+            <button
+              type="button"
+              className="btn"
+              ref={handBackButton}
+              aria-expanded={backNote !== null}
+              aria-disabled={p.busy || undefined}
+              onClick={() => {
+                if (p.busy) return;
+                drafts.setBackNote(backNote === null ? '' : null);
+              }}
+            >
+              Hand back to {targetFirst}
             </button>
           ) : null}
           {/* Delete is a standard button: it has an Undo, so it isn't red (rule 5). */}
@@ -553,6 +666,78 @@ function ReadView({
   );
 }
 
+/** The small form under the read view: an optional note, then Hand back (held, with Undo) or Cancel. */
+function HandBackForm({
+  first,
+  note,
+  busy,
+  setNote,
+  onSend,
+  onCancel,
+}: {
+  first: string;
+  note: string;
+  busy: boolean;
+  setNote: (text: string) => void;
+  onSend: () => void;
+  onCancel: () => void;
+}) {
+  const uid = useId();
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => box.current?.focus({ preventScroll: true }), []);
+  return (
+    <form
+      className="todo-handback"
+      aria-label={`Hand back to ${first}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!busy) onSend();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          // One Esc closes the form, not the panel.
+          e.preventDefault();
+          e.stopPropagation();
+          onCancel();
+        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          if (!busy) onSend();
+        }
+      }}
+    >
+      <div className="form-field">
+        <label htmlFor={`${uid}-note`}>Note for {first} (optional)</label>
+        <textarea
+          id={`${uid}-note`}
+          ref={box}
+          className="field"
+          rows={2}
+          value={note}
+          maxLength={TODO_UPDATE_MAX}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+      <div className="todo-actions">
+        <button
+          type="submit"
+          className="btn"
+          data-variant="primary"
+          data-size="small"
+          aria-disabled={busy || undefined}
+          onClick={(e) => {
+            if (busy) e.preventDefault();
+          }}
+        >
+          Hand back
+        </button>
+        <button type="button" className="btn" data-size="small" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** What the read-only panel shows for a to-do that isn't the person's to change (passed on, or finished). */
 interface ReadOnlyItem {
   key: string;
@@ -568,6 +753,13 @@ interface ReadOnlyItem {
   assigned?: string;
   /** The footer line saying why it can't be changed. */
   note: string;
+  /** The timeline and links the server sent (absent from an older server). */
+  updates?: TodoUpdate[];
+  updatesMore?: boolean;
+  updateExtras?: string[];
+  links?: TodoLink[];
+  /** The box to add an update (a task you passed on, while it waits); null or absent for a plain read. */
+  compose?: TodoUpdateCompose | null;
 }
 
 /** Read only: no Edit, tick, pass on, delete or chat. Used for to-dos passed on (Asked) and finished ones (Done). */
@@ -582,8 +774,8 @@ function ReadOnlyView({
   me: string;
   onStatus: (text: string, isError?: boolean) => void;
 }) {
-  // The Files section is shown as a list below the details, so it is left out of the text.
-  const details = splitTodoFiles(item.details).details;
+  // The Files and Updates sections are shown as blocks below the details, so they are left out of the text.
+  const details = splitTodoSections(item.details).details;
   const due = item.due ? dueInWords(item.due) : '';
   return (
     <>
@@ -598,11 +790,20 @@ function ReadOnlyView({
             attachments={item.attachments}
             todo={null}
             canAttach={false}
+            links={item.links}
             extras={todoFileExtras(item.details)}
             canUpload={false}
             me={me}
             team={team}
             busy={false}
+            onStatus={onStatus}
+          />
+          <TodoUpdates
+            updates={item.updates}
+            more={item.updatesMore}
+            extras={item.updateExtras}
+            team={team}
+            compose={item.compose ?? null}
             onStatus={onStatus}
           />
           <TodoHistory key={item.historyKey ?? item.key} todoKey={item.historyKey ?? item.key} team={team} />
@@ -634,19 +835,26 @@ function ReadOnlyView({
 /** A to-do you passed on: read only. It is someone else's now. */
 function AskedReadView({
   asked,
+  drafts,
+  onAskedUpdate,
   ...rest
 }: {
   asked: AskedTodo;
   team: TeamMember[];
   me: string;
   onStatus: (text: string, isError?: boolean) => void;
+  drafts: DraftProps;
+  onAskedUpdate?: TodoPanelProps['onAskedUpdate'];
 }) {
+  const canUpdate = asked.canUpdate === true && asked.state === 'waiting' && onAskedUpdate !== undefined;
   const first =
     asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
   const note =
     asked.state === 'done'
       ? `${first ? `${first} ticked this off` : 'This task was ticked off'}, so it can't be changed here.`
-      : `This is ${first || asked.assigneeName}'s task now, so you can read it but not change it.`;
+      : canUpdate
+        ? `This is ${first || asked.assigneeName}'s task now, so you can't change it, but you can add an update.`
+        : `This is ${first || asked.assigneeName}'s task now, so you can read it but not change it.`;
   return (
     <ReadOnlyView
       {...rest}
@@ -658,6 +866,19 @@ function AskedReadView({
         overdue: asked.state === 'waiting' && asked.due !== null && isOverdue(asked.due),
         status: askedStatusLine(asked),
         note,
+        updates: asked.updates,
+        updatesMore: asked.updatesMore,
+        updateExtras: asked.updateExtras,
+        links: asked.links,
+        compose: canUpdate
+          ? {
+              text: drafts.updateText,
+              setText: drafts.setUpdateText,
+              busy: false,
+              canDone: false,
+              onAdd: (text) => onAskedUpdate?.(asked, text) ?? Promise.resolve(false),
+            }
+          : null,
       }}
     />
   );
@@ -685,6 +906,10 @@ function DoneReadView({
         status: doneStatusLine(done),
         assigned: done.assigneeName ?? undefined,
         note: 'This task is finished, so it can only be read here.',
+        updates: done.updates,
+        updatesMore: done.updatesMore,
+        updateExtras: done.updateExtras,
+        links: done.links,
       }}
     />
   );
@@ -714,6 +939,10 @@ function TeamReadView({
         overdue: team.due !== null && isOverdue(team.due),
         status: teamStatusLine(team),
         note: teamNote(team),
+        updates: team.updates,
+        updatesMore: team.updatesMore,
+        updateExtras: team.updateExtras,
+        links: team.links,
       }}
     />
   );
@@ -751,9 +980,22 @@ function EditView({
     setDraft((d) => ({
       ...d,
       assignee: v,
+      // A note goes to a person it is passed to: not to nobody, and not to yourself.
+      ...(v === '' || v === me ? { note: '' } : {}),
       ...(d.scope === 'personal' && v !== me ? { scope: 'tds' as const } : {}),
     }));
   const passing = todo.scope === 'personal' && draft.scope === 'tds' && draft.assignee !== me;
+  // A personal task becoming a TDS one takes its updates and links to the team.
+  const toTeam = todo.scope === 'personal' && draft.scope === 'tds';
+  const hasKept = (todo.updates?.length ?? 0) > 0 || (todo.links?.length ?? 0) > 0;
+  const moveNote = toTeam && (p.canUpdate === true || hasKept) ? MOVE_TO_TDS_NOTE : null;
+  const noteFor =
+    p.canUpdate === true &&
+    draft.assignee !== '' &&
+    draft.assignee !== me &&
+    draft.assignee !== (todo.assignee ?? '')
+      ? firstName(team.find((m) => m.slug === draft.assignee)?.name ?? draft.assignee)
+      : null;
   const switchable = p.canUsePersonal && todo.assignee === me && draft.assignee === me;
   const handover = handoverLine(todo, me);
   const warnPersonal = switchable && draft.scope === 'personal' && todo.scope !== 'personal';
@@ -843,7 +1085,7 @@ function EditView({
             ) : (
               <>
                 <TodoDetailsEditor
-                  markdown={detailsText(todo, p.canAttach)}
+                  markdown={detailsText(todo, p.canAttach, p.canUpdate === true)}
                   editable={false}
                   label="Details"
                   describedBy={`${uid}-long`}
@@ -894,8 +1136,26 @@ function EditView({
               allowOpen
               blocked={assignGate}
             />
-            {passing ? <p className="todo-note">{PASS_ON_NOTE}</p> : null}
+            {passing ? (
+              <p className="todo-note">
+                {PASS_ON_NOTE}
+                {moveNote ? ` ${moveNote}` : ''}
+              </p>
+            ) : null}
           </div>
+          {noteFor ? (
+            <div className="form-field">
+              <label htmlFor={`${uid}-pass-note`}>Note for {noteFor} (optional)</label>
+              <textarea
+                id={`${uid}-pass-note`}
+                className="field"
+                rows={2}
+                value={draft.note ?? ''}
+                maxLength={TODO_UPDATE_MAX}
+                onChange={(e) => set({ note: e.target.value })}
+              />
+            </div>
+          ) : null}
           {p.canProject ? (
             <ProjectFields
               id={uid}
@@ -929,6 +1189,7 @@ function EditView({
                   {PERSONAL_WARNING}
                 </p>
               ) : null}
+              {moveNote && !passing ? <p className="hint">{moveNote}</p> : null}
             </div>
           ) : null}
         </div>

@@ -13,7 +13,14 @@ import {
 import type { ProjectsIndex } from './projects.ts';
 import { copyFixture } from './test-helpers.ts';
 import { type GitLogRunner, type GitRunOptions, runGit } from './todo-history.ts';
-import { createTodoTimeline, HISTORY_MAX_OUTPUT, historyArgs, parseHistoryKey } from './todo-timeline.ts';
+import {
+  createTodoTimeline,
+  HISTORY_MAX_OUTPUT,
+  historyArgs,
+  historyEvents,
+  parseHistoryKey,
+  parseHistoryLog,
+} from './todo-timeline.ts';
 
 const sam: Identity = {
   name: 'Sam Example',
@@ -495,5 +502,65 @@ describe('task history: restricted projects (plan 2026-11-27, decision 6)', () =
     expect((await timeline.history(other, `asked:todo/${ID}`, sam, deps)).status).toBe('ok');
     // Asked opens only the Asked key, never the plain one.
     await notFound(timeline.history(other, ID, sam, deps));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task updates (plan 2026-11-27, decision 10): log-only commits are no History event.
+// ---------------------------------------------------------------------------
+
+describe('history: the ## Updates log and created_at', () => {
+  const roster = {
+    team: [
+      { slug: 'sam-example', name: 'Sam Example' },
+      { slug: 'jo-owner', name: 'Jo Owner' },
+    ],
+    members: [],
+  };
+  const events = (commits: string[]) =>
+    historyEvents(parseHistoryLog(commits.join(''), false).commits, roster).map((e) => e.kind);
+  const ENTRY = '- 27 Nov 2026, 14:05 UK: Sam Example (sam-example) wrote: Sent the quote.';
+  const created = commit(JO, '2026-11-01T09:00:00Z', added(TOP, v1));
+  /** Appends a new section after line 8 ("Some notes."). */
+  const logHunk = `@@ -8,0 +9,4 @@\n+\n+## Updates\n+\n+${ENTRY}\n`;
+  const createdAtHunk = '@@ -4,0 +5 @@\n+created_at: 2026-11-01T09:00:00+00:00\n';
+  // git prints newest first.
+  const log = (...newer: string[]) => [...newer, created];
+
+  it('gives no event for a commit that only added log lines (the whole text is known)', () => {
+    expect(events(log(commit(SAM, '2026-11-27T14:06:00Z', modified(TOP, logHunk))))).toEqual(['created']);
+  });
+
+  it('gives no event for a later entry added under an existing section', () => {
+    const first = commit(SAM, '2026-11-27T14:06:00Z', modified(TOP, logHunk));
+    const more = `@@ -12,0 +13,2 @@\n+- 27 Nov 2026, 15:00 UK: Sam Example (sam-example) wrote: First line.\n+  Second line.\n`;
+    expect(events(log(commit(SAM, '2026-11-27T15:01:00Z', modified(TOP, more)), first))).toEqual(['created']);
+  });
+
+  it('gives no event for a created_at line alone', () => {
+    expect(events(log(commit(JO, '2026-11-01T09:01:00Z', modified(TOP, createdAtHunk))))).toEqual([
+      'created',
+    ]);
+  });
+
+  it('gives no event for log lines when the hunks are all that is known', () => {
+    // No creating commit in the log: the text before is unknown, so the hunks' own lines are read.
+    const only = commit(SAM, '2026-11-27T14:06:00Z', modified(TOP, `${createdAtHunk}${logHunk}`));
+    expect(events([only])).toEqual([]);
+  });
+
+  it('keeps the other events of a mixed commit and adds no details event for the log', () => {
+    const mixed = modified(
+      TOP,
+      `@@ -4,0 +5 @@\n+due: 2026-11-20\n@@ -8,0 +10,4 @@\n+\n+## Updates\n+\n+${ENTRY}\n`,
+    );
+    expect(events(log(commit(SAM, '2026-11-27T14:06:00Z', mixed)))).toEqual(['due', 'created']);
+    expect(events([commit(SAM, '2026-11-27T14:06:00Z', mixed)])).toEqual(['due']);
+  });
+
+  it('still reports a real change to the details beside the log', () => {
+    const edit = modified(TOP, `@@ -8 +8,5 @@\n-Some notes.\n+Other notes.\n+\n+## Updates\n+\n+${ENTRY}\n`);
+    expect(events(log(commit(SAM, '2026-11-27T14:06:00Z', edit)))).toEqual(['details', 'created']);
+    expect(events([commit(SAM, '2026-11-27T14:06:00Z', edit)])).toEqual(['details']);
   });
 });

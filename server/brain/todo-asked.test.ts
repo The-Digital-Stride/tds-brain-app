@@ -115,6 +115,13 @@ describe('asked of others', () => {
         attachments: [],
         client: null,
         project: null,
+        updates: [],
+        updatesMore: false,
+        updateExtras: [],
+        links: [],
+        lastChange: null,
+        createdAt: null,
+        canUpdate: false,
       },
     ]);
   });
@@ -491,5 +498,75 @@ describe('asked of others: restricted projects (plan 2026-11-27, decision 6)', (
       throw new Error('no index');
     });
     expect(list.waiting.map((t) => t.id)).toEqual(['20261110-by-sam.md']);
+  });
+});
+
+describe('asked of others: the timeline and canUpdate (task updates)', () => {
+  const asked = (extra: string[] = [], body = '# Asked\n') =>
+    fm(
+      [
+        'assignee: alex-sample',
+        'assigned_to: alex-sample',
+        'assigned_at: 2026-11-10T09:00:00+00:00',
+        'assigned_by: sam-example',
+        ...extra,
+      ],
+      body,
+    );
+  const LOGGED =
+    '# Asked\n\n## Files\n\n- [Spec](https://example.com/spec)\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Alex Sample (alex-sample) wrote: On it.\n';
+
+  it('sends the timeline fields on waiting and done rows', async () => {
+    const root = brainWith({
+      'todo/20261110-waiting.md': asked(['created_at: 2026-11-10T09:00:00+00:00'], LOGGED),
+      'todo/done/20261110-done.md': asked(
+        ['completed_by: alex-sample', 'completed_at: 2026-11-15T09:00:00+00:00'],
+        LOGGED,
+      ),
+    });
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW);
+    for (const row of [list.waiting[0], list.done[0]]) {
+      expect(row).toMatchObject({
+        links: [{ url: 'https://example.com/spec', name: 'Spec' }],
+        updatesMore: false,
+        lastChange: { by: 'alex-sample', action: 'update' },
+      });
+      expect(row?.updates?.map((u) => u.text)).toContain('On it.');
+    }
+    expect(list.waiting[0]?.createdAt).toBe('2026-11-10T09:00:00+00:00');
+    expect(list.done[0]?.createdAt).toBeNull();
+  });
+
+  it('sets canUpdate on a waiting row only when the caller says updates are on', async () => {
+    const root = brainWith({
+      'todo/20261110-waiting.md': asked(),
+      'todo/done/20261110-done.md': asked([
+        'completed_by: alex-sample',
+        'completed_at: 2026-11-15T09:00:00+00:00',
+      ]),
+    });
+    const on = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, undefined, true);
+    expect(on.waiting[0]?.canUpdate).toBe(true);
+    expect(on.done[0]?.canUpdate).toBe(false);
+    const off = await createAskedTodos(fakeGit('').run).list(root, sam, NOW);
+    expect(off.waiting[0]?.canUpdate).toBe(false);
+  });
+
+  it('never sets canUpdate on a row in a project hidden from this person', async () => {
+    const SECRET = 'acme-heating/secret';
+    const index: ProjectsIndex = {
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+      hiddenPath: () => false,
+      hiddenKey: (key) => key === SECRET,
+      hiddenCount: 1,
+    };
+    const root = brainWith({
+      'todo/20261110-secret.md': asked([`project: ${SECRET}`, 'client: acme-heating']),
+    });
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => index, true);
+    expect(list.waiting[0]?.canUpdate).toBe(false);
   });
 });

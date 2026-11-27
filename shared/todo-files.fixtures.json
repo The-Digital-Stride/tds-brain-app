@@ -1,5 +1,5 @@
 {
-  "_about": "Shared cases for the to-do `## Files` section (plan 2026-11-16-todo-attachments, overseer S4). Run by shared/todo-files.test.ts and brain-skills/tdsapp-todo/scripts/tdsapp-todo.test.ts. Invented content only.",
+  "_about": "Shared cases for the to-do `## Files` section (plan 2026-11-16-todo-attachments, overseer S4). Run by shared/todo-files.test.ts and brain-skills/tdsapp-todo/scripts/tdsapp-todo.test.ts. Since the task-updates plan (2026-11-27, decision 5a) every `## Files` section is read, as a union merge can leave two. Invented content only.",
   "parse": [
     {
       "name": "no section",
@@ -136,6 +136,33 @@
           "holder": null
         }
       ]
+    },
+    {
+      "name": "a second Files section (a union merge) is read too; a path in both is kept once",
+      "body": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Handover history\n\n- x\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n- [a again](../clients/acme/files/a.pdf)\n",
+      "files": [
+        {
+          "path": "clients/acme/files/a.pdf",
+          "name": "a.pdf",
+          "holder": null
+        },
+        {
+          "path": "clients/acme/files/b.pdf",
+          "name": "b.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "web links are not files",
+      "body": "## Files\n\n- [Quote on Drive](https://drive.google.com/file/d/abc/view)\n- [Spec (v2)](<https://example.com/spec_(v2)>)\n- [a.pdf](../clients/acme/files/a.pdf)",
+      "files": [
+        {
+          "path": "clients/acme/files/a.pdf",
+          "name": "a.pdf",
+          "holder": null
+        }
+      ]
     }
   ],
   "split": [
@@ -168,6 +195,75 @@
       "body": "Notes.\n\n```\n## Files\n```",
       "details": "Notes.\n\n```\n## Files\n```",
       "files": ""
+    },
+    {
+      "name": "two sections (a union merge): both taken out, joined by a blank line",
+      "body": "Details.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Handover history\n\n- note\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n",
+      "details": "Details.\n\n## Handover history\n\n- note",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)"
+    }
+  ],
+  "links": [
+    {
+      "name": "no section",
+      "body": "See [Spec](https://example.com/spec).",
+      "links": [],
+      "extras": []
+    },
+    {
+      "name": "links in written order, beside files; a URL with brackets in <…>",
+      "body": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n- [Quote on Drive](https://drive.google.com/file/d/abc/view)\n- [Spec (v2)](<https://example.com/spec_(v2)>)\n* [  Star bullet  ](https://example.com/star)\n",
+      "links": [
+        {
+          "url": "https://drive.google.com/file/d/abc/view",
+          "name": "Quote on Drive"
+        },
+        {
+          "url": "https://example.com/spec_(v2)",
+          "name": "Spec (v2)"
+        },
+        {
+          "url": "https://example.com/star",
+          "name": "Star bullet"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "bad URLs, hand notes and sub-headings stay extras",
+      "body": "## Files\n\n- [ftp](ftp://example.com/a)\n- [js](javascript:alert)\n- [bare](example.com/a)\n- [no slashes](http:example.com)\n- [spaced](<https://example.com/a b>)\n- [held](https://example.com/a) (only on sam-example's Mac)\n- [up](../todo/x.md)\nRemember the brief.\n### Drafts\n- [ok](https://example.com/ok)\n",
+      "links": [
+        {
+          "url": "https://example.com/ok",
+          "name": "ok"
+        }
+      ],
+      "extras": [
+        "- [ftp](ftp://example.com/a)",
+        "- [js](javascript:alert)",
+        "- [bare](example.com/a)",
+        "- [no slashes](http:example.com)",
+        "- [spaced](<https://example.com/a b>)",
+        "- [held](https://example.com/a) (only on sam-example's Mac)",
+        "- [up](../todo/x.md)",
+        "Remember the brief.",
+        "### Drafts"
+      ]
+    },
+    {
+      "name": "every section is read; a URL linked twice is kept once; fenced lines are not read",
+      "body": "## Files\n\n- [One](https://example.com/1)\n\n## Updates\n\n- [Not here](https://example.com/u)\n\n```\n## Files\n- [Fenced](https://example.com/f)\n```\n\n## Files\n\n- [Two](https://example.com/2)\n- [One again](https://example.com/1)\n",
+      "links": [
+        {
+          "url": "https://example.com/1",
+          "name": "One"
+        },
+        {
+          "url": "https://example.com/2",
+          "name": "Two"
+        }
+      ],
+      "extras": []
     }
   ]
 }

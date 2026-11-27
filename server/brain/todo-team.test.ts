@@ -105,3 +105,26 @@ describe('readTeamTodo: restricted projects (plan 2026-11-27, decision 6)', () =
     expect(await readTeamTodo(root, '20261120-plain.md', 'sam-example', { projects })).not.toBeNull();
   });
 });
+
+describe('readTeamTodo: the timeline (task updates)', () => {
+  it('sends updates, links, lastChange and createdAt', async () => {
+    const root = copyFixture();
+    writeFileSync(
+      join(root, 'todo', '20261101-quote.md'),
+      fm(
+        ['assignee: alex-sample', 'created_at: 2026-11-01T09:00:00+00:00'],
+        '# Quote\n\n## Files\n\n- [Spec](https://example.com/spec)\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Alex Sample (alex-sample) wrote: Sent it.\n',
+      ),
+    );
+    const t = await readTeamTodo(root, '20261101-quote.md', 'sam-example');
+    expect(t).toMatchObject({
+      createdAt: '2026-11-01T09:00:00+00:00',
+      links: [{ url: 'https://example.com/spec', name: 'Spec' }],
+      updatesMore: false,
+      updateExtras: [],
+      lastChange: { by: 'alex-sample', byName: 'Alex Sample', action: 'update' },
+    });
+    expect(t?.updates).toHaveLength(1);
+    expect(t?.updates?.[0]).toMatchObject({ kind: 'note', by: 'alex-sample', text: 'Sent it.' });
+  });
+});

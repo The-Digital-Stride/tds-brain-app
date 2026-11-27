@@ -37,6 +37,7 @@ import type {
   TodoProjectAction,
   TodoProjectMatch,
 } from './projects-contract.ts';
+import type { TodoLooked } from './todo-changes.ts';
 import type {
   AskedTodoUpdateFields,
   TodoBackField,
@@ -444,6 +445,11 @@ export interface AskedTodo extends TodoTimelineFields, AskedTodoUpdateFields {
   client?: string | null;
   project?: string | null;
   projectMatch?: TodoProjectMatch;
+  /**
+   * True when the newest pass-on of a waiting task was a hand back (`assigned_back: true`) made by this person:
+   * they were given it and returned it. The row then says "Handed back to <name>". Absent otherwise.
+   */
+  handedBack?: true;
 }
 
 /** Finished to-dos older than this many days (by `done.at`) are left out of AskedTodoList.done. */
@@ -1217,6 +1223,7 @@ export const HOME_ITEM_IDS = [
   'whats-new',
   'meetings',
   'ads',
+  'task-updates',
   'todos',
   'recent-todos',
   'projects',
@@ -1309,6 +1316,13 @@ export interface AppPrefs {
    * (a patch with more is refused). Keys at most 300 characters, markers at most 40.
    */
   todoSeen: Record<string, string>;
+  /**
+   * "Changed since you looked" markers (shared/todo-changes.ts): task file `id` → what the person had seen of
+   * its log. TDS tasks only. Markers not refreshed for TODO_LOOKED_KEEP_DAYS are dropped on every write; at most
+   * TODO_LOOKED_MAX entries (a patch with more, or with a marker of the wrong shape, is refused). A patch
+   * replaces the whole map, as `todoSeen` does. Optional: an older prefs file, or an older app, has none.
+   */
+  todoLooked?: TodoLooked;
   /**
    * The model chats use: an alias such as 'opus' or a full id, at most MODEL_PREF_MAX characters
    * and matching MODEL_PREF_PATTERN. null (the default, and what older prefs files read as) means

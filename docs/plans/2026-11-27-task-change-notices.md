@@ -92,4 +92,21 @@ No Opus builder: nothing here is on the hard list (the one tricky rule is alread
 
 ## Review outcomes
 
-(Filled at the end.)
+Gates: `pnpm check` passes (349 files, 7,710 tests). Deletions scan: three files over 40 lines (`AskedList.tsx`, `TodoUpdates.tsx`, `TodosDrawer.tsx`), all restructures that were meant.
+
+- **Correctness and security (Opus): 1 confirmed, 0 dropped.** A "looked" marker was lost when a `todoSeen` save and a `todoLooked` save were in flight together: the first reply carried the prefs file as it stood before the second save and put the old map back. Fixed: each marker map is kept as shown while one of its own saves waits (`keepStars` in `store.tsx`), with tests for both orders.
+  Plain: pressing "Mark all as seen" on new tasks no longer lets a task jump back into Updated.
+- **Correctness re-check (Opus): 1 confirmed.** The same loss through a full reload that began before the save and landed after it (`keepListsRef`). Fixed with a send stamp per marker map, as the saved lists already do.
+  Plain: a background refresh while you open a task can't undo its "looked" record.
+- **UI and accessibility (Sonnet): 6 confirmed, 0 dropped.** The help picture was missing; help, tour and What's new promised a number that "goes up" where only a dot showed (the rail now shows a red count, decision 7); the Asked tab's hidden words read "2 has updates" (now ", with updates"); "a task you passed on" (now "asked someone to do"); a stray " · " on Home when the date is empty; the tour step ran to 27 words.
+- **Browser check (lead, throwaway brain, typed key by key): 1 fault.** With task changes switched off, a task with a log but no files showed its raw `## Updates` lines in the details as well as in the Updates list (also in v0.96.0). Fixed: the read-only details always come from `splitTodoSections`.
+  Checked live: the rail count, both Updated folds, the tab dot, the Home card and summary, "New" tags for entries that arrive while the task is open, "Mark all as seen", a handed-back task (only its notes are news), Delete after "Discard changes" with Undo, the foot at 414px, the rail with icons only.
+- **UX/UI expert (Opus): changes needed, 7 confirmed, all fixed.** The spoken rail name left out the count for someone holding no tasks; the new card went last for anyone with a saved Home order (now beside its default neighbour, this card only: `arrange`'s `near`); Home's line broke the ", " rule and named the holder twice; an opened row kept its dot while the rail had dropped it; two badges hid the icon on the icons-only rail; full names beside "From Alex" (rows now use first names); the panel counted entries where it tags cards.
+
+Known limits, unchanged: a task you asked for that its holder passes to a third person leaves your Asked list with no notice; on the first run after the update, tasks with a teammate's entry in the last 7 days show as updated once; the panel foot still wraps to three rows at 414px (Edit stays right).
+
+Known limit added by the overseer: a marker keeps the newest 80 entry keys, so a task with more than 80 entries by other people in a week would flag its oldest ones again.
+
+Sign-offs (2026-11-27):
+- UX/UI expert: SIGN-OFF after re-checking all seven fixes in the code.
+- Overseer: SIGN-OFF. It re-ran its three pre-review failures against the built rule (own hand back, a late-synced entry, two entries in one minute) and overturned none of the lead's decisions: the red count beside the navy one, the Home rows without a "With" prefix, rows that stay in Updated for the visit, and the foot at 414px.

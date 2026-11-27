@@ -34,8 +34,8 @@ Anyone can choose this when they make a new project. After that, only the projec
 
 - A task in a restricted project can only go to someone who can see it. If not, Cortex tells you to add them to the project team first. See [passing a task on](help:passing-todos-on).
 - A task you already hold in a project you can't see stays yours. It shows "Restricted project" in place of the name.
-- Its meeting notes, and files added on its **Files** tab, are hidden with it. A file that a project you can see also uses stays visible.
-- Adding an existing client file to a restricted project hides that file from people outside it, until a project they can see also uses it.
+- Its meeting notes, and files added on its **Files** tab, are hidden with it.
+- Adding an existing client file hides that file from people outside the project, until a project they can see also uses it.
 - **What it does not do:** this hides a project in Cortex. It is not a lock.
 - The project's files are still in the Brain on every team Mac, so they can be opened outside Cortex.
 - Someone on an older Cortex still sees the project until they update.

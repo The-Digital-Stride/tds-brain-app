@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.97.0 — 2026-11-27
+
+- **feat**: show when a teammate changes a task you hold or asked for
+- **fix**: review round for task change notices
+- **fix**: expert gate round for task change notices
+
 ## v0.96.0 — 2026-11-27
 
 - **feat**: updates log, hand back, web links and a time on every action

@@ -58,6 +58,7 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
 
 const changeTodos = vi.fn();
 const holdTodo = vi.fn();
+const undoHeld = vi.fn();
 const newChat = vi.fn();
 
 function setStore(
@@ -70,7 +71,9 @@ function setStore(
     openView: vi.fn(),
     heldTodos: held,
     holdTodo,
-    undoHeld: vi.fn(),
+    undoHeld,
+    pauseHeld: vi.fn(),
+    resumeHeld: vi.fn(),
     markTodosSeen: vi.fn(),
     toggleFavouriteTodo: vi.fn(),
     clearReveal: vi.fn(),
@@ -150,6 +153,7 @@ beforeEach(() => {
   changeTodos.mockReset();
   changeTodos.mockResolvedValue({ done: 1 });
   holdTodo.mockReset();
+  undoHeld.mockReset();
   newChat.mockReset();
   setStore('on', three());
 });
@@ -1066,5 +1070,487 @@ describe('projects in the panel', () => {
     await open('First');
     edit();
     expect(screen.queryByLabelText('Project')).toBeNull();
+  });
+});
+
+// Updates, hand back and a note with a pass-on (plan 2026-11-27-task-updates-handback, decision 12).
+describe('updates and hand back', () => {
+  const UPDATES = '## Updates\n\n- 27 Nov 2026, 14:05 UK: Ben McAdam (ben-mcadam) wrote: Sent the quote.';
+  const handover = (over: Partial<NonNullable<TodoItem['handover']>> = {}) => ({
+    by: 'ben-mcadam',
+    byName: 'Ben McAdam',
+    at: '2026-11-13T12:00:00+00:00',
+    from: null,
+    via: null,
+    source: 'stamp' as const,
+    ...over,
+  });
+  /** The same store, with updates (and files) switched on in the task list. */
+  const withUpdates = (mine: TodoItem[], over: Partial<TodoList> = {}) => {
+    setStore('on', mine);
+    const s = store.current as { todos: TodoList };
+    s.todos = { ...s.todos, canUpdate: true, canLink: true, canAttach: true, ...over };
+  };
+  const note = {
+    kind: 'note' as const,
+    at: '2026-11-27T14:05:00+00:00',
+    by: 'ben-mcadam',
+    byName: 'Ben McAdam',
+    text: 'Sent the quote.',
+    via: null,
+    action: 'update' as const,
+  };
+
+  it('shows the Updates block and takes the section out of the details', async () => {
+    withUpdates([todo('a.md', 'First', { details: `Some notes\n\n${UPDATES}`, updates: [note] })]);
+    mount();
+    const panel = await open('First');
+    expect(within(panel).getByLabelText('Details').textContent).toBe('Some notes');
+    expect(within(panel).getByRole('heading', { name: 'Updates' })).toBeTruthy();
+    expect(within(panel).getByText('Sent the quote.')).toBeTruthy();
+  });
+
+  it('keeps the Files section when someone who can edit but not attach ticks a box', async () => {
+    const details = '- [ ] one\n\n## Files\n\n- [Quote](https://example.com/q)';
+    withUpdates(
+      [todo('a.md', 'First', { details, links: [{ url: 'https://example.com/q', name: 'Quote' }] })],
+      { canAttach: false },
+    );
+    mount();
+    await open('First');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 1' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(1));
+    const sent = ((changeTodos.mock.calls[0]?.[0] ?? []) as { details: string }[])[0];
+    expect(sent?.details).toContain('## Files');
+    expect(sent?.details).toContain('https://example.com/q');
+  });
+
+  it('shows no Updates block, no box and no Hand back when updates are off', async () => {
+    setStore('on', [todo('a.md', 'First', { createdBy: 'ben-mcadam' })]);
+    mount();
+    const panel = await open('First');
+    expect(within(panel).queryByRole('heading', { name: 'Updates' })).toBeNull();
+    expect(within(panel).queryByLabelText('Add an update')).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /Hand back/ })).toBeNull();
+  });
+
+  it('adds an update to the task', async () => {
+    withUpdates([todo('a.md', 'First')]);
+    mount();
+    await open('First');
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Rang the client.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([{ kind: 'update', id: 'a.md', text: 'Rang the client.' }]),
+    );
+    expect(await screen.findByText('Update added.')).toBeTruthy();
+  });
+
+  it('says why when an update was not added, and keeps the text', async () => {
+    withUpdates([todo('a.md', 'First')]);
+    changeTodos.mockResolvedValue({ done: 0, error: { code: 'internal', message: 'Nope.' } });
+    mount();
+    await open('First');
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Keep this' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
+    expect(await screen.findByText("Your update wasn't added. Nope.")).toBeTruthy();
+    expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('Keep this');
+  });
+
+  it('"Add an update and mark as done" holds one tick that carries the update', async () => {
+    withUpdates([todo('a.md', 'First')]);
+    mount();
+    await open('First');
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Finished it.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update and mark as done' }));
+    expect(holdTodo).toHaveBeenCalledWith(
+      expect.objectContaining({ todoId: 'a.md', kind: 'tick', note: 'Finished it.' }),
+    );
+    expect(changeTodos).not.toHaveBeenCalled();
+  });
+
+  it('asks before closing with an update typed and not sent', async () => {
+    withUpdates([todo('a.md', 'First')]);
+    mount();
+    await open('First');
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Half a thought' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
+    expect(screen.getByText('Discard your changes?')).toBeTruthy();
+  });
+
+  it('keeps an update typed when switching to editing and back', async () => {
+    withUpdates([todo('a.md', 'First')]);
+    mount();
+    await open('First');
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Still here' } });
+    edit();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('Still here');
+  });
+
+  describe('Hand back', () => {
+    it('hands the task back to who passed it on, with the note, held with an Undo', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      mount();
+      await open('First');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      fireEvent.change(screen.getByLabelText('Note for Ben (optional)'), {
+        target: { value: 'Over to you for the signing.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          todoId: 'a.md',
+          kind: 'assignee',
+          label: 'Handed back to Ben McAdam',
+          action: {
+            kind: 'assignee',
+            id: 'a.md',
+            assignee: 'ben-mcadam',
+            back: true,
+            expect: 'v1',
+            note: 'Over to you for the signing.',
+          },
+        }),
+      );
+    });
+
+    it('sends no note when none was typed, and falls back to who added the task', async () => {
+      withUpdates([todo('a.md', 'First', { createdBy: 'ben-mcadam' })]);
+      mount();
+      await open('First');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam', back: true, expect: 'v1' },
+        }),
+      );
+    });
+
+    it('Cancel closes the form and puts the keyboard back on the button', async () => {
+      withUpdates([todo('a.md', 'First', { createdBy: 'ben-mcadam' })]);
+      mount();
+      await open('First');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      const form = screen.getByRole('form', { name: 'Hand back to Ben' });
+      fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('form', { name: 'Hand back to Ben' })).toBeNull();
+      expect(holdTodo).not.toHaveBeenCalled();
+    });
+
+    it('is not offered when nobody passed the task on, or it was added by you', async () => {
+      withUpdates([todo('a.md', 'First'), todo('b.md', 'Second', { createdBy: 'sam-example' })]);
+      mount();
+      await open('First');
+      expect(screen.queryByRole('button', { name: /Hand back/ })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
+      await open('Second');
+      expect(screen.queryByRole('button', { name: /Hand back/ })).toBeNull();
+    });
+
+    it('is not offered on a task that was itself handed back to you', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover({ back: true }) })]);
+      mount();
+      await open('First');
+      expect(screen.queryByRole('button', { name: /Hand back/ })).toBeNull();
+    });
+  });
+
+  // Typed text and the foot's buttons (Ian's UX gate, 2026-11-27): nothing typed is thrown away without a word.
+  describe('typed text and the foot buttons', () => {
+    /** A held change goes into the store the drawer reads, as the real one does; Undo takes it out again. */
+    const heldIntoStore = () => {
+      const s = store.current as { heldTodos: HeldTodo[] };
+      holdTodo.mockImplementation((h: HeldTodo) => {
+        s.heldTodos = [...s.heldTodos, h];
+      });
+      undoHeld.mockImplementation((id: string) => {
+        s.heldTodos = s.heldTodos.filter((h) => h.todoId !== id);
+      });
+    };
+    const typeUpdate = (value: string) =>
+      fireEvent.change(screen.getByLabelText('Add an update'), { target: { value } });
+
+    it('Mark as done with an update typed sends the text as the tick note', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await open('First');
+      typeUpdate('Finished it.');
+      fireEvent.click(screen.getByRole('button', { name: 'Mark as done' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({ todoId: 'a.md', kind: 'tick', note: 'Finished it.' }),
+      );
+    });
+
+    it('Hand back opens its note form with the typed update, and the update stays until it is sent', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      heldIntoStore();
+      const view = mount();
+      await open('First');
+      typeUpdate('Over to you.');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      const noteBox = screen.getByLabelText('Note for Ben (optional)') as HTMLTextAreaElement;
+      expect(noteBox.value).toBe('Over to you.');
+      // Edited before sending.
+      fireEvent.change(noteBox, { target: { value: 'Over to you, Ben.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({ action: expect.objectContaining({ note: 'Over to you, Ben.' }) }),
+      );
+      // Still held, so the update text is still kept: nothing has really been sent.
+      expect(api.state.todoPanel).toBeNull();
+      // The held change goes (sent): the text goes with it.
+      (store.current as { heldTodos: HeldTodo[] }).heldTodos = [];
+      reload(view);
+      await open('First');
+      expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('');
+      expect(screen.queryByLabelText('Note for Ben (optional)')).toBeNull();
+    });
+
+    // Review round 2: a refused hand back ("Open it to see the latest, then try again") lost the note.
+    it('keeps the typed note when the held hand back fails, so trying again needs no retyping', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      heldIntoStore();
+      const view = mount();
+      await open('First');
+      typeUpdate('Over to you.');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      const held = holdTodo.mock.calls[0]?.[0] as HeldTodo;
+      // The send failed: the change leaves the held list and the store names the task.
+      Object.assign(store.current as object, { heldTodos: [], failedHeld: [held.todoId] });
+      reload(view);
+      await open('First');
+      expect((screen.getByLabelText('Note for Ben (optional)') as HTMLTextAreaElement).value).toBe(
+        'Over to you.',
+      );
+    });
+
+    it('Delete with text typed asks "Discard your changes?" first and holds nothing', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await open('First');
+      typeUpdate('Not sent yet');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      expect(screen.getByText('Discard your changes?')).toBeTruthy();
+      expect(holdTodo).not.toHaveBeenCalled();
+    });
+
+    it('Undo after "Add an update and mark as done" brings the text back into the update box', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      heldIntoStore();
+      const view = mount();
+      await open('First');
+      typeUpdate('Finished it.');
+      fireEvent.click(screen.getByRole('button', { name: 'Add an update and mark as done' }));
+      expect(holdTodo).toHaveBeenCalled();
+      fireEvent.click(await screen.findByRole('button', { name: /Undo/ }));
+      reload(view);
+      await open('First');
+      expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('Finished it.');
+    });
+
+    it('Undo after a hand back with a note brings the note back into the form', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      heldIntoStore();
+      const view = mount();
+      await open('First');
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back to Ben' }));
+      fireEvent.change(screen.getByLabelText('Note for Ben (optional)'), { target: { value: 'Ta.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      fireEvent.click(await screen.findByRole('button', { name: /Undo/ }));
+      reload(view);
+      await open('First');
+      expect((screen.getByLabelText('Note for Ben (optional)') as HTMLTextAreaElement).value).toBe('Ta.');
+    });
+
+    // Browser check: a note kept from an earlier try went out in place of what was typed afterwards.
+    it('keeps one text for the update box and the hand back note, so the last words typed are the ones sent', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      mount();
+      await open('First');
+      typeUpdate('First thoughts.');
+      const button = screen.getByRole('button', { name: 'Hand back to Ben' });
+      fireEvent.click(button);
+      // The form stands in for the update box while it is open.
+      expect(screen.queryByLabelText('Add an update')).toBeNull();
+      fireEvent.click(
+        within(screen.getByRole('form', { name: 'Hand back to Ben' })).getByRole('button', {
+          name: 'Cancel',
+        }),
+      );
+      expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('First thoughts.');
+      typeUpdate('All checked. Back to you.');
+      fireEvent.click(button);
+      expect((screen.getByLabelText('Note for Ben (optional)') as HTMLTextAreaElement).value).toBe(
+        'All checked. Back to you.',
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Hand back' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({ action: expect.objectContaining({ note: 'All checked. Back to you.' }) }),
+      );
+    });
+
+    it('a hand back note survives Cancel and pressing the button again, and closing asks first', async () => {
+      withUpdates([todo('a.md', 'First', { handover: handover() })]);
+      mount();
+      await open('First');
+      const button = screen.getByRole('button', { name: 'Hand back to Ben' });
+      fireEvent.click(button);
+      fireEvent.change(screen.getByLabelText('Note for Ben (optional)'), { target: { value: 'Keep me' } });
+      fireEvent.click(
+        within(screen.getByRole('form', { name: 'Hand back to Ben' })).getByRole('button', {
+          name: 'Cancel',
+        }),
+      );
+      expect(screen.queryByRole('form', { name: 'Hand back to Ben' })).toBeNull();
+      fireEvent.click(button);
+      expect((screen.getByLabelText('Note for Ben (optional)') as HTMLTextAreaElement).value).toBe('Keep me');
+      // Closed again by pressing the button: still kept, and the panel asks before closing.
+      fireEvent.click(button);
+      expect(screen.queryByRole('form', { name: 'Hand back to Ben' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
+      expect(screen.getByText('Discard your changes?')).toBeTruthy();
+    });
+  });
+
+  describe('a note with a pass-on', () => {
+    const passOn = async () => {
+      await open('First');
+      edit();
+      fireEvent.change(screen.getByLabelText('Assigned to'), { target: { value: 'ben-mcadam' } });
+    };
+
+    it('sends the note on the assignee action', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await passOn();
+      fireEvent.change(screen.getByLabelText('Note for Ben (optional)'), {
+        target: { value: 'Quote is in Drive.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect(holdTodo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'assignee',
+          action: expect.objectContaining({
+            kind: 'assignee',
+            assignee: 'ben-mcadam',
+            note: 'Quote is in Drive.',
+          }),
+        }),
+      );
+    });
+
+    it('sends no note field when it is left empty', async () => {
+      withUpdates([todo('a.md', 'First')]);
+      mount();
+      await passOn();
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      const held = holdTodo.mock.calls[0]?.[0] as HeldTodo;
+      expect(held.action).not.toHaveProperty('note');
+    });
+
+    it('offers no note field when updates are off, or when it is not being passed on', async () => {
+      setStore('on', [todo('a.md', 'First')]);
+      mount();
+      await passOn();
+      expect(screen.queryByLabelText(/^Note for/)).toBeNull();
+    });
+
+    it('offers it only for a person, not for open to anyone', async () => {
+      withUpdates([todo('a.md', 'First')], { canAddOpen: true });
+      mount();
+      await open('First');
+      edit();
+      expect(screen.queryByLabelText(/^Note for/)).toBeNull();
+      fireEvent.change(screen.getByLabelText('Assigned to'), { target: { value: '' } });
+      expect(screen.queryByLabelText(/^Note for/)).toBeNull();
+    });
+  });
+
+  it('saves the details without the Updates section', async () => {
+    withUpdates([todo('a.md', 'First', { details: `Some notes\n\n${UPDATES}`, updates: [note] })]);
+    mount();
+    await open('First');
+    edit();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Details' }), {
+      target: { value: 'Changed notes' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalled());
+    expect(changeTodos).toHaveBeenCalledWith([
+      { kind: 'edit', id: 'a.md', title: 'First', details: 'Changed notes', detailsOnly: true, expect: 'v1' },
+    ]);
+  });
+
+  it('says a personal task takes its updates and links to the team when it moves', async () => {
+    withUpdates(
+      [todo('p.md', 'Mine', { scope: 'personal', key: 'personal/p.md', assignee: 'sam-example' })],
+      {
+        canUsePersonal: true,
+      },
+    );
+    mount();
+    await open('Mine');
+    edit();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: 'TDS' }));
+    expect(screen.getByText('Its updates and links go with it, and the team can read them.')).toBeTruthy();
+  });
+});
+
+describe('updates on a task you passed on', () => {
+  const askedList = (over: Partial<AskedTodo> = {}): AskedTodoList => ({
+    waiting: [asked('x.md', 'Send the quote', over)],
+    done: [],
+    historyRead: true,
+  });
+  const openAsked = async (over: Partial<AskedTodo> = {}) => {
+    apiMock.askedTodos.mockResolvedValue(askedList(over));
+    mount();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send the quote' }));
+    return dialog();
+  };
+  beforeEach(() => {
+    apiMock.askedTodos.mockReset();
+    apiMock.todoHistory.mockReset();
+  });
+
+  it('lets the asker add an update, and says they cannot change anything else', async () => {
+    const panel = await openAsked({ canUpdate: true });
+    expect(within(panel).getByText(/you can't change it, but you can add an update/)).toBeTruthy();
+    fireEvent.change(within(panel).getByLabelText('Add an update'), {
+      target: { value: 'Please use the 2025 rates.' },
+    });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add an update' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'update', id: 'x.md', text: 'Please use the 2025 rates.' },
+      ]),
+    );
+    // Nothing else is offered: no mark as done in the box, no hand back, no edit.
+    for (const name of ['Add an update and mark as done', 'Edit', 'Delete', 'Mark as done']) {
+      expect(within(panel).queryByRole('button', { name })).toBeNull();
+    }
+  });
+
+  it('shows the updates read only, with no box, when the asker cannot add one', async () => {
+    const panel = await openAsked({
+      updates: [
+        {
+          kind: 'note',
+          at: '2026-11-27T14:05:00+00:00',
+          by: 'ben-mcadam',
+          byName: 'Ben McAdam',
+          text: 'On it.',
+          via: null,
+          action: 'update',
+        },
+      ],
+    });
+    expect(within(panel).getByText('On it.')).toBeTruthy();
+    expect(within(panel).queryByLabelText('Add an update')).toBeNull();
+    expect(within(panel).getByText(/so you can read it but not change it/)).toBeTruthy();
   });
 });

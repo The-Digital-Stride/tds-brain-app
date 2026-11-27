@@ -230,7 +230,49 @@ function applyHunks(before: string[], hunks: Hunk[]): string[] | null {
 type Data = Record<string, FrontmatterValue>;
 const KEY_LINE = /^[A-Za-z0-9_-]+\s*:/;
 /** Lines the app and the skill write alongside another change; never an event of their own. */
-const STAMP_KEY = /^(assigned_|completed|deleted_|created_by$|status$)/;
+const STAMP_KEY = /^(assigned_|completed|deleted_|created_by$|created_at$|status$)/;
+
+// ---------------------------------------------------------------------------
+// The `## Updates` log (task updates plan, decision 10): the script appends one line per action and the
+// Updates list shows them properly, so a commit that only added log lines (or a `created_at` line) is no
+// History event, and in a mixed commit the log lines never make a 'details' event of their own.
+// ---------------------------------------------------------------------------
+
+const UPDATES_HEADING = /^##\s+updates\s*$/i;
+const ANY_HEADING = /^#{1,2}\s/;
+const FENCE = /^\s*(```|~~~)/;
+/** The start of one log entry: `- 27 Nov 2026, 14:05 UK: `. */
+const LOG_ENTRY = /^- \d{1,2} [A-Za-z]{3} \d{4}, \d{1,2}:\d{2} UK: /;
+
+/** A body without its `## Updates` section(s), outside code fences. */
+function withoutUpdates(body: string): string {
+  const kept: string[] = [];
+  let fenced = false;
+  let inLog = false;
+  for (const line of body.split('\n')) {
+    if (FENCE.test(line)) fenced = !fenced;
+    if (!fenced && ANY_HEADING.test(line)) inLog = UPDATES_HEADING.test(line);
+    if (!inLog) kept.push(line);
+  }
+  return kept.join('\n');
+}
+
+/**
+ * Changed lines (from hunks that don't say where they sit) without the log's: the `## Updates` heading,
+ * entry lines and their two-space continuation lines. Everything else stays.
+ */
+function withoutLogLines(lines: string[]): string[] {
+  const kept: string[] = [];
+  let inLog = false;
+  for (const line of lines) {
+    if (UPDATES_HEADING.test(line) || LOG_ENTRY.test(line)) inLog = true;
+    else if (!(inLog && /^ {2}\S/.test(line))) {
+      inLog = false;
+      kept.push(line);
+    }
+  }
+  return kept;
+}
 
 /** `key: value` lines read as frontmatter on their own. */
 const keyData = (lines: string[]): Data =>
@@ -267,10 +309,11 @@ function editChanges(before: string[] | null, diff: FileDiff): { changes: Change
   if (before && after) {
     const b = parseFrontmatter(before.join('\n'));
     const a = parseFrontmatter(after.join('\n'));
-    return { changes: compare(b.data, a.data, b.body.trim() !== a.body.trim()), after };
+    const detailsChanged = withoutUpdates(b.body).trim() !== withoutUpdates(a.body).trim();
+    return { changes: compare(b.data, a.data, detailsChanged), after };
   }
-  const removed = diff.hunks.flatMap((h) => h.removed);
-  const added = diff.hunks.flatMap((h) => h.added);
+  const removed = diff.hunks.flatMap((h) => withoutLogLines(h.removed));
+  const added = diff.hunks.flatMap((h) => withoutLogLines(h.added));
   const isDetail = (l: string) => !KEY_LINE.test(l) && l.trim() !== '' && l.trim() !== '---';
   const details = removed.some(isDetail) || added.some(isDetail);
   return { changes: compare(keyData(removed), keyData(added), details), after: null };

@@ -37,6 +37,7 @@ import {
   readTeam,
   SAFE_ID,
   taskRule,
+  timelineFields,
   todoTitle,
   usableIndex,
 } from './todos.ts';
@@ -177,6 +178,7 @@ export async function listDoneTodos(
       project,
       stage: asString(file.data.stage).trim() || null,
       ...(projectMatch ? { projectMatch } : {}),
+      ...timelineFields(file.data, file.body, team),
     };
     items.push(seen === 'mask' ? maskTask(item) : item);
   }

@@ -878,11 +878,23 @@ const TODO_SHAPES: Record<
     scope: 'optional-text',
   },
   due: { id: 'text', due: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
-  assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
+  assignee: {
+    id: 'text',
+    assignee: 'text-or-null',
+    expect: 'optional-text',
+    scope: 'optional-text',
+    // 0.7: a note written with the pass-on, and `back: true` for a hand back (changeTodo checks both).
+    note: 'optional-text',
+    back: 'optional-true',
+  },
   delete: { id: 'text', expect: 'optional-text', scope: 'optional-text' },
   move: { id: 'text', scope: 'text', to: 'text', expect: 'optional-text', dropProject: 'optional-true' },
   attach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
   detach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
+  // Task updates (shared/todo-updates-contract.ts): the values are checked by changeTodo.
+  update: { id: 'text', text: 'text', expect: 'optional-text', scope: 'optional-text' },
+  link: { id: 'text', url: 'text', name: 'optional-text', expect: 'optional-text', scope: 'optional-text' },
+  unlink: { id: 'text', url: 'text', expect: 'optional-text', scope: 'optional-text' },
   // Projects R1 (decisions 5, 6): client, project and stage are all sent; null clears.
   project: {
     id: 'text',
@@ -3189,11 +3201,17 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (path === ROUTES.askedTodos) {
     if (method !== 'GET') throw methodNotAllowed();
     const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
-    const body: AskedTodoList = await safe(ctx.brain.askedTodos(identity), {
+    const asked: AskedTodoList = await safe(ctx.brain.askedTodos(identity), {
       waiting: [],
       done: [],
       historyRead: false,
     });
+    // With changes switched off in Settings nothing may be added, as `todos` turns the other controls off.
+    const prefs = asked.waiting.some((t) => t.canUpdate === true) ? await safe(ctx.store.get(), null) : null;
+    const body: AskedTodoList =
+      prefs === null || prefs.directWrites === true
+        ? asked
+        : { ...asked, waiting: asked.waiting.map((t) => ({ ...t, canUpdate: false })) };
     sendJson(res, 200, body);
     return;
   }
@@ -3263,13 +3281,29 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     }
     const scope = isRec(body) ? body.scope : undefined;
     const expect = isRec(body) ? body.expect : undefined;
+    const note = isRec(body) ? body.note : undefined;
     if (
       (scope !== undefined && !isTodoScope(scope)) ||
-      (expect !== undefined && typeof expect !== 'string')
+      (expect !== undefined && typeof expect !== 'string') ||
+      (note !== undefined && typeof note !== 'string')
     ) {
       throw new HttpError(400, 'bad-request', 'That task was not understood.');
     }
-    if (scope === 'personal') {
+    if (note !== undefined) {
+      // "Add update and mark as done" (0.7): the script's `tick` writes the update and the done record in
+      // one go, through the same checks as any change (it needs updates-v1), never the app's own write.
+      const complete = ctx.brain.completeTodoWithNote;
+      if (!complete) throw new HttpError(403, 'not-allowed', TODO_CHANGE_MESSAGES['not-allowed']);
+      try {
+        await complete(
+          { id, scope: scope ?? 'tds', note, ...(expect !== undefined ? { expect } : {}) },
+          await safe(ctx.brain.identity(), UNKNOWN_IDENTITY),
+        );
+      } catch (err) {
+        if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
+        throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
+      }
+    } else if (scope === 'personal') {
       // A personal to-do is ticked by the brain's script (scope + expect), never by the app's own write.
       if (expect === undefined) throw new HttpError(400, 'bad-request', TODO_CHANGE_MESSAGES['bad-request']);
       try {

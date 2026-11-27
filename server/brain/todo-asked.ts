@@ -31,6 +31,7 @@ import {
   SAFE_ID,
   surfaceDate,
   taskRule,
+  timelineFields,
   todoTitle,
   usableIndex,
 } from './todos.ts';
@@ -274,6 +275,8 @@ export interface AskedTodos {
     identity: Identity,
     now: Date,
     projects?: () => Promise<ProjectsIndex>,
+    /** Task updates: this person may add an update to a waiting row (changes on, script lists updates-v1). */
+    canUpdate?: boolean,
   ): Promise<AskedTodoList>;
 }
 
@@ -325,7 +328,7 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
   const readLog = (shared ?? createAskedLog(run)).read;
 
   return {
-    async list(root, identity, now, projects) {
+    async list(root, identity, now, projects, canUpdate = false) {
       if (!identity.slug) return { waiting: [], done: [], historyRead: true };
       const [waitingFiles, doneFiles] = await Promise.all([
         readTodoFiles(root, 'waiting'),
@@ -377,6 +380,13 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
           client,
           project,
           ...(projectMatch ? { projectMatch } : {}),
+          ...timelineFields(file.data, file.body, team),
+          // Only a waiting row, and never one in a hidden project (or any project while the index can't be read).
+          canUpdate:
+            canUpdate &&
+            file.state === 'waiting' &&
+            seen === 'show' &&
+            !(read === 'unread' && project !== null),
         };
         (file.state === 'done' ? done : waiting).push(seen === 'mask' ? maskTask(item) : item);
       }

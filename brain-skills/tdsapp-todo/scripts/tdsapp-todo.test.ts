@@ -107,7 +107,15 @@ function run(
 }
 
 const todoPath = (file: string) => join(root, 'todo', file);
-const read = (file: string) => readFileSync(todoPath(file), 'utf8');
+// v0.7 (docs/plans/2026-11-27-task-updates-handback.md, decision 14): every real change now also
+// appends an entry under "## Updates", and add writes `created_at:`. The cases in this file pin the
+// v0.6 behaviour apart from those lines, so they read files without them; test/updates.test.ts pins
+// the log itself (its placement, wording and folding).
+const withoutLog = (text: string) =>
+  text
+    .replace(/\r?\n## Updates\r?\n\r?\n(?:- [^\r\n]*\r?\n(?: {2}[^\r\n]*\r?\n)*)+/g, '')
+    .replace(/^created_at: [^\r\n]*\r?\n/m, '');
+const read = (file: string) => withoutLog(readFileSync(todoPath(file), 'utf8'));
 const put = (file: string, text: string | Buffer) => writeFileSync(todoPath(file), text);
 const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const versionOf = (file: string) => sha(readFileSync(todoPath(file)));
@@ -142,7 +150,7 @@ const titleLine = (file: string) => read(file).match(/^title: .*$/m)?.[0];
 
 // v0.4: the personal folder, and the handover record that `assignee` adds.
 const personalPath = (file: string) => join(root, 'personal', 'todo', file);
-const readPersonal = (file: string) => readFileSync(personalPath(file), 'utf8');
+const readPersonal = (file: string) => withoutLog(readFileSync(personalPath(file), 'utf8'));
 function putPersonal(file: string, text: string | Buffer) {
   mkdirSync(join(root, 'personal', 'todo'), { recursive: true });
   writeFileSync(personalPath(file), text);
@@ -1384,10 +1392,10 @@ describe('the skill files', () => {
   const skill = (rel: string) =>
     appParse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')).data;
 
-  it('tdsapp-todo is v0.6, open to the whole team, and keeps its USE WHEN triggers', () => {
+  it('tdsapp-todo is v0.7, open to the whole team, and keeps its USE WHEN triggers', () => {
     expect(skill('../SKILL.md')).toMatchObject({
       name: 'tdsapp-todo',
-      version: '0.6',
+      version: '0.7',
       roles: 'owner, scout, team',
       maturity: 'draft',
       members: 'false',
@@ -1410,20 +1418,23 @@ describe('v0.4: capabilities', () => {
   it('offers handover and scope in a brain that is not a git repository', () => {
     expect(run('capabilities')).toEqual({
       code: 0,
-      json: { version: '0.6', features: ['handover', 'attach', 'todo-project-v1', 'scope'] },
+      json: {
+        version: '0.7',
+        features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1', 'scope'],
+      },
     });
   });
 
   it('offers scope in a git brain only when git ignores personal/todo/', () => {
     gitInit(false);
     expect(run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1'],
     });
     writeFileSync(join(root, '.gitignore'), 'personal/\n');
     expect(run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1', 'scope'],
     });
   });
 
@@ -1433,8 +1444,8 @@ describe('v0.4: capabilities', () => {
     mkdirSync(join(root, 'personal'));
     symlinkSync(elsewhere, join(root, 'personal', 'todo'));
     expect(run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1'],
     });
   });
 });
@@ -1921,8 +1932,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
   };
   const noScope = () =>
     expect(run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1'],
     });
   const refused = (r: RunResult) => {
     expect(r.code).toBe(2);
@@ -1983,8 +1994,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
       'personal/*\n!personal/todo/\npersonal/todo/*\n!personal/todo/*share*.md\n',
     );
     expect(run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1', 'scope'],
     });
     putPersonal('share-a.md', SAMPLE);
     put('share-b.md', SAMPLE);
@@ -2007,8 +2018,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
     // Pointed at another repository, git would say personal/todo/ isn't ignored; the brain is no repo.
     const env = { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: root };
     expect(run('capabilities', {}, { env }).json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
+      version: '0.7',
+      features: ['handover', 'attach', 'todo-project-v1', 'updates-v1', 'links-v1', 'scope'],
     });
   });
 
@@ -2041,7 +2052,7 @@ describe('v0.4: v0.3 calls give the same results as v0.3', () => {
     for (const entry of readdirSync(join(dir, prefix), { withFileTypes: true })) {
       const rel = join(prefix, entry.name);
       if (entry.isDirectory()) Object.assign(out, snapshot(dir, rel));
-      else out[rel] = calm(readFileSync(join(dir, rel), 'utf8'));
+      else out[rel] = calm(withoutLog(readFileSync(join(dir, rel), 'utf8')));
     }
     return out;
   }
@@ -2050,7 +2061,19 @@ describe('v0.4: v0.3 calls give the same results as v0.3', () => {
       .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+Z|[+-]\d{2}:\d{2})/g, '<at>')
       .replace(/ at \d{2}:\d{2} UK time/g, ' at <time> UK time');
 
-  it.skipIf(v03 === null)('edit, due, tick, delete, roster and list', () => {
+  // v0.7 (decision 14): the new script's files also hold the log, so `list` shows it in each body and
+  // each version (a fingerprint of the bytes) differs; both are set aside for the comparison.
+  const listWithoutLog = (stdout: string) => {
+    const reply = JSON.parse(stdout) as { todos?: { body: string; version?: string }[] };
+    if (!Array.isArray(reply.todos)) return stdout;
+    for (const t of reply.todos) {
+      t.body = t.body.replace(/\n*## Updates\n\n(?:- [^\n]*(?:\n|$)(?: {2}[^\n]*(?:\n|$))*)+/g, '\n').trim();
+      delete t.version;
+    }
+    return `${JSON.stringify(reply)}\n`;
+  };
+
+  it.skipIf(v03 === null)('edit, due, tick, delete, roster and list (apart from the v0.7 log)', () => {
     const brains = ['old', 'new'].map((name) => {
       const brain = join(root, name);
       mkdirSync(join(brain, 'todo'), { recursive: true });
@@ -2095,7 +2118,8 @@ describe('v0.4: v0.3 calls give the same results as v0.3', () => {
           cwd: brain,
           encoding: 'utf8',
         });
-        return { code: r.status, out: calm(r.stdout) };
+        const out = command === 'list' ? listWithoutLog(r.stdout) : r.stdout;
+        return { code: r.status, out: calm(out) };
       });
       expect(replies[1], `${command} ${JSON.stringify(input)}`).toEqual(replies[0]);
     }
@@ -2588,14 +2612,15 @@ describe('v0.5: edit with keep_files', () => {
     );
   });
 
+  // v0.7 (review round 1): apart from the handover history, which edit never changes.
   it('without keep_files, still replaces the whole body, a ## Files heading included', () => {
     put('a.md', ON_DISK);
     run('edit', { file: 'a.md', title: 'T', body: 'New details.' });
-    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nNew details.\n');
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\nNew details.\n\n${HANDOVER}\n`);
     run('edit', { file: 'a.md', title: 'T', body: `Two.\n\n## Files\n\n${LOGO_LINE}` });
     expect(linked(read('a.md'))).toEqual([LOGO]);
     run('edit', { file: 'a.md', title: 'T', body: 'Three.', keep_files: false });
-    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nThree.\n');
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\nThree.\n\n${HANDOVER}\n`);
   });
 });
 

@@ -1,0 +1,705 @@
+{
+  "_about": "Shared cases for a task's `## Updates` log, its `## Handover history` lines and web links (plan 2026-11-27-task-updates-handback, decisions 1, 5a and 6; contract shared/todo-updates-contract.ts). Run by shared/todo-updates.test.ts and brain-skills/tdsapp-todo/test/updates.test.ts, so the app's readers and the script's can't drift. Invented content only.",
+  "updates": [
+    {
+      "name": "no section",
+      "body": "Ring the client.\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Not in a section.",
+      "entries": [],
+      "extras": []
+    },
+    {
+      "name": "a two-line note and an auto entry (the contract's example)",
+      "body": "Details.\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Ben McAdam (ben-mcadam) wrote: Sent the quote to the client.\n  They want it signed by Friday.\n- 27 Nov 2026, 14:09 UK: Ben McAdam (ben-mcadam) added a link: Quote on Drive (TDS Cortex).\n",
+      "entries": [
+        {
+          "kind": "note",
+          "at": "2026-11-27T14:05:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "Sent the quote to the client.\nThey want it signed by Friday.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-11-27T14:09:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "added a link: Quote on Drive",
+          "via": "TDS Cortex",
+          "action": "links"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "a multi-line note keeps its own indentation after the two spaces; a blank line ends it",
+      "body": "## Updates\n\n- 2 Jun 2026, 09:30 UK: Sam Example (sam-example) wrote: Steps:\n  - ring them\n    then email\n  Done.\n\n  stray indented line\n",
+      "entries": [
+        {
+          "kind": "note",
+          "at": "2026-06-02T09:30:00+01:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "Steps:\n- ring them\n  then email\nDone.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": ["stray indented line"]
+    },
+    {
+      "name": "every auto wording maps to its action; unknown wording has none",
+      "body": "## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) set the due date to 1 Dec 2026 (TDS Cortex).\n- 1 Dec 2026, 10:01 UK: Sam Example (sam-example) changed the due date from 1 Dec 2026 to 3 Dec 2026 (TDS Cortex).\n- 1 Dec 2026, 10:02 UK: Sam Example (sam-example) cleared the due date (it was 3 Dec 2026) (todo skill).\n- 1 Dec 2026, 10:03 UK: Sam Example (sam-example) changed the title (TDS Cortex).\n- 1 Dec 2026, 10:04 UK: Sam Example (sam-example) changed the details (TDS Cortex).\n- 1 Dec 2026, 10:05 UK: Sam Example (sam-example) changed the title and the details (TDS Cortex).\n- 1 Dec 2026, 10:06 UK: Sam Example (sam-example) added a file: quote.pdf (TDS Cortex).\n- 1 Dec 2026, 10:07 UK: Sam Example (sam-example) removed a file (TDS Cortex).\n- 1 Dec 2026, 10:08 UK: Sam Example (sam-example) added a link (TDS Cortex).\n- 1 Dec 2026, 10:09 UK: Sam Example (sam-example) removed a link: Spec (v2) (TDS Cortex).\n- 1 Dec 2026, 10:10 UK: Sam Example (sam-example) changed the project (TDS Cortex).\n- 1 Dec 2026, 10:11 UK: Sam Example (sam-example) tidied the wording (todo skill).\n- 1 Dec 2026, 10:12 UK: Sam Example (sam-example) changed the title.\n",
+      "entries": [
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "set the due date to 1 Dec 2026",
+          "via": "TDS Cortex",
+          "action": "due"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:01:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the due date from 1 Dec 2026 to 3 Dec 2026",
+          "via": "TDS Cortex",
+          "action": "due"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:02:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "cleared the due date (it was 3 Dec 2026)",
+          "via": "todo skill",
+          "action": "due"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:03:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the title",
+          "via": "TDS Cortex",
+          "action": "title"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:04:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the details",
+          "via": "TDS Cortex",
+          "action": "details"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:05:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the title and the details",
+          "via": "TDS Cortex",
+          "action": "title"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:06:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "added a file: quote.pdf",
+          "via": "TDS Cortex",
+          "action": "files"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:07:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "removed a file",
+          "via": "TDS Cortex",
+          "action": "files"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:08:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "added a link",
+          "via": "TDS Cortex",
+          "action": "links"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:09:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "removed a link: Spec (v2)",
+          "via": "TDS Cortex",
+          "action": "links"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:10:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the project",
+          "via": "TDS Cortex",
+          "action": "project"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:11:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "tidied the wording",
+          "via": "todo skill",
+          "action": null
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:12:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "changed the title",
+          "via": null,
+          "action": "title"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "hand edits, a sub-heading, impossible dates and lines without a slug are extras",
+      "body": "## Updates\n\nSome note by hand.\n### Older\n- 31 Feb 2026, 10:00 UK: Sam Example (sam-example) wrote: Never happened.\n- 29 Mar 2026, 01:30 UK: Sam Example (sam-example) wrote: In the missing hour.\n- 1 Dec 2026, 10:00 UK: Sam Example wrote: no slug.\n* 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: star bullet.\n- 1 Dec 2026, 10:00 UK: Sam (Example) (sam-example) wrote: brackets in the name.\n  continues an extra\n",
+      "entries": [],
+      "extras": [
+        "Some note by hand.",
+        "### Older",
+        "- 31 Feb 2026, 10:00 UK: Sam Example (sam-example) wrote: Never happened.",
+        "- 29 Mar 2026, 01:30 UK: Sam Example (sam-example) wrote: In the missing hour.",
+        "- 1 Dec 2026, 10:00 UK: Sam Example wrote: no slug.",
+        "* 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: star bullet.",
+        "- 1 Dec 2026, 10:00 UK: Sam (Example) (sam-example) wrote: brackets in the name.",
+        "continues an extra"
+      ]
+    },
+    {
+      "name": "an Updates heading inside a code fence is not the section; one after it is",
+      "body": "```\n## Updates\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Fenced.\n```\n\n## Updates\n\n- 1 Dec 2026, 11:00 UK: Sam Example (sam-example) wrote: Real.\n",
+      "entries": [
+        {
+          "kind": "note",
+          "at": "2026-12-01T11:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "Real.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "two Updates sections (a union merge) are both read, in written order",
+      "body": "## Updates\n\n- 1 Dec 2026, 10:10 UK: Sam Example (sam-example) wrote: First.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n\n## Updates\n\n- 1 Dec 2026, 10:05 UK: Ben McAdam (ben-mcadam) wrote: Second.\n",
+      "entries": [
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:10:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "First.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:05:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "Second.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "CRLF, a heading in any case, and the section ends at the next level-1 heading",
+      "body": "## UPDATES  \r\n\r\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: One\r\n  two\r\n\r\n# Elsewhere\r\n\r\n- 1 Dec 2026, 11:00 UK: Sam Example (sam-example) wrote: Not in it.\r\n",
+      "entries": [
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "One\ntwo",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "the heading must say exactly Updates at level 2",
+      "body": "### Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: a.\n\n## Updates from the client\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: b.\n",
+      "entries": [],
+      "extras": []
+    }
+  ],
+  "handovers": [
+    {
+      "name": "every handover wording, including a hand back and a line without a tool",
+      "body": "Details.\n\n## Handover history\n\n- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Cortex).\n- 14 Nov 2026, 09:00 UK: Ian Hancock made it open to anyone; it was with ian-hancock (todo skill).\n- 14 Nov 2026, 09:10 UK: Sam Example picked it up from the open list (TDS Cortex).\n- 14 Nov 2026, 09:20 UK: Sam Example passed it from the open list to ben-mcadam (TDS Cortex).\n- 15 Nov 2026, 16:45 UK: Ben McAdam handed it back to sam-example (TDS Cortex).\n- 13 Nov 2026, 14:05 UK: Sam passed it on.\nnot an entry\n- 31 Nov 2026, 10:00 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n",
+      "entries": [
+        {
+          "kind": "handover",
+          "at": "2026-11-13T14:05:00+00:00",
+          "by": null,
+          "byName": "Ben McAdam",
+          "text": "passed it from ben-mcadam to ian-hancock",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-11-14T09:00:00+00:00",
+          "by": null,
+          "byName": "Ian Hancock",
+          "text": "made it open to anyone; it was with ian-hancock",
+          "via": "todo skill",
+          "action": "assignee"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-11-14T09:10:00+00:00",
+          "by": null,
+          "byName": "Sam Example",
+          "text": "picked it up from the open list",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-11-14T09:20:00+00:00",
+          "by": null,
+          "byName": "Sam Example",
+          "text": "passed it from the open list to ben-mcadam",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-11-15T16:45:00+00:00",
+          "by": null,
+          "byName": "Ben McAdam",
+          "text": "handed it back to sam-example",
+          "via": "TDS Cortex",
+          "action": "handback"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-11-13T14:05:00+00:00",
+          "by": null,
+          "byName": "Sam",
+          "text": "passed it on",
+          "via": null,
+          "action": "assignee"
+        }
+      ]
+    },
+    {
+      "name": "no section, or one inside a fence",
+      "body": "```\n## Handover history\n- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Cortex).\n```\n",
+      "entries": []
+    }
+  ],
+  "timeline": [
+    {
+      "name": "entries sorted by time; equal minutes keep file order, Updates before Handover history",
+      "body": "Details.\n\n## Updates\n\n- 1 Dec 2026, 10:05 UK: Ben McAdam (ben-mcadam) wrote: Later.\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Earlier.\n- 1 Dec 2026, 10:30 UK: Ben McAdam (ben-mcadam) changed the details (TDS Cortex).\nHand note.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n- 1 Dec 2026, 09:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).\n",
+      "updates": [
+        {
+          "kind": "handover",
+          "at": "2026-12-01T09:00:00+00:00",
+          "by": null,
+          "byName": "Ben McAdam",
+          "text": "passed it from ben-mcadam to sam-example",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "Earlier.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:05:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "Later.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "auto",
+          "at": "2026-12-01T10:30:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "changed the details",
+          "via": "TDS Cortex",
+          "action": "details"
+        },
+        {
+          "kind": "handover",
+          "at": "2026-12-01T10:30:00+00:00",
+          "by": null,
+          "byName": "Sam Example",
+          "text": "passed it from sam-example to ben-mcadam",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        }
+      ],
+      "extras": ["Hand note."]
+    },
+    {
+      "name": "sorted by the instant across both clock changes, from two merged Updates sections",
+      "body": "## Updates\n\n- 25 Oct 2026, 02:10 UK: Sam Example (sam-example) wrote: After the clocks went back.\n- 29 Mar 2026, 02:10 UK: Sam Example (sam-example) wrote: After the clocks went forward.\n\n## Updates\n\n- 25 Oct 2026, 01:20 UK: Ben McAdam (ben-mcadam) wrote: In the doubled hour.\n- 29 Mar 2026, 00:50 UK: Ben McAdam (ben-mcadam) wrote: Before the clocks went forward.\n",
+      "updates": [
+        {
+          "kind": "note",
+          "at": "2026-03-29T00:50:00+00:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "Before the clocks went forward.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "note",
+          "at": "2026-03-29T02:10:00+01:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "After the clocks went forward.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "note",
+          "at": "2026-10-25T01:20:00+01:00",
+          "by": "ben-mcadam",
+          "byName": "Ben McAdam",
+          "text": "In the doubled hour.",
+          "via": null,
+          "action": "update"
+        },
+        {
+          "kind": "note",
+          "at": "2026-10-25T02:10:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "After the clocks went back.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": []
+    },
+    {
+      "name": "nothing to show",
+      "body": "Just details.",
+      "updates": [],
+      "extras": []
+    },
+    {
+      "name": "text typed under Handover history is kept as an extra line, after the Updates extras",
+      "body": "Details.\n\n## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hello.\nHand note.\n\n## Handover history\n\n- 1 Dec 2026, 09:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).\n\nClient wants the 2025 rates. Call Jo before Friday.\n",
+      "updates": [
+        {
+          "kind": "handover",
+          "at": "2026-12-01T09:00:00+00:00",
+          "by": null,
+          "byName": "Ben McAdam",
+          "text": "passed it from ben-mcadam to sam-example",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "Hello.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": ["Hand note.", "Client wants the 2025 rates. Call Jo before Friday."]
+    }
+  ],
+  "split": [
+    {
+      "name": "no sections",
+      "body": "Ring the client.\n",
+      "details": "Ring the client.",
+      "handover": "",
+      "files": "",
+      "updates": ""
+    },
+    {
+      "name": "details, Files, Updates and Handover history",
+      "body": "Details.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hi.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n",
+      "details": "Details.",
+      "handover": "## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)",
+      "updates": "## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hi."
+    },
+    {
+      "name": "two of each (a union merge): every copy is taken out, joined by a blank line",
+      "body": "Intro.\n\n## Updates\n\n- A\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Title history\n\n- 2026-11-01: was \"Old\"\n\n## Updates\n\n- B\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n",
+      "details": "Intro.\n\n## Title history\n\n- 2026-11-01: was \"Old\"",
+      "handover": "",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)",
+      "updates": "## Updates\n\n- A\n\n## Updates\n\n- B"
+    },
+    {
+      "name": "two Handover history sections (a union merge) and a Title history between them",
+      "body": "Intro.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n\n## Title history\n\n- 2026-11-01: was \"Old\"\n\n## handover history\n\n- 2 Dec 2026, 09:00 UK: Ben McAdam handed it back to sam-example (TDS Cortex).\n",
+      "details": "Intro.\n\n## Title history\n\n- 2026-11-01: was \"Old\"",
+      "handover": "## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n\n## handover history\n\n- 2 Dec 2026, 09:00 UK: Ben McAdam handed it back to sam-example (TDS Cortex).",
+      "files": "",
+      "updates": ""
+    },
+    {
+      "name": "a fenced Updates heading stays in the details",
+      "body": "Notes.\n\n```\n## Updates\n```",
+      "details": "Notes.\n\n```\n## Updates\n```",
+      "handover": "",
+      "files": "",
+      "updates": ""
+    },
+    {
+      "name": "a fenced Handover history heading stays in the details",
+      "body": "Notes.\n\n~~~\n## Handover history\n~~~\n",
+      "details": "Notes.\n\n~~~\n## Handover history\n~~~",
+      "handover": "",
+      "files": "",
+      "updates": ""
+    },
+    {
+      "name": "CRLF line endings are kept",
+      "body": "Details.\r\n\r\n## Updates\r\n\r\n- A\r\n\r\n## Title history\r\n\r\n- 2026-11-01: was \"Old\"\r\n",
+      "details": "Details.\r\n\r\n## Title history\r\n\r\n- 2026-11-01: was \"Old\"",
+      "handover": "",
+      "files": "",
+      "updates": "## Updates\r\n\r\n- A"
+    }
+  ],
+  "linkUrl": [
+    {
+      "url": "https://drive.google.com/file/d/abc/view",
+      "ok": true
+    },
+    {
+      "url": "http://example.com",
+      "ok": true
+    },
+    {
+      "url": "https://example.com/spec_(v2)",
+      "ok": true
+    },
+    {
+      "url": "HTTPS://EXAMPLE.COM/A",
+      "ok": true
+    },
+    {
+      "url": "https://example.com:8080/a?b=c&d=[1]#top",
+      "ok": true
+    },
+    {
+      "url": "https://user@example.com/",
+      "ok": true
+    },
+    {
+      "url": "https://例え.jp/ページ",
+      "ok": true
+    },
+    {
+      "url": "",
+      "ok": false
+    },
+    {
+      "url": "example.com",
+      "ok": false
+    },
+    {
+      "url": "www.example.com/a",
+      "ok": false
+    },
+    {
+      "url": "ftp://example.com/a",
+      "ok": false
+    },
+    {
+      "url": "file:///etc/passwd",
+      "ok": false
+    },
+    {
+      "url": "javascript:alert(1)",
+      "ok": false
+    },
+    {
+      "url": "mailto:someone@example.com",
+      "ok": false
+    },
+    {
+      "url": "data:text/html,hi",
+      "ok": false
+    },
+    {
+      "url": "https://",
+      "ok": false
+    },
+    {
+      "url": "http:example.com",
+      "ok": false
+    },
+    {
+      "url": " https://example.com",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/a b",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/a\tb",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/a\nb",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/a\u0000",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/a",
+      "ok": false
+    },
+    {
+      "url": "https://example.com/<x>",
+      "ok": false
+    },
+    {
+      "url": "https://example.com\\a",
+      "ok": false
+    },
+    {
+      "url": "https://exa mple.com/",
+      "ok": false
+    }
+  ],
+  "ukWall": [
+    {
+      "date": "2026-11-27",
+      "time": "14:05",
+      "iso": "2026-11-27T14:05:00+00:00"
+    },
+    {
+      "date": "2026-06-02",
+      "time": "09:30",
+      "iso": "2026-06-02T09:30:00+01:00"
+    },
+    {
+      "date": "2026-03-29",
+      "time": "00:59",
+      "iso": "2026-03-29T00:59:00+00:00"
+    },
+    {
+      "date": "2026-03-29",
+      "time": "01:00",
+      "iso": null
+    },
+    {
+      "date": "2026-03-29",
+      "time": "01:59",
+      "iso": null
+    },
+    {
+      "date": "2026-03-29",
+      "time": "02:00",
+      "iso": "2026-03-29T02:00:00+01:00"
+    },
+    {
+      "date": "2026-10-25",
+      "time": "00:59",
+      "iso": "2026-10-25T00:59:00+01:00"
+    },
+    {
+      "date": "2026-10-25",
+      "time": "01:00",
+      "iso": "2026-10-25T01:00:00+01:00"
+    },
+    {
+      "date": "2026-10-25",
+      "time": "01:59",
+      "iso": "2026-10-25T01:59:00+01:00"
+    },
+    {
+      "date": "2026-10-25",
+      "time": "02:00",
+      "iso": "2026-10-25T02:00:00+00:00"
+    },
+    {
+      "date": "2028-02-29",
+      "time": "10:00",
+      "iso": "2028-02-29T10:00:00+00:00"
+    },
+    {
+      "date": "2026-02-29",
+      "time": "10:00",
+      "iso": null
+    },
+    {
+      "date": "2026-02-31",
+      "time": "10:00",
+      "iso": null
+    },
+    {
+      "date": "2026-13-01",
+      "time": "10:00",
+      "iso": null
+    },
+    {
+      "date": "2026-11-27",
+      "time": "24:00",
+      "iso": null
+    },
+    {
+      "date": "2026-11-27",
+      "time": "14:60",
+      "iso": null
+    },
+    {
+      "date": "2026-11-27",
+      "time": "9:05",
+      "iso": null
+    },
+    {
+      "date": "27 Nov 2026",
+      "time": "14:05",
+      "iso": null
+    }
+  ]
+}

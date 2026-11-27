@@ -11,6 +11,8 @@ import {
   syncWords,
   todoChatDraft,
   todoPlaces,
+  updateWhen,
+  updateWhenFull,
   whenWords,
 } from './words.ts';
 
@@ -259,5 +261,19 @@ describe('handover words', () => {
     expect(handoverLine(h({ source: 'history', via: null }), 'sam-example')).toBe(
       'From Ben McAdam (git history), 12 Nov',
     );
+  });
+});
+
+describe('updateWhen', () => {
+  const now = new Date('2026-11-27T21:50:00Z');
+  it('reads like the rest of the app: Today, Yesterday, a day, and the year only when it is not this year', () => {
+    expect(updateWhen('2026-11-27T14:05:00+00:00', now)).toBe('Today, 14:05');
+    expect(updateWhen('2026-11-26T09:05:00+00:00', now)).toBe('Yesterday, 09:05');
+    expect(updateWhen('2026-11-03T14:20:00+00:00', now)).toBe('3 Nov, 14:20');
+    expect(updateWhen('2025-12-30T08:00:00+00:00', now)).toBe('30 Dec 2025, 08:00');
+    expect(updateWhen('nonsense', now)).toBe('');
+  });
+  it('keeps the full date and time for the tooltip, in UK time', () => {
+    expect(updateWhenFull('2026-07-03T13:20:00+00:00')).toBe('3 Jul 2026, 14:20');
   });
 });

@@ -37,6 +37,14 @@ import type {
   TodoProjectAction,
   TodoProjectMatch,
 } from './projects-contract.ts';
+import type {
+  AskedTodoUpdateFields,
+  TodoBackField,
+  TodoListUpdateFields,
+  TodoNoteField,
+  TodoTimelineFields,
+  TodoUpdateAction,
+} from './todo-updates-contract.ts';
 import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
@@ -179,6 +187,8 @@ export interface TodoHandover {
   from: string | null;
   /** `assigned_via` from the stamp (e.g. "TDS Brain App"); null for history or when absent. */
   via: string | null;
+  /** `assigned_back: true` in the stamp: this pass-on was a hand back (tdsapp-todo 0.7). Absent otherwise. */
+  back?: boolean;
   /**
    * 'stamp': from the `assigned_*` frontmatter, used only when `assigned_to` equals the current assignee.
    * 'history': from `git log -G '^assignee:'` (usually the creating commit), for TDS to-dos in `mine`.
@@ -186,7 +196,8 @@ export interface TodoHandover {
   source: 'stamp' | 'history';
 }
 
-export interface TodoItem {
+/** Also carries TodoTimelineFields (shared/todo-updates-contract.ts): updates, links, lastChange, createdAt. */
+export interface TodoItem extends TodoTimelineFields {
   /**
    * The file name inside its folder (`todo/` or `personal/todo/`), e.g. "20260702-renew-contract.md".
    * Sent as `id` in the API, together with `scope`. NOT unique on its own across scopes: use `key`.
@@ -302,7 +313,7 @@ export type TodoChangeAccess = 'on' | 'switched-off' | 'restricted' | 'no-skill'
 /** What `BrainReaders.todos` may return for `changes`; the route adds 'switched-off'. */
 export type TodoSkillAccess = Exclude<TodoChangeAccess, 'switched-off'>;
 
-export interface TodoList {
+export interface TodoList extends TodoListUpdateFields {
   /** Assigned to the current person, soonest first. */
   mine: TodoItem[];
   /** No assignee: anyone can pick these up. */
@@ -397,7 +408,7 @@ export interface TodoActor {
  * A TDS to-do this person passed on to someone else (or added for them), still waiting or finished.
  * Never a personal to-do. Never one now assigned to this person or open to anyone.
  */
-export interface AskedTodo {
+export interface AskedTodo extends TodoTimelineFields, AskedTodoUpdateFields {
   /**
    * `asked:todo/<id>` (waiting) or `asked:todo/done/<id>` (done). Never equal to a TodoItem.key, so the
    * panel, prev/next and React keys can hold both kinds.
@@ -455,7 +466,7 @@ export interface AskedTodoList {
  * A finished to-do (done-todos plan 2026-11-24): a TDS one from `todo/done/`, or this person's own
  * personal one from `personal/todo/done/`. Shown read only.
  */
-export interface DoneTodo {
+export interface DoneTodo extends TodoTimelineFields {
   /**
    * `done:todo/done/<id>` or `done:personal/todo/done/<id>`. Never equal to a TodoItem.key or an
    * AskedTodo.key, so the panel, prev/next and React keys can hold every kind. Also the history key.
@@ -495,7 +506,7 @@ export interface DoneTodo {
  * A teammate's open TDS to-do, shown read only (done-todos plan, decision 10): from `todo/<id>`, never personal.
  * `GET ROUTES.teamTodo?id=<id>`; 404 when it isn't in `todo/` any more.
  */
-export interface TeamTodo {
+export interface TeamTodo extends TodoTimelineFields {
   /** `team:todo/<id>`: never equal to a TodoItem.key, AskedTodo.key or DoneTodo.key. */
   key: string;
   /** The file name, e.g. "20261113-send-the-quote.md". Also its history key (TodoItem.key for TDS). */
@@ -635,7 +646,15 @@ export type TodoAction =
       scope?: TodoScope;
     }
   | { kind: 'due'; id: string; due: string | null; expect?: string; scope?: TodoScope }
-  | { kind: 'assignee'; id: string; assignee: string | null; expect?: string; scope?: TodoScope }
+  /** 0.7: optional `note` (written as an update in the same write) and `back: true` (a hand back). */
+  | ({
+      kind: 'assignee';
+      id: string;
+      assignee: string | null;
+      expect?: string;
+      scope?: TodoScope;
+    } & TodoNoteField &
+      TodoBackField)
   | { kind: 'delete'; id: string; expect?: string; scope?: TodoScope }
   /** v0.4: moves the file between `todo/` (tds) and `personal/todo/` (personal), bytes unchanged. */
   | ({ kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string } & TodoMoveProjectFields)
@@ -649,7 +668,9 @@ export type TodoAction =
   | { kind: 'attach'; id: string; path: string; expect?: string; scope?: TodoScope }
   | { kind: 'detach'; id: string; path: string; expect?: string; scope?: TodoScope }
   /** Projects R1 (decisions 5, 6): set client, project and stage together. Only when TodoList.canProject. */
-  | TodoProjectAction;
+  | TodoProjectAction
+  /** Task updates (shared/todo-updates-contract.ts): `update`, `link`, `unlink`. */
+  | TodoUpdateAction;
 /*
  * v0.4 rules for `scope` (plan 2026-11-13-todo-handover-search-scope, decisions 2 and 4):
  * - Absent means 'tds', so every v0.3 action shape is unchanged. The server matches the listed to-do
@@ -747,6 +768,11 @@ export class TodoChangeError extends Error {
  *     other folder (assignee must be the actor), clash → `-<n>` suffix, answers `{ok, file, moved}`
  *     with `file` = the new name.
  *   - v0.3 calls to edit, due, tick, delete, roster and list give byte-identical results.
+ * - v0.7 additions (2026-11-27, plan 2026-11-27-task-updates-handback), all optional: `update`, `link` and
+ *   `unlink` commands, `note` on assignee and tick, `back: true` on assignee, `by` / `by_name` / `via` on
+ *   attach, detach, due, edit and project, the `## Updates` log, and `capabilities` features "updates-v1" and
+ *   "links-v1". The whole agreement is in shared/todo-updates-contract.ts ("The script's command line").
+ *   A 0.6 call now also appends a line under `## Updates`, so results are no longer byte-identical.
  */
 export const TODO_SCRIPT_TIMEOUT_MS = 10_000;
 
@@ -896,6 +922,15 @@ export interface BrainReaders {
    * `scope: "personal"`. Same refusals as `changeTodo`; `not-allowed` unless `canUsePersonal`.
    */
   completePersonalTodo(id: string, expect: string, by: Identity): Promise<void>;
+  /**
+   * 0.7 "Add update and mark as done": ticks a task (either scope) through the script's `tick` with a
+   * `note`, in one file write. Same refusals as `changeTodo` for the `tick` action, and `not-allowed`
+   * unless TodoList.canUpdate. `expect` is required for a personal task. Absent from older wiring.
+   */
+  completeTodoWithNote?(
+    req: { id: string; scope: TodoScope; note: string; expect?: string },
+    by: Identity,
+  ): Promise<void>;
   /**
    * TDS to-dos this person passed on that someone else has or has finished (plan
    * 2026-11-16-asked-of-others). Reads `todo/`, `todo/done/` and the brain's git record; writes nothing.
@@ -2092,6 +2127,12 @@ export interface CompleteTodoRequest {
    */
   scope?: TodoScope;
   expect?: string;
+  /**
+   * 0.7 "Add update and mark as done": an update written in the same file write as the tick. With a note the
+   * server runs the script's `tick` for either scope (never the app's own write); it needs TodoList.canUpdate,
+   * and `expect` is required for a personal task. Absent: unchanged.
+   */
+  note?: string;
 }
 
 export type ChangeTodoRequest = TodoAction;

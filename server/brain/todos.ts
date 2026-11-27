@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  type AskedTodo,
   type ClientInfo,
   type Identity,
   type TeamMember,
@@ -32,7 +33,21 @@ import {
   TODO_PROJECT_CAPABILITY,
   type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
-import { parseTodoFiles, resolveTodoFilePath, splitTodoFiles } from '../../shared/todo-files.ts';
+import {
+  parseTodoFiles,
+  parseTodoLinks,
+  resolveTodoFilePath,
+  splitTodoFiles,
+} from '../../shared/todo-files.ts';
+import { handBackTarget, isTodoLinkUrl, splitTodoSections, todoTimeline } from '../../shared/todo-updates.ts';
+import {
+  TODO_LINK_NAME_MAX,
+  TODO_LINK_URL_MAX,
+  TODO_UPDATE_MAX,
+  TODO_UPDATES_SHOWN_MAX,
+  type TodoLastChange,
+  type TodoTimelineFields,
+} from '../../shared/todo-updates-contract.ts';
 import { stampDone } from './done-record.ts';
 import { FILES_ADD_CAPABILITY, FILES_SKILL, type FilesSkillRunner, findFilesSkill } from './files-skill.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
@@ -52,7 +67,9 @@ import {
   APP_VIA,
   findTodoSkill,
   TODO_ATTACH_CAPABILITY,
+  TODO_LINKS_CAPABILITY,
   TODO_PRIVATE_PROJECT_MESSAGE,
+  TODO_UPDATES_CAPABILITY,
   type TodoRunAction,
   type TodoSkillRunner,
   type TodoTickAction,
@@ -117,7 +134,36 @@ function stampHandover(
     at,
     from,
     via: asString(data.assigned_via).trim() || null,
+    // 0.7: this pass-on was a hand back.
+    ...(lower(data.assigned_back) === 'true' ? { back: true } : {}),
     source: 'stamp',
+  };
+}
+
+/**
+ * The timeline fields every task shape carries (shared/todo-updates-contract.ts): the notes, script
+ * entries and handover lines from the body, the newest TODO_UPDATES_SHOWN_MAX of them, the web links in
+ * `## Files`, the newest entry as `lastChange` and `created_at`. A slug that isn't on the team is `by: null`.
+ */
+export function timelineFields(
+  data: Record<string, string | string[]>,
+  body: string,
+  team: readonly TeamMember[],
+): TodoTimelineFields {
+  const { updates: all, extras } = todoTimeline(body);
+  const known = new Set(team.map((m) => m.slug));
+  const withBy = all.map((u) => (u.by !== null && !known.has(u.by) ? { ...u, by: null } : u));
+  const newest = withBy[withBy.length - 1];
+  const lastChange: TodoLastChange | null = newest
+    ? { at: newest.at, by: newest.by, byName: newest.byName, action: newest.action }
+    : null;
+  return {
+    updates: withBy.slice(-TODO_UPDATES_SHOWN_MAX),
+    updatesMore: withBy.length > TODO_UPDATES_SHOWN_MAX,
+    updateExtras: extras,
+    links: parseTodoLinks(body),
+    lastChange,
+    createdAt: asString(data.created_at).trim() || null,
   };
 }
 
@@ -314,6 +360,7 @@ async function readFolder(
       details: body.trim(),
       version,
       attachments: attachments ? await attachments(body) : [],
+      ...timelineFields(data, body, team),
     });
   }
   return items;
@@ -521,6 +568,8 @@ async function buildTodoList(
     }
   }
   const canAttach = features.includes(TODO_ATTACH_CAPABILITY);
+  const canUpdate = features.includes(TODO_UPDATES_CAPABILITY);
+  const canLink = features.includes(TODO_LINKS_CAPABILITY);
   const canUpload = canAttach && (await canUseFilesAdd(root, identity, deps.filesCapabilities));
   const list: TodoList = {
     mine,
@@ -533,6 +582,8 @@ async function buildTodoList(
     canAttach,
     canUpload,
     canProject: features.includes(TODO_PROJECT_CAPABILITY),
+    canUpdate,
+    canLink,
   };
   return { list, files, index };
 }
@@ -580,6 +631,27 @@ const okStageField = (v: unknown) =>
     v.trim() === v &&
     v.length >= 1 &&
     v.length <= PROJECT_STAGE_MAX &&
+    !CONTROL.test(v));
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point
+const NOT_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+/** An update's text: 1 to TODO_UPDATE_MAX characters after trimming, no control character but \n \r \t. */
+const okUpdateText = (v: unknown) =>
+  typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= TODO_UPDATE_MAX && !NOT_TEXT.test(v);
+const okNote = (v: unknown) => v === undefined || okUpdateText(v);
+/**
+ * A line of an update's text that starts (after spaces) with ``` or ~~~: the script refuses it, so the
+ * route does first, in the app's own words (review round 1). Lines split as the script splits them.
+ */
+const holdsCodeBlock = (v: unknown) =>
+  typeof v === 'string' && v.split(/\r\n?|\n|[\u2028\u2029]/).some((l) => /^\s*(?:```|~~~)/.test(l));
+const okLinkUrl = (v: unknown) => typeof v === 'string' && v.length <= TODO_LINK_URL_MAX && isTodoLinkUrl(v);
+const okLinkName = (v: unknown) =>
+  v === undefined ||
+  (typeof v === 'string' &&
+    v.trim().length >= 1 &&
+    v.trim().length <= TODO_LINK_NAME_MAX &&
+    !/[\r\n[\]]/.test(v) &&
     !CONTROL.test(v));
 
 /** Whether an `add` or `project` action sets client, project or stage (needs TodoList.canProject). */
@@ -632,11 +704,22 @@ function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boole
     case 'due':
       return okId(a.id) && okDue(a.due);
     case 'assignee':
-      return okId(a.id) && (a.assignee === null || okAssignee(a.assignee));
+      return (
+        okId(a.id) &&
+        (a.assignee === null || okAssignee(a.assignee)) &&
+        okNote(a.note) &&
+        (a.back === undefined || (a.back === true && a.assignee !== null))
+      );
     case 'delete':
       return okId(a.id);
     case 'tick':
-      return okId(a.id) && okScope(a.scope);
+      return okId(a.id) && okScope(a.scope) && okNote(a.note);
+    case 'update':
+      return okId(a.id) && okUpdateText(a.text);
+    case 'link':
+      return okId(a.id) && okLinkUrl(a.url) && okLinkName(a.name);
+    case 'unlink':
+      return okId(a.id) && okLinkUrl(a.url);
     case 'move':
       return (
         okId(a.id) &&
@@ -674,6 +757,11 @@ export interface TodoChangeDeps extends Pick<TodoListDeps, 'history' | 'projects
    * script runs for `add`, `assignee`, `project` and `move` to TDS. Missing (tests, older wiring): no block.
    */
   assignCheck?: (place: TaskPlace, assignee: string | null) => Promise<AssignAnswer>;
+  /**
+   * Task updates (decision 8): this person's Asked list, so `update` (and nothing else) can reach a task
+   * they passed on that is still waiting. Missing (tests, older wiring): no such task is reachable.
+   */
+  asked?: (who: Identity) => Promise<{ waiting: AskedTodo[] }>;
 }
 
 /**
@@ -774,7 +862,22 @@ export async function changeTodo(
   if ((action.kind === 'attach' || action.kind === 'detach') && !list.canAttach)
     throw todoChangeError('not-allowed');
   if (usesProjectFields(action) && !list.canProject) throw todoChangeError('not-allowed');
+  if (action.kind === 'update' && !list.canUpdate) throw todoChangeError('not-allowed');
+  if ((action.kind === 'link' || action.kind === 'unlink') && !list.canLink)
+    throw todoChangeError('not-allowed');
   if (!validAction(action, list.canAddOpen)) throw todoChangeError('bad-request');
+  const updateText =
+    action.kind === 'update'
+      ? action.text
+      : action.kind === 'assignee' || action.kind === 'tick'
+        ? action.note
+        : undefined;
+  if (holdsCodeBlock(updateText)) throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.codeBlock);
+  // `note` and `back` are for a script that writes the log (updates-v1); an older one would ignore them.
+  if ((action.kind === 'assignee' || action.kind === 'tick') && action.note !== undefined && !list.canUpdate)
+    throw todoChangeError('bad-request');
+  if (action.kind === 'assignee' && action.back !== undefined && !list.canUpdate)
+    throw todoChangeError('bad-request');
   if (action.kind === 'add' || action.kind === 'project') {
     const agree = projectFieldsAgree(action.scope ?? 'tds', action);
     if (agree === 'private') throw todoChangeError('not-allowed');
@@ -784,6 +887,15 @@ export async function changeTodo(
   if (action.kind === 'edit' && list.canAttach && action.details !== undefined) {
     if (splitTodoFiles(action.details).files !== '')
       throw new TodoChangeError('bad-request', FILES_HEADING_REFUSED);
+  }
+  // A new file has no `## Updates` or `## Handover history` section to keep, so a typed heading would be
+  // lost or double up.
+  if (action.kind === 'add' && list.canUpdate && action.details !== undefined) {
+    const typed = splitTodoSections(action.details);
+    if (typed.updates !== '')
+      throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.headingInDetails);
+    if (typed.handover !== '')
+      throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.handoverInDetails);
   }
   const personal = action.kind === 'move' || action.scope === 'personal';
   if (personal && !list.canUsePersonal) throw todoChangeError('not-allowed');
@@ -797,10 +909,45 @@ export async function changeTodo(
   if ('id' in action) {
     const scope: TodoScope = action.scope ?? 'tds';
     const listed = [...list.mine, ...list.open].find((t) => t.id === action.id && t.scope === scope);
-    if (!listed) throw todoChangeError('not-found');
+    if (!listed) {
+      // Decision 8: the asker may add an update to a task they passed on while it waits, and nothing else.
+      if (action.kind !== 'update' || scope !== 'tds') throw todoChangeError('not-found');
+      const asked = await askedWaiting(deps.asked, identity, action.id);
+      // THE task rule: a hidden project's task (or any project one while the index can't be read) stays refused.
+      if (
+        !asked ||
+        asked.projectMatch?.how === 'restricted' ||
+        (index === 'unread' && asked.project !== null)
+      )
+        throw todoChangeError('not-found');
+      if (action.expect !== undefined && asked.version !== action.expect) throw todoChangeError('changed');
+      await runner.run(action, { name: identity.name, slug: identity.slug });
+      return {};
+    }
     // The task as its file says: a served task in a hidden project has its label masked.
     onDisk = files.get(listed.key) ?? listed;
     if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
+    if (action.kind === 'assignee') {
+      // A hand back goes to the one person `handBackTarget` names, as the button does.
+      if (action.back === true) {
+        const target = action.assignee === null ? null : handBackTarget(listed, identity.slug, list.team);
+        if (target === null || target.slug !== action.assignee) throw todoChangeError('bad-request');
+      }
+      // The script refuses a note on a pass-on to the person who already has it: nothing was passed on.
+      if (action.note !== undefined && action.assignee === listed.assignee)
+        throw todoChangeError('bad-request');
+    }
+    if (action.kind === 'edit' && list.canUpdate && action.details !== undefined) {
+      // Without a section on disk a typed heading would be lost (review round 1: `## Handover history` too).
+      const typed = splitTodoSections(action.details);
+      const filed = splitTodoSections(onDisk.details);
+      // A section sent back exactly as filed goes on to the script, which keeps its own. One that differs is
+      // text the person typed (the script would refuse it without words they can act on).
+      if (typed.updates !== '' && typed.updates.trim() !== filed.updates.trim())
+        throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.headingInDetails);
+      if (typed.handover !== '' && typed.handover.trim() !== filed.handover.trim())
+        throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.handoverInDetails);
+    }
     if (action.kind === 'attach') await checkAttach(root, listed, action.path, index);
     // An older script (no canProject) moves the bytes as they are, so a private project's name would
     // reach todo/: refuse while the to-do is in one (decision 8; overseer sign-off, should 2).
@@ -851,6 +998,46 @@ export const TODO_FILES_MESSAGES = {
 } as const;
 
 const FILES_HEADING_REFUSED = TODO_FILES_MESSAGES.headingInDetails;
+
+/** The app's own words for the 0.7 refusals (UK English). */
+export const TODO_UPDATES_MESSAGES = {
+  headingInDetails:
+    'The details can\'t have their own "Updates" heading, because the updates are listed under it. Rename that heading and try again.',
+  handoverInDetails:
+    'The details can\'t have their own "Handover history" heading, because the task\'s handovers are listed under it. Rename that heading and try again.',
+  codeBlock: "An update can't hold a code block.",
+} as const;
+
+/** This person's waiting Asked task with that id, or null (also when the list can't be read). */
+async function askedWaiting(
+  asked: TodoChangeDeps['asked'],
+  identity: Identity,
+  id: string,
+): Promise<AskedTodo | null> {
+  if (!asked) return null;
+  try {
+    return (await asked(identity)).waiting.find((t) => t.id === id) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether this person may add updates to tasks: changes are on and the script lists `updates-v1`. For the
+ * Asked list's `canUpdate` (decision 8). A probe that fails answers false.
+ */
+export async function canUpdateTodos(
+  root: string,
+  identity: Identity,
+  capabilities: () => Promise<readonly string[]>,
+): Promise<boolean> {
+  try {
+    if ((await changeAccess(root, identity)).changes !== 'on') return false;
+    return (await capabilities()).includes(TODO_UPDATES_CAPABILITY);
+  } catch {
+    return false;
+  }
+}
 
 /** Said when `add` worked and `attach` didn't: the file is in the library at `path`, just not linked. */
 export function savedNotLinkedMessage(path: string): string {

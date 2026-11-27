@@ -22,6 +22,14 @@ describe('parseFrontmatter', () => {
     expect(data.next).toBe('v');
   });
 
+  it('takes the last copy of a key that appears twice (a union merge can leave two)', () => {
+    const { data } = parseFrontmatter(
+      '---\nassignee: ben-mcadam\ndue: 2026-12-01\nassignee: ian-hancock\nassigned_to: ian-hancock\n---\nBody\n',
+    );
+    expect(data.assignee).toBe('ian-hancock');
+    expect(data.due).toBe('2026-12-01');
+  });
+
   it('handles a missing block', () => {
     const r = parseFrontmatter('# Heading\n\ntext');
     expect(r.data).toEqual({});

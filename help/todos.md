@@ -6,9 +6,9 @@ order: 1
 summary: See what you and the team need to do, and tick things off.
 benefit: Nothing slips through the cracks, and everyone can see who's doing what.
 roles: all
-related: [home, talking-to-claude, skills, asked-of-others]
+related: [home, talking-to-claude, skills, asked-of-others, task-updates]
 since: 0.36.0
-reviewed: 2026-11-24
+reviewed: 2026-11-27
 ---
 
 ## What it does
@@ -32,7 +32,8 @@ The Tasks drawer shows your tasks and the team's open ones. They live in the Bra
 5. Press a task's title to read it in a wide panel. Press **Mark as done** when it's finished.
 6. To add one, press the **+** button (1), type it and press Enter.
 7. To hand a task over, open it, press **Edit** and change who it's assigned to.
-8. Press **Done** to see finished tasks, newest first. You can search them and read them, but not change them.
+8. To say what you did, type under **Updates**.
+9. Press **Done** to see finished tasks, newest first. You can search them and read them, but not change them.
 
 ![The Tasks drawer with the Mine tab open.](images/todos-drawer.webp)
 
@@ -43,7 +44,7 @@ The Tasks drawer shows your tasks and the team's open ones. They live in the Bra
 - From a project, you can open a teammate's task to read it. Only they can change it.
 - Marking something done records who did it and when.
 - **Done** shows the whole team's finished tasks, plus your own personal ones. A project's **Tasks** tab keeps its finished ones in a folded **Done** section. Search finds them too, marked as done.
-- Open a task's **History** (at the bottom of the panel) to see how it changed.
+- Open a task's **History** to see how it changed.
 
 ## Try this
 

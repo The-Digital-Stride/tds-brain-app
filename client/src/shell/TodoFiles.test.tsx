@@ -82,7 +82,13 @@ const uploadTodoFile = vi.fn();
 
 function setStore(
   item: TodoItem,
-  { canAttach = true, canUpload = true, clients = ['acme'], changes = 'on' as TodoList['changes'] } = {},
+  {
+    canAttach = true,
+    canUpload = true,
+    canLink = false,
+    clients = ['acme'],
+    changes = 'on' as TodoList['changes'],
+  } = {},
 ) {
   store.current = {
     changeTodos,
@@ -118,6 +124,7 @@ function setStore(
       canUsePersonal: true,
       canAttach,
       canUpload,
+      ...(canLink ? { canLink: true, canUpdate: true } : {}),
     } satisfies TodoList,
     sessions: { live: [], past: [] },
   };
@@ -706,5 +713,166 @@ describe('after Add', () => {
     withNew(false);
     await addOne();
     await waitFor(() => expect(api.state.todoPanel).toMatchObject({ key: 'n.md', mode: 'edit' }));
+  });
+});
+
+// Web links in the Files block (plan 2026-11-27-task-updates-handback): "Files and links", Add a link.
+describe('web links', () => {
+  const links = [
+    { url: 'https://www.drive.example.com/file/1', name: 'Quote on Drive' },
+    { url: 'https://example.com/spec', name: 'The spec' },
+  ];
+  const addLink = () => fireEvent.click(screen.getByRole('button', { name: 'Add a link' }));
+  const fill = (url: string, name = '') => {
+    fireEvent.change(screen.getByLabelText('Web address'), { target: { value: url } });
+    if (name) fireEvent.change(screen.getByLabelText('Name (optional)'), { target: { value: name } });
+  };
+
+  it('lists links that open in a new tab, with the host quietly beside each', async () => {
+    setStore(todo({ links }), { canLink: true });
+    mount();
+    const panel = await openFirst();
+    expect(within(panel).getByRole('heading', { name: 'Files and links' })).toBeTruthy();
+    const link = within(panel).getByRole('link', { name: /Quote on Drive/ });
+    expect(link.getAttribute('href')).toBe('https://www.drive.example.com/file/1');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(within(panel).getByText('drive.example.com')).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: 'logo.png' })).toBeTruthy();
+  });
+
+  it('keeps the heading as Files when links are off and there are none', async () => {
+    setStore(todo());
+    mount();
+    const panel = await openFirst();
+    expect(within(panel).getByRole('heading', { name: 'Files' })).toBeTruthy();
+    expect(within(panel).queryByRole('button', { name: 'Add a link' })).toBeNull();
+  });
+
+  it('lists links without controls when links cannot be changed', async () => {
+    setStore(todo({ links }));
+    mount();
+    const panel = await openFirst();
+    expect(within(panel).getByRole('heading', { name: 'Files and links' })).toBeTruthy();
+    expect(within(panel).getByRole('link', { name: /The spec/ })).toBeTruthy();
+    expect(within(panel).queryByRole('button', { name: 'Add a link' })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /Remove The spec/ })).toBeNull();
+  });
+
+  it('offers Add a link when the task has no links yet', async () => {
+    setStore(todo({ attachments: [], details: 'Some notes' }), { canLink: true });
+    mount();
+    const panel = await openFirst();
+    expect(within(panel).getByRole('heading', { name: 'Files and links' })).toBeTruthy();
+    expect(within(panel).getByText('No files or links yet.')).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: 'Add a link' })).toBeTruthy();
+  });
+
+  it('adds a link with the address and the name', async () => {
+    setStore(todo(), { canLink: true });
+    mount();
+    await openFirst();
+    addLink();
+    fill('https://example.com/brief', 'The brief');
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'link', id: 'a.md', url: 'https://example.com/brief', name: 'The brief', expect: 'v1' },
+      ]),
+    );
+    expect(await screen.findByText('Added a link: The brief.')).toBeTruthy();
+    expect(screen.queryByLabelText('Web address')).toBeNull();
+  });
+
+  it('sends no name when none is typed, and says the address in the status', async () => {
+    setStore(todo(), { canLink: true });
+    mount();
+    await openFirst();
+    addLink();
+    fill('  https://www.example.com/brief  ');
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'link', id: 'a.md', url: 'https://www.example.com/brief', expect: 'v1' },
+      ]),
+    );
+    expect(await screen.findByText('Added a link: example.com.')).toBeTruthy();
+  });
+
+  it('refuses an address that is not a web address, in plain words', async () => {
+    setStore(todo(), { canLink: true });
+    mount();
+    await openFirst();
+    addLink();
+    for (const bad of ['javascript:alert(1)', 'example.com', 'https://exa mple.com', 'ftp://example.com/a']) {
+      fill(bad);
+      fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+      expect((await screen.findByRole('alert')).textContent).toContain('start with http:// or https://');
+    }
+    fill('');
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Type the web address of the link.');
+    expect(changeTodos).not.toHaveBeenCalled();
+  });
+
+  it('refuses a name with square brackets', async () => {
+    setStore(todo(), { canLink: true });
+    mount();
+    await openFirst();
+    addLink();
+    fill('https://example.com/x', 'The [spec]');
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe("The name can't hold square brackets.");
+    expect(changeTodos).not.toHaveBeenCalled();
+  });
+
+  it('keeps the form and says why when the link could not be added', async () => {
+    setStore(todo(), { canLink: true });
+    changeTodos.mockResolvedValue({
+      done: 0,
+      error: { code: 'bad-request', message: 'That link is already there.' },
+    });
+    mount();
+    await openFirst();
+    addLink();
+    fill('https://example.com/x');
+    fireEvent.click(screen.getByRole('button', { name: 'Add link' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('That link is already there.');
+    expect((screen.getByLabelText('Web address') as HTMLInputElement).value).toBe('https://example.com/x');
+  });
+
+  it('Esc closes the form and not the panel', async () => {
+    setStore(todo(), { canLink: true });
+    mount();
+    await openFirst();
+    addLink();
+    fireEvent.keyDown(screen.getByLabelText('Web address'), { key: 'Escape' });
+    expect(screen.queryByLabelText('Web address')).toBeNull();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('removes a link, saying so, and sends the address', async () => {
+    setStore(todo({ links }), { canLink: true });
+    mount();
+    const panel = await openFirst();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Remove The spec from this task' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'unlink', id: 'a.md', url: 'https://example.com/spec', expect: 'v1' },
+      ]),
+    );
+    expect(await screen.findByText('Removed The spec from this task.')).toBeTruthy();
+  });
+
+  it('sends the personal scope for a personal task', async () => {
+    setStore(todo({ scope: 'personal', key: 'personal/a.md', links }), { canLink: true });
+    mount();
+    const panel = await openFirst();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Remove The spec from this task' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'unlink', id: 'a.md', url: 'https://example.com/spec', expect: 'v1', scope: 'personal' },
+      ]),
+    );
   });
 });

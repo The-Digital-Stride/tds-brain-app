@@ -35,7 +35,7 @@ import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-his
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
 import { readTeamTodo } from './todo-team.ts';
 import { createTodoTimeline } from './todo-timeline.ts';
-import { changeTodo, completeTodo, listTodos, readTeam, uploadTodoFile } from './todos.ts';
+import { canUpdateTodos, changeTodo, completeTodo, listTodos, readTeam, uploadTodoFile } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { memberSlug } from './util.ts';
 import { watchBrain } from './watch.ts';
@@ -266,6 +266,8 @@ export function createBrainReaders(
     history: todoHistory,
     projects: () => projects.index(),
     assignCheck: (place: TaskPlace, assignee: string | null) => projects.assignCheck(place, assignee),
+    // Task updates: `update` (only) may reach a task this person passed on that is still waiting.
+    asked: (who: Identity) => askedTodos.list(root, who, now(), () => projects.index()),
   };
   const changeProject: NonNullable<SearchableBrain['changeProject']> = async (action, identity) => {
     if (action.kind === 'update' || action.kind === 'update-remove') {
@@ -335,6 +337,10 @@ export function createBrainReaders(
     completePersonalTodo: async (id, expect, by) => {
       await changeTodo(root, { kind: 'tick', id, scope: 'personal', expect }, by, todoSkill, todoChangeDeps);
     },
+    completeTodoWithNote: async ({ id, scope, note, expect }, by) => {
+      const tick = { kind: 'tick' as const, id, scope, note, ...(expect !== undefined ? { expect } : {}) };
+      await changeTodo(root, tick, by, todoSkill, todoChangeDeps);
+    },
     uploadTodoFile: (req, identity) =>
       uploadTodoFile(root, req, identity, todoSkill, {
         history: todoHistory,
@@ -346,7 +352,14 @@ export function createBrainReaders(
           projects.changed(path);
         },
       }),
-    askedTodos: (identity) => askedTodos.list(root, identity, now(), () => projects.index()),
+    askedTodos: async (identity) =>
+      askedTodos.list(
+        root,
+        identity,
+        now(),
+        () => projects.index(),
+        await canUpdateTodos(root, identity, () => todoSkill.capabilities()),
+      ),
     doneTodos: (identity) =>
       listDoneTodos(root, identity, { log: doneLog, projects: () => projects.index() }),
     teamTodo: (id, identity) => readTeamTodo(root, id, identity.slug, { projects: () => projects.index() }),

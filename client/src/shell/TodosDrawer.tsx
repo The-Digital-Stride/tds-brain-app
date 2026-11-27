@@ -46,7 +46,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
 import { TodoChatButton } from './TodoChatButton.tsx';
-import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
+import { buildEditActions, detailsText, type EditDraft, useTypedDrafts } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { todoOpener } from './todo-opener.ts';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
@@ -97,10 +97,11 @@ function rebase(
   conflict: boolean,
   canAttach: boolean,
   landed: Partial<DraftFields> = {},
+  canUpdate = false,
 ): EditDraft {
   const now = {
     title: fresh.title,
-    details: detailsText(fresh, canAttach),
+    details: detailsText(fresh, canAttach, canUpdate),
     due: fresh.due ?? '',
     assignee: fresh.assignee ?? '',
     scope: fresh.scope,
@@ -114,6 +115,8 @@ function rebase(
     due: keep('due'),
     assignee: keep('assignee'),
     scope: keep('scope'),
+    // A note typed for the person it is passed to stays as typed.
+    ...(d.note !== undefined ? { note: d.note } : {}),
     version: fresh.version,
     base: now,
     ...(conflict ? { theirs: now } : {}),
@@ -150,7 +153,7 @@ function HeldRow({
     <UndoLine
       as="row"
       text={`"${held.title}" ${lowerFirst(held.label)}.`}
-      undoLabel={`Undo ${UNDO_VERB[held.kind]} "${held.title}"`}
+      undoLabel={`Undo ${held.action?.kind === 'assignee' && held.action.back ? 'handing back' : UNDO_VERB[held.kind]} "${held.title}"`}
       sending={held.sending === true}
       focusOnMount={focus}
       onUndo={onUndo}
@@ -430,6 +433,7 @@ export function TodosDrawer() {
     openSettings,
     view,
     heldTodos,
+    failedHeld,
     holdTodo,
     undoHeld,
     pauseHeld,
@@ -672,6 +676,28 @@ export function TodosDrawer() {
     return () => clearTimeout(giveUp);
   }, [waitingKey, shellDispatch]);
 
+  // Text typed in a task's panel and not sent. It outlives the panel while a change to the task is held, so Undo
+  // brings it back; it goes once that change is really sent, or when the panel closes without one. A change that
+  // was refused or failed keeps it: the person is asked to try again, and finds their words when they open the task.
+  const typedDrafts = useTypedDrafts();
+  const typedRef = useRef(typedDrafts);
+  typedRef.current = typedDrafts;
+  const keepTyped = useRef(new Set<string>());
+  const panelKeyNow = panel?.key ?? null;
+  const lastPanelKey = useRef<string | null>(null);
+  useEffect(() => {
+    const was = lastPanelKey.current;
+    lastPanelKey.current = panelKeyNow;
+    if (was !== null && was !== panelKeyNow && !keepTyped.current.has(was)) typedRef.current.drop(was);
+  }, [panelKeyNow]);
+  useEffect(() => {
+    for (const key of [...keepTyped.current]) {
+      if (heldTodos.some((h) => h.todoId === key)) continue;
+      keepTyped.current.delete(key);
+      if (!(failedHeld ?? []).includes(key)) typedRef.current.drop(key);
+    }
+  }, [heldTodos, failedHeld]);
+
   if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
@@ -818,6 +844,7 @@ export function TodosDrawer() {
   const hold = (held: HeldTodo) => {
     const keyboard = pressedByKeyboard();
     const id = held.todoId;
+    keepTyped.current.add(id);
     const shownOrder = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
       .map((t) => t.key)
       .filter((k) => k === id || !heldById.has(k));
@@ -834,6 +861,8 @@ export function TodosDrawer() {
     setUndoMessageFor(id);
   };
   const undo = (held: HeldTodo) => {
+    // Undone: its typed text stays as the task's draft, for when it is opened again.
+    keepTyped.current.delete(held.todoId);
     undoHeld(held.todoId);
     afterHold.current = null;
     setFocusUndo(null);
@@ -843,7 +872,7 @@ export function TodosDrawer() {
 
   const fieldsOf = (t: TodoItem) => ({
     title: t.title,
-    details: detailsText(t, todos.canAttach),
+    details: detailsText(t, todos.canAttach, todos.canUpdate === true),
     due: t.due ?? '',
     assignee: t.assignee ?? '',
     scope: t.scope,
@@ -947,11 +976,11 @@ export function TodosDrawer() {
       const landed = landedBy(now.slice(0, result.done));
       if (key !== todo.key) shellDispatch({ type: 'open-todo', key, mode: 'edit', force: true });
       if (result.error.code === 'changed') {
-        if (fresh) setDraft((d) => rebase(d, fresh, true, todos.canAttach, landed));
+        if (fresh) setDraft((d) => rebase(d, fresh, true, todos.canAttach, landed, todos.canUpdate === true));
         setMessage(`${result.error.message} Your changes are still here.`, true);
         return result;
       }
-      if (fresh) setDraft((d) => rebase(d, fresh, false, todos.canAttach, landed));
+      if (fresh) setDraft((d) => rebase(d, fresh, false, todos.canAttach, landed, todos.canUpdate === true));
       if (result.done > 0) {
         setMessage(
           'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
@@ -1004,7 +1033,14 @@ export function TodosDrawer() {
 
   /** A tick box pressed while reading: one details change, through the same conflict check as Save. */
   const tick = async (todo: TodoItem, markdown: string): Promise<boolean> => {
-    const actions = buildEditActions(todo, { ...draftOf(todo), details: markdown }, true, todos.canAttach);
+    const actions = buildEditActions(
+      todo,
+      { ...draftOf(todo), details: markdown },
+      true,
+      todos.canAttach,
+      false,
+      todos.canUpdate === true,
+    );
     if (actions.length === 0) return true;
     // Said in the panel's status line, so a screen reader hears the tick go out and what became of it.
     setMessage('Saving your tick…');
@@ -1023,7 +1059,8 @@ export function TodosDrawer() {
   };
 
   const finishPanel = {
-    done: (todo: TodoItem) => {
+    // `note`: an update written with the tick ("Add update and mark as done"), sent in the same request.
+    done: (todo: TodoItem, note?: string) => {
       closePanelNow();
       hold({
         todoId: todo.key,
@@ -1031,6 +1068,7 @@ export function TodosDrawer() {
         kind: 'tick',
         label: 'Marked as done',
         action: null,
+        ...(note ? { note } : {}),
         // A personal to-do is ticked through the brain script, which needs its scope and version.
         ...(todo.scope === 'personal'
           ? {
@@ -1059,6 +1097,57 @@ export function TodosDrawer() {
         },
       });
     },
+  };
+
+  /** Adds an update to a task of yours. With `markDone` it goes with the tick, held with the usual Undo. */
+  const addUpdate = async (todo: TodoItem, text: string, markDone: boolean): Promise<boolean> => {
+    if (markDone) {
+      finishPanel.done(todo, text);
+      return true;
+    }
+    setMessage('');
+    const result = await run([
+      {
+        kind: 'update',
+        id: todo.id,
+        text,
+        // A personal task is changed through the script's version check; a team task takes a note whatever else changed.
+        ...(todo.scope === 'personal' ? { scope: 'personal' as const, expect: todo.version } : {}),
+      },
+    ]);
+    if (result.error) {
+      setMessage(`Your update wasn't added. ${result.error.message}`, true);
+      return false;
+    }
+    return true;
+  };
+  /** The asker's reply on a task they passed on, while it waits. The Asked list reloads with the task list. */
+  const addAskedUpdate = async (task: AskedTodo, text: string): Promise<boolean> => {
+    setMessage('');
+    const result = await run([{ kind: 'update', id: task.id, text }]);
+    if (result.error) {
+      setMessage(`Your update wasn't added. ${result.error.message}`, true);
+      return false;
+    }
+    return true;
+  };
+  /** Hand back: the task goes to whoever passed it on, with an optional note, held with Undo like passing on. */
+  const handBack = (todo: TodoItem, target: { slug: string; name: string }, note: string) => {
+    closePanelNow();
+    hold({
+      todoId: todo.key,
+      title: todo.title,
+      kind: 'assignee',
+      label: `Handed back to ${target.name}`,
+      action: {
+        kind: 'assignee',
+        id: todo.id,
+        assignee: target.slug,
+        back: true,
+        expect: todo.version,
+        ...(note ? { note } : {}),
+      },
+    });
   };
 
   const row = (t: TodoItem, isFresh: boolean) => {
@@ -1455,6 +1544,12 @@ export function TodosDrawer() {
           canAddOpen={todos.canAddOpen}
           canAttach={todos.canAttach}
           canUpload={todos.canUpload}
+          canUpdate={todos.canUpdate === true}
+          canLink={todos.canLink === true}
+          onUpdate={addUpdate}
+          onAskedUpdate={addAskedUpdate}
+          onHandBack={handBack}
+          typedDrafts={typedDrafts}
           onStatus={setMessage}
           startPersonal={tab === 'mine' && active.scope === 'personal'}
           startProject={project ?? ''}

@@ -165,11 +165,11 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'T', details: 'D', expect: EXPECT },
-        { file: 'a.md', title: 'T', body: 'D', expect: EXPECT },
+        { file: 'a.md', title: 'T', body: 'D', via: 'TDS Cortex', expect: EXPECT },
       ],
       [
         { kind: 'due', id: 'a.md', due: null, expect: EXPECT },
-        { file: 'a.md', due: '', expect: EXPECT },
+        { file: 'a.md', due: '', via: 'TDS Cortex', expect: EXPECT },
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: null, expect: EXPECT },
@@ -181,19 +181,19 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'New' },
-        { file: 'a.md', title: 'New' },
+        { file: 'a.md', title: 'New', via: 'TDS Cortex' },
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'New', details: '' },
-        { file: 'a.md', title: 'New', body: '' },
+        { file: 'a.md', title: 'New', body: '', via: 'TDS Cortex' },
       ],
       [
         { kind: 'due', id: 'a.md', due: '2026-12-01' },
-        { file: 'a.md', due: '2026-12-01' },
+        { file: 'a.md', due: '2026-12-01', via: 'TDS Cortex' },
       ],
       [
         { kind: 'due', id: 'a.md', due: null },
-        { file: 'a.md', due: '' },
+        { file: 'a.md', due: '', via: 'TDS Cortex' },
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam' },
@@ -288,8 +288,8 @@ describe('createTodoSkillRunner', () => {
     expect(starts.map((c) => c.argv[1])).toEqual(['add', 'edit', 'due', 'assignee', 'delete']);
     expect(starts.map((c) => JSON.parse(c.stdin))).toEqual([
       { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Cortex' },
-      { file: 'a.md', title: 'T', body: 'D' },
-      { file: 'a.md', due: '2026-12-01' },
+      { file: 'a.md', title: 'T', body: 'D', via: 'TDS Cortex' },
+      { file: 'a.md', due: '2026-12-01', via: 'TDS Cortex' },
       { file: 'a.md', assignee: '', via: 'TDS Cortex' },
       { file: 'a.md', via: 'TDS Cortex' },
     ]);
@@ -490,18 +490,21 @@ describe('v0.4: scope, move and tick payloads', () => {
     expect(scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', scope: 'tds' })).toEqual({
       file: 'a.md',
       title: 'T',
+      via: 'TDS Cortex',
     });
     expect(
       scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', expect: EXPECT, scope: 'personal' }),
     ).toEqual({
       file: 'a.md',
       title: 'T',
+      via: 'TDS Cortex',
       expect: EXPECT,
       scope: 'personal',
     });
     expect(scriptPayload({ kind: 'due', id: 'a.md', due: null, scope: 'personal' })).toEqual({
       file: 'a.md',
       due: '',
+      via: 'TDS Cortex',
       scope: 'personal',
     });
     expect(scriptPayload({ kind: 'delete', id: 'a.md', scope: 'personal' }, by)).toEqual({
@@ -633,8 +636,12 @@ describe('release 3: attach, detach, add body and edit keep_files payloads', () 
   it('adds keep_files to edit only when asked, and body to add only when there are details', () => {
     expect(
       scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', details: 'D' }, undefined, { keepFiles: true }),
-    ).toEqual({ file: 'a.md', title: 'T', body: 'D', keep_files: true });
-    expect(scriptPayload({ kind: 'edit', id: 'a.md', title: 'T' })).toEqual({ file: 'a.md', title: 'T' });
+    ).toEqual({ file: 'a.md', title: 'T', body: 'D', keep_files: true, via: 'TDS Cortex' });
+    expect(scriptPayload({ kind: 'edit', id: 'a.md', title: 'T' })).toEqual({
+      file: 'a.md',
+      title: 'T',
+      via: 'TDS Cortex',
+    });
     expect(scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'jo', details: 'D' })).toMatchObject(
       {
         body: 'D',
@@ -666,7 +673,14 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
         stage: 'Build',
         expect: EXPECT,
       }),
-    ).toEqual({ file: 'a.md', client: 'acme', project: 'acme/website', stage: 'Build', expect: EXPECT });
+    ).toEqual({
+      file: 'a.md',
+      client: 'acme',
+      project: 'acme/website',
+      stage: 'Build',
+      via: 'TDS Cortex',
+      expect: EXPECT,
+    });
     expect(
       scriptPayload({
         kind: 'project',
@@ -676,7 +690,7 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
         project: null,
         stage: null,
       }),
-    ).toEqual({ file: 'a.md', client: '', project: '', stage: '', scope: 'personal' });
+    ).toEqual({ file: 'a.md', client: '', project: '', stage: '', via: 'TDS Cortex', scope: 'personal' });
   });
 
   it('adds project fields to add only when set, so an add without them is unchanged', () => {
@@ -739,5 +753,96 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
         } as never),
       ),
     ).toEqual({ code: 'not-allowed', message: TODO_PRIVATE_FILE_MESSAGE });
+  });
+});
+
+describe('0.7: update, link, unlink, note and back payloads (task updates)', () => {
+  const EXPECT = 'd'.repeat(64);
+  const by = { name: 'Sam Example', slug: 'sam-example' };
+
+  it('maps update, link and unlink, with who and through which tool', () => {
+    expect(scriptPayload({ kind: 'update', id: 'a.md', text: 'Sent it.', expect: EXPECT }, by)).toEqual({
+      file: 'a.md',
+      text: 'Sent it.',
+      via: 'TDS Cortex',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+      expect: EXPECT,
+    });
+    expect(
+      scriptPayload(
+        { kind: 'link', id: 'a.md', url: 'https://example.com/a', name: 'Quote', scope: 'personal' },
+        by,
+      ),
+    ).toEqual({
+      file: 'a.md',
+      url: 'https://example.com/a',
+      name: 'Quote',
+      via: 'TDS Cortex',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+      scope: 'personal',
+    });
+    expect(scriptPayload({ kind: 'link', id: 'a.md', url: 'https://example.com/a' })).toEqual({
+      file: 'a.md',
+      url: 'https://example.com/a',
+      via: 'TDS Cortex',
+    });
+    expect(scriptPayload({ kind: 'unlink', id: 'a.md', url: 'https://example.com/a' }, by)).toEqual({
+      file: 'a.md',
+      url: 'https://example.com/a',
+      via: 'TDS Cortex',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+    });
+  });
+
+  it('adds note and back to assignee, and note to tick, only when set', () => {
+    expect(scriptPayload({ kind: 'assignee', id: 'a.md', assignee: 'jo-owner' })).toEqual({
+      file: 'a.md',
+      assignee: 'jo-owner',
+      via: 'TDS Cortex',
+    });
+    expect(
+      scriptPayload(
+        { kind: 'assignee', id: 'a.md', assignee: 'jo-owner', note: 'Done my part.', back: true },
+        by,
+      ),
+    ).toEqual({
+      file: 'a.md',
+      assignee: 'jo-owner',
+      via: 'TDS Cortex',
+      note: 'Done my part.',
+      back: true,
+      by: 'sam-example',
+      by_name: 'Sam Example',
+    });
+    expect(scriptPayload({ kind: 'tick', id: 'a.md', scope: 'tds', note: 'All done.' }, by)).toEqual({
+      file: 'a.md',
+      via: 'TDS Cortex',
+      note: 'All done.',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+    });
+    expect(scriptPayload({ kind: 'tick', id: 'a.md', scope: 'tds' })).toEqual({
+      file: 'a.md',
+      via: 'TDS Cortex',
+    });
+  });
+
+  it('sends by, by_name and via on every command that logs a change', () => {
+    const actions: TodoAction[] = [
+      { kind: 'due', id: 'a.md', due: null },
+      { kind: 'edit', id: 'a.md', title: 'T' },
+      { kind: 'attach', id: 'a.md', path: 'clients/acme/files/a.pdf' },
+      { kind: 'detach', id: 'a.md', path: 'clients/acme/files/a.pdf' },
+      { kind: 'project', id: 'a.md', client: null, project: null, stage: null },
+    ];
+    for (const a of actions)
+      expect(scriptPayload(a, by), a.kind).toMatchObject({
+        by: 'sam-example',
+        by_name: 'Sam Example',
+        via: 'TDS Cortex',
+      });
   });
 });

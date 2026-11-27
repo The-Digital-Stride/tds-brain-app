@@ -227,10 +227,10 @@ describe('links to personal files', () => {
 });
 
 describe('capabilities', () => {
-  it(`reports v0.6 with ${TODO_PROJECT_CAPABILITY}`, () => {
+  it(`reports ${TODO_PROJECT_CAPABILITY} (v0.7 adds the updates and links features)`, () => {
     expect(b.run('capabilities').json).toEqual({
-      version: '0.6',
-      features: ['handover', 'attach', TODO_PROJECT_CAPABILITY, 'scope'],
+      version: '0.7',
+      features: ['handover', 'attach', TODO_PROJECT_CAPABILITY, 'updates-v1', 'links-v1', 'scope'],
     });
   });
 });

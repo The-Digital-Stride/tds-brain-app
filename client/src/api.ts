@@ -249,12 +249,19 @@ export const api = {
     request<TodoHistoryResponse>('GET', `${ROUTES.todoHistory}?key=${encodeURIComponent(key)}`),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
   changelog: () => request<ChangelogResponse>('GET', ROUTES.changelog),
-  /** `personal` ticks a personal to-do through the brain script: it carries `scope` and `expect`. */
-  completeTodo: (id: string, opts?: SendOptions, personal?: { scope: 'personal'; expect: string }) =>
+  /**
+   * `scope` and `expect` tick a personal to-do through the brain script. `note` is an update written with the tick
+   * (task updates plan, "Add update and mark as done"); the server then runs the script's tick for it too.
+   */
+  completeTodo: (
+    id: string,
+    opts?: SendOptions,
+    extra?: { scope?: 'personal'; expect?: string; note?: string },
+  ) =>
     request<TodoList>(
       'POST',
       ROUTES.completeTodo,
-      { id, ...(personal ?? {}) } satisfies CompleteTodoRequest,
+      { id, ...(extra ?? {}) } satisfies CompleteTodoRequest,
       undefined,
       opts,
     ),

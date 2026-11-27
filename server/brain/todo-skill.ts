@@ -63,6 +63,8 @@ export interface TodoTickAction {
   id: string;
   scope: TodoScope;
   expect?: string;
+  /** 0.7: an update written in the same file write as the tick (needs TodoList.canUpdate). */
+  note?: string;
 }
 
 /** Everything the runner can send to the script. */
@@ -80,10 +82,14 @@ const COMMAND: Record<TodoRunAction['kind'], string> = {
   attach: 'attach',
   detach: 'detach',
   project: 'project',
+  update: 'update',
+  link: 'link',
+  unlink: 'unlink',
 };
 
 /** The script's `capabilities` feature for `attach` / `detach`, `add` with a body and `edit` with `keep_files` (v0.5). */
 export const TODO_ATTACH_CAPABILITY = 'attach';
+export { TODO_LINKS_CAPABILITY, TODO_UPDATES_CAPABILITY } from '../../shared/todo-updates-contract.ts';
 
 /** How a change is sent beyond the action itself. */
 export interface TodoRunOptions {
@@ -114,6 +120,8 @@ export function scriptPayload(
   const scope: Record<string, string> =
     'scope' in action && action.scope === 'personal' ? { scope: 'personal' } : {};
   const actor: Record<string, string> = by ? { by: by.slug, by_name: by.name } : {};
+  // 0.7: every command that writes a log line reads `by`, `by_name` and `via` (else the git user and "todo skill").
+  const via: Record<string, string> = { via: APP_VIA };
   switch (action.kind) {
     case 'project':
       // v0.6: the three lines are set together; '' clears one (the script reads '' as none).
@@ -122,6 +130,8 @@ export function scriptPayload(
         client: action.client ?? '',
         project: action.project ?? '',
         stage: action.stage ?? '',
+        ...via,
+        ...actor,
         ...expect,
         ...scope,
       };
@@ -159,15 +169,24 @@ export function scriptPayload(
     case 'edit': {
       const keep: Record<string, boolean> = options.keepFiles ? { keep_files: true } : {};
       return action.details === undefined
-        ? { file: action.id, title: action.title, ...keep, ...expect, ...scope }
-        : { file: action.id, title: action.title, body: action.details, ...keep, ...expect, ...scope };
+        ? { file: action.id, title: action.title, ...keep, ...via, ...actor, ...expect, ...scope }
+        : {
+            file: action.id,
+            title: action.title,
+            body: action.details,
+            ...keep,
+            ...via,
+            ...actor,
+            ...expect,
+            ...scope,
+          };
     }
     case 'attach':
     case 'detach':
       // `by` is the holder written on a personal file's line ("only on <slug>'s Mac").
       return { file: action.id, path: action.path, via: APP_VIA, ...actor, ...expect, ...scope };
     case 'due':
-      return { file: action.id, due: action.due ?? '', ...expect, ...scope };
+      return { file: action.id, due: action.due ?? '', ...via, ...actor, ...expect, ...scope };
     case 'assignee':
       // Who passed it on and through which tool goes into the handover stamp; without them the
       // script would use the machine's git user, which need not be the person the app knows.
@@ -175,6 +194,8 @@ export function scriptPayload(
         file: action.id,
         assignee: action.assignee ?? '',
         via: APP_VIA,
+        ...(action.note !== undefined ? { note: action.note } : {}),
+        ...(action.back === true ? { back: true } : {}),
         ...actor,
         ...expect,
         ...scope,
@@ -186,7 +207,28 @@ export function scriptPayload(
         ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name, ...expect, ...scope }
         : { file: action.id, via: APP_VIA, ...expect, ...scope };
     case 'tick':
-      return { file: action.id, via: APP_VIA, ...actor, ...expect, ...scope };
+      return {
+        file: action.id,
+        via: APP_VIA,
+        ...(action.note !== undefined ? { note: action.note } : {}),
+        ...actor,
+        ...expect,
+        ...scope,
+      };
+    case 'update':
+      return { file: action.id, text: action.text, ...via, ...actor, ...expect, ...scope };
+    case 'link':
+      return {
+        file: action.id,
+        url: action.url,
+        ...(action.name !== undefined ? { name: action.name } : {}),
+        ...via,
+        ...actor,
+        ...expect,
+        ...scope,
+      };
+    case 'unlink':
+      return { file: action.id, url: action.url, ...via, ...actor, ...expect, ...scope };
     case 'move':
       // v0.6: `dropProject` only when the person agreed to leave a personal project (overseer B2).
       return {

@@ -155,6 +155,21 @@ describe('move to TDS: every form of a personal project, and its files', () => {
     );
   });
 
+  // v0.7 (review round 1): a union merge can leave a second `## Files` section; its lines count too.
+  it('refuses a personal-project link in a second, merge-made ## Files section, and drops it with dropProject', () => {
+    const second =
+      '## Files\n\n- [quote.pdf](../../clients/acme/files/quote.pdf)\n\n## Title history\n\n- old\n\n';
+    const merged = `${second}## Files\n\n- [plan.md](../../personal/projects/jev/plan.md)\n`;
+    b.put('personal/todo/a.md', `${plain}\n${merged}`);
+    expect(move().json).toEqual({
+      error: 'this to-do links a file in a personal project: moving it to the team takes that link off',
+      status: 403,
+    });
+    expect(existsSync(join(b.root, 'todo', 'a.md'))).toBe(false);
+    expect(move({ dropProject: true }).code).toBe(0);
+    expect(b.read('todo/a.md')).not.toContain('personal/projects');
+  });
+
   it('drops the Files section once nothing is left in it', () => {
     const only =
       '## Files\n\n- [plan.md](<../../personal/projects/jev/My plan.md>)\n\n## Title history\n\n- old\n';

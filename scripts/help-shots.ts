@@ -62,6 +62,7 @@ const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'delete-chat': { width: 1000, height: 420 },
   'todo-add': { width: 1000, height: 640 },
   'todo-edit': { width: 1000, height: 700 },
+  'todo-updates': { width: 1000, height: 820 },
   'file-viewer': { width: 1000, height: 460 },
   palette: { width: 1000, height: 560 },
   'settings-prefs': { width: 1000, height: 1100 },
@@ -558,6 +559,18 @@ const SCENES: Record<string, Scene> = {
     await page.locator('#drawer button[aria-label^="Edit "]').first().click();
     // Editing happens in the task panel, beside the drawer.
     await page.locator('.todo-panel form[aria-label^="Edit "]').waitFor();
+    await sleep(300);
+  },
+
+  async 'todo-updates'(page) {
+    await enableTodoChanges(page);
+    await openDrawer(page, 'Tasks');
+    await page
+      .locator('#drawer')
+      .getByRole('button', { name: 'Send the boiler quote to Acme Heating', exact: true })
+      .click();
+    // Reading happens in the task panel, beside the drawer: the Updates list sits under the files.
+    await page.locator('.todo-panel .todo-updates li').first().waitFor();
     await sleep(300);
   },
 

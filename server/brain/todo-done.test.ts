@@ -325,3 +325,27 @@ describe('listDoneTodos: restricted projects (plan 2026-11-27, decision 6)', () 
     expect(items.find((t) => t.id === '20261101-sam.md')?.project).toBe(SECRET);
   });
 });
+
+describe('listDoneTodos: the timeline (task updates)', () => {
+  it('sends updates, links, lastChange and createdAt on a finished task', async () => {
+    const root = brainWith({
+      'todo/done/20261101-a.md': fm(
+        [
+          'assignee: alex-sample',
+          'completed_by: alex-sample',
+          'completed_at: 2026-11-10T09:00:00+00:00',
+          'created_at: 2026-11-01T09:00:00+00:00',
+        ],
+        '# Alpha\n\n## Files\n\n- [Spec](https://example.com/spec)\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Alex Sample (alex-sample) wrote: All done.\n',
+      ),
+    });
+    const { items } = await listDoneTodos(root, sam, { log: fakeLog('').log });
+    expect(items[0]).toMatchObject({
+      createdAt: '2026-11-01T09:00:00+00:00',
+      links: [{ url: 'https://example.com/spec', name: 'Spec' }],
+      updatesMore: false,
+      lastChange: { by: 'alex-sample', action: 'update' },
+    });
+    expect(items[0]?.updates?.map((u) => u.text)).toEqual(['All done.']);
+  });
+});

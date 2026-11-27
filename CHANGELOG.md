@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.97.1 — 2026-11-27
+
+- **fix**: keep a task you asked for in Asked when its holder passes it on
+
 ## v0.97.0 — 2026-11-27
 
 - **feat**: show when a teammate changes a task you hold or asked for

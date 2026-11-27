@@ -778,7 +778,7 @@ export function Home() {
                                 <span className="line-text">
                                   <span className="line-title">{row.todo.title}</span>
                                   <span className="line-meta">
-                                    {`${who}${line.text} · ${updateWhen(line.at)}${line.more > 0 ? ` and ${line.more} more` : ''}`}
+                                    {`${who}${[line.text, updateWhen(line.at)].filter(Boolean).join(' · ')}${line.more > 0 ? ` and ${line.more} more` : ''}`}
                                   </span>
                                 </span>
                               </HomeRow>

@@ -75,7 +75,7 @@ export function Seg<T extends string>({
             {o.dot ? (
               <>
                 <span className="dot seg-dot" aria-hidden="true" />
-                <span className="visually-hidden"> has updates</span>
+                <span className="visually-hidden">, with updates</span>
               </>
             ) : null}
           </button>

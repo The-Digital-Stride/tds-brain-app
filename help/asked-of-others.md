@@ -6,7 +6,7 @@ order: 4
 summary: See the tasks you passed on, who has them, and when they were finished.
 benefit: You don't lose track of a job once it's someone else's.
 roles: all
-related: [todos, files-on-todos, passing-todos-on, personal-todos, task-updates]
+related: [todos, files-on-todos, passing-todos-on, personal-todos, task-updates, task-notices]
 since: 0.43.0
 reviewed: 2026-11-27
 ---
@@ -23,7 +23,7 @@ The **Asked** tab in the Tasks drawer lists the tasks you passed on to a teammat
 
 ## How to use it
 
-1. Open the Tasks drawer and press **Asked**. The number is how many are still waiting.
+1. Open the Tasks drawer and press **Asked**. The number is how many are still waiting. A dot means some have updates.
 2. **Waiting** shows what hasn't been done yet, longest-waiting first. **Done in the last 60 days** starts closed.
 3. Press a task's title to read it in the panel. It belongs to someone else now, so you can't change it.
 4. While it is waiting, you can add an update, for example to answer a question. See Updates and handing back.
@@ -33,6 +33,7 @@ The **Asked** tab in the Tasks drawer lists the tasks you passed on to a teammat
 ## Good to know
 
 - If you passed a task to Ben and he passed it on, only the latest hand-over counts, so it leaves your list.
+- A task you handed back stays here, marked **Handed back to** and the name.
 - Some names come from git history (the Brain's sync record) rather than from the task itself. They are whoever's Mac synced the change, which may not be who made it. These are marked with a star in History, and as "(git history)" elsewhere.
 - If the git history can't be read, the tab says so and lists only tasks passed on in the app or by Claude.
 - Personal tasks aren't synced, so they have no history and never appear here.

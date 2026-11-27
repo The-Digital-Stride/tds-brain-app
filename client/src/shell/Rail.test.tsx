@@ -80,7 +80,8 @@ describe('Rail tasks item', () => {
     setStore([todo('a.md', 'ben-mcadam'), todo('b.md', null)]);
     const { container } = render(<Rail />);
     expect(screen.getByRole('button', { name: 'Tasks, 2 of yours, 1 new or updated' })).toBeTruthy();
-    expect(container.querySelector('.rail-pip[data-new="true"]')).toBeTruthy();
+    // The red badge carries the number of new or updated tasks, apart from the navy count of the person's own.
+    expect(container.querySelector('.rail-pip[data-new="true"]')?.textContent).toBe('1');
   });
 
   it('has no pip and no "new" when nothing is new', () => {

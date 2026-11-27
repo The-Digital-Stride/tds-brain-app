@@ -23,15 +23,15 @@ Cortex tells you when a teammate does something to a task you care about. That m
 
 ## How to use it
 
-1. Look at **Tasks** on the rail. The number counts tasks that are new to you or have updates.
+1. Look at **Tasks** on the rail. A red number on its icon counts the tasks that are new to you or have updates.
 2. Open the Tasks drawer. **Updated** at the top of **Mine** lists the tasks a teammate has changed.
 3. Each one says what happened last, who did it and when.
-4. Press **Asked**. A dot on the tab means a task you passed on has updates. They are under **Updated** there too.
+4. Press **Asked**. A dot on the tab means a task you asked someone to do has updates. They are under **Updated** there too.
 5. Press a task to open it. What you haven't seen is marked **New** in its **Updates** list.
 6. Opening a task counts as seeing it. To clear them all, press **Mark all as seen**.
 7. On Home, the **Task updates** card shows the same tasks.
 
-![The Tasks drawer with the Updated section open.](images/todo-updated.webp)
+![The Tasks drawer with a New to you section and an Updated section. The updated task says who changed it and when.](images/todo-updated.webp)
 
 ## Good to know
 
@@ -44,4 +44,4 @@ Cortex tells you when a teammate does something to a task you care about. That m
 
 ## Try this
 
-Ask a teammate to add an update to a task you gave them, then watch the **Tasks** number on the rail.
+Ask a teammate to add an update to a task you gave them, then watch for the red number on **Tasks**.

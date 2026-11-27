@@ -543,9 +543,12 @@ function ReadView({
   const filesBlock = p.canEdit
     ? p.canAttach
     : p.canAttach || links.length > 0 || splitTodoFiles(todo.details).files !== '';
+  // Read only: the log sections always come out (they show as the Updates block and History). The `## Files`
+  // section comes out with them; when there is one, `filesBlock` is true and it shows as the Files block. Before,
+  // a task with a log but no files showed its raw log lines in the details as well (browser check, release 2).
   const shown = p.canEdit
     ? detailsText(todo, p.canAttach, p.canUpdate === true)
-    : detailsText(todo, filesBlock, true);
+    : splitTodoSections(todo.details).details;
   const canUpdate = p.canEdit && p.canUpdate === true && p.onUpdate !== undefined;
   const compose: TodoUpdateCompose | null = canUpdate
     ? {

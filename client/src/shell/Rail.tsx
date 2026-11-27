@@ -44,6 +44,8 @@ interface ItemProps {
   pip?: Attention | null;
   /** Something new to the person: a plain blue dot, whatever the chats are doing. */
   fresh?: boolean;
+  /** How many are new or updated: shown on the red badge. Without it the badge is a plain dot. */
+  freshCount?: number;
   count?: number;
   after?: ReactNode;
   keys?: string;
@@ -62,6 +64,7 @@ function Item({
   drawer,
   pip,
   fresh,
+  freshCount,
   count,
   after,
   keys,
@@ -97,7 +100,18 @@ function Item({
         </span>
       ) : null}
       {pip ? <span className="dot rail-pip" data-attention={pip} /> : null}
-      {fresh ? <span className="dot rail-pip" data-new="true" /> : null}
+      {fresh ? (
+        // New or updated: a red count on the icon (change notices plan, decision 7: a count on the rail). The
+        // aria-label already says the number.
+        <span
+          className="dot rail-pip"
+          data-new="true"
+          data-count={freshCount ? true : undefined}
+          aria-hidden="true"
+        >
+          {freshCount ? (freshCount > 99 ? '99+' : freshCount) : null}
+        </span>
+      ) : null}
       <span className="rail-label">{label}</span>
       {count ? <span className="count rail-label">{count}</span> : null}
       {after}
@@ -268,6 +282,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           label="Tasks"
           name={todosRailLabel(mine, fresh)}
           fresh={fresh > 0}
+          freshCount={fresh}
           wide={showsNames}
           drawer={drawer('todos')}
           count={mine}

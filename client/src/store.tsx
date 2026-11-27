@@ -1139,13 +1139,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const keepFileStars = fileFavourites.keep;
   const keepHidden = hiddenList.keep;
   const keepShortcuts = shortcutList.keep;
+  // The task markers ("New to you" and "changed since you looked"): the latest maps, kept here so quick successive
+  // marks each carry the earlier ones, and how many saves of each are still waiting for their reply.
+  const seenRef = useRef<Record<string, string>>({});
+  const seenSaving = useRef(0);
+  const lookedRef = useRef<TodoLooked>({});
+  const lookedSaving = useRef(0);
   /**
-   * A prefs reply for another setting, with each saved list (the stars and the Home layout) kept as shown while one of
-   * its saves is waiting.
+   * A prefs reply for another setting, with each saved list (the stars and the Home layout) and each task marker
+   * map kept as shown while one of its saves is waiting. Without this, the reply to a "seen" save, which carries
+   * the prefs file as it stood before a "looked" save sent just after it, put the old map back and the next mark
+   * saved over the lost one (review R2).
    */
   const keepStars = useCallback(
-    (prefs: AppPrefs): AppPrefs =>
-      keepShortcuts(keepHidden(keepFileStars(keepTodoStars(keepChatStars(prefs))))),
+    (prefs: AppPrefs): AppPrefs => {
+      const kept = keepShortcuts(keepHidden(keepFileStars(keepTodoStars(keepChatStars(prefs)))));
+      if (seenSaving.current === 0 && lookedSaving.current === 0) return kept;
+      return {
+        ...kept,
+        ...(seenSaving.current > 0 ? { todoSeen: seenRef.current } : {}),
+        ...(lookedSaving.current > 0 ? { todoLooked: lookedRef.current } : {}),
+      };
+    },
     [keepChatStars, keepTodoStars, keepFileStars, keepHidden, keepShortcuts],
   );
   const bootLists = [chatFavourites, todoFavourites, fileFavourites, hiddenList, shortcutList];
@@ -1606,8 +1621,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [boot, updatePrefs],
   );
 
-  // The latest seen map, kept here so quick successive marks each carry the earlier ones.
-  const seenRef = useRef<Record<string, string>>({});
   useEffect(() => {
     seenRef.current = boot?.prefs.todoSeen ?? {};
   }, [boot?.prefs.todoSeen]);
@@ -1626,20 +1639,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       seenRef.current = next;
       // Optimistic, so the dot goes at once; the server's reply (pruned, capped) replaces it.
       setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoSeen: next } } : b));
+      seenSaving.current += 1;
       api
         .updatePrefs({ todoSeen: next })
         .then((prefs) => {
-          if (seenRef.current === next) setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
+          seenSaving.current -= 1;
+          // A newer mark still waiting keeps its own map (keepStars); otherwise the server's replaces it.
+          setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
         })
         .catch(() => {
+          seenSaving.current -= 1;
           // Not saved: it shows as new again next time. Nothing to tell the person.
         });
     },
     [keepStars],
   );
 
-  // The latest "looked" map, kept here so quick successive marks each carry the earlier ones.
-  const lookedRef = useRef<TodoLooked>({});
   useEffect(() => {
     lookedRef.current = boot?.prefs.todoLooked ?? {};
   }, [boot?.prefs.todoLooked]);
@@ -1674,12 +1689,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const saved = next;
       // Optimistic, so the badge drops at once; the server's reply (pruned, capped) replaces it.
       setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoLooked: saved } } : b));
+      lookedSaving.current += 1;
       api
         .updatePrefs({ todoLooked: saved })
         .then((prefs) => {
-          if (lookedRef.current === saved) setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
+          lookedSaving.current -= 1;
+          setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
         })
         .catch(() => {
+          lookedSaving.current -= 1;
           // Not saved: the changes show as new again next time. Nothing to tell the person.
         });
     },

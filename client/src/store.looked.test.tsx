@@ -142,6 +142,59 @@ describe('store: the Asked list', () => {
 });
 
 describe('store.markTodosLooked', () => {
+  it('keeps a looked marker when the reply to a seen save lands first (review R2)', async () => {
+    await mount();
+    // A server that applies saves in order and answers each with the whole prefs file as it then stands.
+    let file: Record<string, unknown> = { pins: [], todoLooked: {}, todoSeen: {} };
+    const replies: (() => void)[] = [];
+    api.updatePrefs.mockImplementation(
+      (p: object) =>
+        new Promise((resolve) => {
+          file = { ...file, ...p };
+          const snapshot = file;
+          replies.push(() => resolve(snapshot));
+        }),
+    );
+    const a = { ...held('a.md', [note('One')]), handover: { at: '2026-11-27T10:00:00+00:00' } } as TodoItem;
+    act(() => {
+      store?.markTodosSeen([a]);
+      store?.markTodosLooked([{ kind: 'held', todo: a }]);
+    });
+    expect(replies).toHaveLength(2);
+    await act(async () => replies[0]?.());
+    expect(Object.keys(store?.boot?.prefs.todoLooked ?? {})).toEqual(['a.md']);
+    await act(async () => replies[1]?.());
+    expect(Object.keys(store?.boot?.prefs.todoLooked ?? {})).toEqual(['a.md']);
+    expect(store?.boot?.prefs.todoSeen).toEqual({ 'a.md': '2026-11-27T10:00:00+00:00' });
+    // The next mark carries the earlier one: nothing was lost on the way.
+    const b = held('b.md', [note('Two')]);
+    act(() => store?.markTodosLooked([{ kind: 'held', todo: b }]));
+    expect(Object.keys((file.todoLooked as object) ?? {}).sort()).toEqual(['a.md', 'b.md']);
+  });
+
+  it('keeps a seen marker when the reply to a looked save lands first', async () => {
+    await mount();
+    let file: Record<string, unknown> = { pins: [], todoLooked: {}, todoSeen: {} };
+    const replies: (() => void)[] = [];
+    api.updatePrefs.mockImplementation(
+      (p: object) =>
+        new Promise((resolve) => {
+          file = { ...file, ...p };
+          const snapshot = file;
+          replies.push(() => resolve(snapshot));
+        }),
+    );
+    const a = { ...held('a.md', [note('One')]), handover: { at: '2026-11-27T10:00:00+00:00' } } as TodoItem;
+    act(() => {
+      store?.markTodosLooked([{ kind: 'held', todo: a }]);
+      store?.markTodosSeen([a]);
+    });
+    await act(async () => replies[0]?.());
+    expect(store?.boot?.prefs.todoSeen).toEqual({ 'a.md': '2026-11-27T10:00:00+00:00' });
+    await act(async () => replies[1]?.());
+    expect(store?.boot?.prefs.todoSeen).toEqual({ 'a.md': '2026-11-27T10:00:00+00:00' });
+  });
+
   it('saves the whole map with a marker per task, and keeps both of two quick marks', async () => {
     await mount();
     const a = held('a.md', [note('One')]);

@@ -199,6 +199,21 @@ describe('opening and reading', () => {
     expect(within(panel).getByLabelText('Details').textContent).toContain('Some notes');
   });
 
+  it('keeps the update log out of the details when changes are off and the task has no files (browser check R2)', async () => {
+    const withLog = {
+      ...todo('a.md', 'First'),
+      details:
+        'Some notes\n\n## Updates\n\n- 27 Nov 2026, 14:05 UK: Ben McAdam (ben-mcadam) wrote: Sent the quote.\n\n## Handover history\n\n- 25 Nov 2026, 10:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).',
+    };
+    setStore('switched-off', [withLog], { directWrites: false });
+    mount();
+    const panel = await open('First');
+    const details = within(panel).getByLabelText('Details').textContent ?? '';
+    expect(details).toContain('Some notes');
+    expect(details).not.toContain('Sent the quote');
+    expect(details).not.toContain('Handover history');
+  });
+
   it('shows someone who may only tick things off just "Mark as done" (no Edit, no Delete)', async () => {
     setStore('restricted', three(), { directWrites: true });
     mount();
@@ -1759,8 +1774,8 @@ describe('task change notices', () => {
       mount();
       const tab = screen.getByRole('radio', { name: /^Asked, 2/ });
       expect(tab.querySelector('.seg-dot')).toBeTruthy();
-      expect(within(tab).getByText('has updates', { exact: false }).className).toContain('visually-hidden');
-      expect(tab.textContent).toBe('Asked, 2 has updates');
+      expect(within(tab).getByText('with updates', { exact: false }).className).toContain('visually-hidden');
+      expect(tab.textContent).toBe('Asked, 2, with updates');
     });
 
     it('has no dot when nothing has changed', () => {

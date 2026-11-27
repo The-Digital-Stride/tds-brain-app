@@ -107,7 +107,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'task-updates',
     anchor: 'button.rail-item[data-dock-label="Tasks"]',
     title: 'Task updates',
-    text: 'When a teammate updates, finishes or hands back a task of yours, the number on Tasks goes up and the Task updates card on Home lists it.',
+    text: 'When a teammate updates, finishes or hands back one of your tasks, a red number shows on Tasks. The Task updates card on Home lists them.',
   },
   {
     id: 'workbench',

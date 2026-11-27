@@ -1,7 +1,11 @@
 import type { TeamMember } from '../../../../shared/contract.ts';
 import { foldRef, nearRefs, refCandidates } from '../../../../shared/project-refs.ts';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
-import { canTakeTask, type ProjectVisibility } from '../../../../shared/project-visibility.ts';
+import {
+  canTakeTask,
+  type ProjectVisibility,
+  RESTRICTED_WHO,
+} from '../../../../shared/project-visibility.ts';
 import { matchedKey } from '../../../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
@@ -620,6 +624,30 @@ export function whoStopsSeeing(
     if (!canTakeTask(asRestricted, { slug, name }, seesAll ?? [])) names.push(name);
   }
   return names;
+}
+
+/** What restricting does, said in the question before anyone agrees to it. */
+export const RESTRICT_MEANS = `${RESTRICTED_WHO.replace('can see it', 'will see it in Cortex')}.`;
+
+/**
+ * The question itself, named for the consequence (design system, Confirm): restricting `title`, or taking `person`
+ * off a project that is already restricted.
+ */
+export function restrictHeading(title: string, person?: string): string {
+  return person
+    ? `Take ${person} off this restricted project?`
+    : `Restrict ${title.trim() || 'this project'}?`;
+}
+
+/**
+ * The question when the project's tasks couldn't be read: nobody was checked, so it says so and never reassures.
+ * `person` is the name of who is being taken off the team; without one the project is being restricted.
+ */
+export function restrictUncheckedQuestion(person?: string): string {
+  const lead = person
+    ? `Cortex couldn't check whether ${person} has open tasks here. If they do, they will stop seeing this project. ${TASKS_STAY_NOTE}`
+    : "Cortex couldn't check who has open tasks here. Anyone not on the project team will stop seeing it.";
+  return `${lead} ${OLDER_CORTEX_NOTE}`;
 }
 
 /** The question's text. `names` is who stops seeing it; `switching` is turning it on (else removing from a team). */

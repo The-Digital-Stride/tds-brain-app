@@ -708,6 +708,16 @@ function folderHidden(ctx, folderRel, keyValue, viewer) {
   return read !== null && read.rel !== folderRel && !canSeeProject(cardAccessAt(read.abs, read.space), viewer);
 }
 
+// Whether a brain path is inside a project folder hidden from `viewer`: a client's live or archive
+// projects folder, an archived client's, or the legacy `projects/` ones (The Digital Stride's). A personal
+// project is never restricted, so `personal/` is never looked at.
+function inHiddenProject(ctx, rel, viewer) {
+  const m = /^(clients\/_archive\/([^/]+)\/projects|clients\/([^/]+)\/projects(?:-archive)?|projects(?:-archive)?)\/([^/]+)\//.exec(rel);
+  if (!m) return false;
+  const client = m[2] || m[3] || INTERNAL_CLIENT;
+  return folderHidden(ctx, `${m[1]}/${m[4]}`, `${client}/${m[4]}`, viewer);
+}
+
 // `locate`, then: a restricted project this Mac's person can't see is refused exactly as a missing key
 // is, so nothing tells them it exists. Identity is only read for a restricted card.
 function locateSeen(ctx, value, opts) {
@@ -1598,7 +1608,9 @@ function link(input, ctx) {
   }
   const abs = path.join(ctx.root, ...rel.split('/'));
   const st = lstatOrNull(abs);
-  if (!st) throw refuse('bad-request', `there is no file at ${rel}`);
+  // A file in a restricted project's folder this person can't see is answered as a missing one, so a
+  // guessed path never tells them what is in there.
+  if (!st || inHiddenProject(ctx, rel, viewerOf(who))) throw refuse('bad-request', `there is no file at ${rel}`);
   if (st.isSymbolicLink()) throw refuse('bad-request', `${rel} is a link`);
   if (!st.isFile()) throw refuse('bad-request', `${rel} isn't a file`);
   try {

@@ -422,6 +422,33 @@ describe('outsiders are told the project is not there', () => {
     });
   }
 
+  it('answers a link from an open project to a file in a hidden folder as for a missing file', () => {
+    put(`${PITCH}/plan.pdf`, 'pdf');
+    put('clients/acme/projects-archive/old-pitch/project.md', PITCH_TEXT.replace('Secret pitch', 'Old'));
+    put('clients/acme/projects-archive/old-pitch/deck.pdf', 'pdf');
+    const link = (path: string) =>
+      call('link', { key: 'acme/site', path, expect: sha(`${OPEN}/project.md`) });
+    const answer = (r: { exit: number; reply: Reply }, path: string) => ({
+      exit: r.exit,
+      reply: { ...r.reply, message: String(r.reply.message).replaceAll(path, '<path>') },
+    });
+    as('terry@example.test');
+    for (const [hidden, missing] of [
+      [`${PITCH}/plan.pdf`, 'clients/acme/projects/nothing/plan.pdf'],
+      [PITCH_CARD, 'clients/acme/projects/nothing/project.md'],
+      ['clients/acme/projects-archive/old-pitch/deck.pdf', 'clients/acme/projects-archive/gone/deck.pdf'],
+    ] as const) {
+      const gone = link(missing);
+      expect(gone.reply).toMatchObject({ ok: false, error: 'bad-request' });
+      expect(answer(link(hidden), hidden), hidden).toEqual(answer(gone, missing));
+    }
+    expect(read(`${OPEN}/project.md`)).toBe(OPEN_TEXT);
+    // Someone on the project links it as before.
+    as('mj@example.test');
+    expect(link(`${PITCH}/plan.pdf`).reply).toMatchObject({ ok: true });
+    expect(read(`${OPEN}/project.md`)).toContain('../../../../clients/acme/projects/pitch/plan.pdf');
+  });
+
   it('answers an outsider the same for an archived restricted project and its leftover folder', () => {
     as('sam@example.test');
     expect(call('archive', { key: 'acme/pitch', expect: sha(PITCH_CARD) }).reply).toMatchObject({ ok: true });

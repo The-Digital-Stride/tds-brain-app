@@ -291,13 +291,8 @@
   {
     "id": "restricted-projects",
     "scene": "restricted-projects",
-    "crop": ".lib-list",
-    "callouts": [
-      {
-        "n": 1,
-        "target": ".proj-row .restricted-badge"
-      }
-    ],
+    "crop": "section.card:has(.restricted-badge)",
+    "pad": 6,
     "alt": "The project list, with a Restricted mark beside one project's title."
   }
 ]

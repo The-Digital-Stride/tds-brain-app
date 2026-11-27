@@ -138,7 +138,7 @@ export function Assignee({
   allowOpen: boolean;
   /**
    * A task in a restricted project can't go to someone outside it (decision 7): the note for each person it can't
-   * go to, or null. Those people stay in the list, unavailable, with the note as their tip.
+   * go to, or null. Those people stay in the list, unavailable and marked, with the reason in the hint underneath.
    */
   blocked?: AssignGate;
 }) {
@@ -160,13 +160,14 @@ export function Assignee({
         {options.map((o) => {
           const note = notes.get(o.slug) ?? null;
           return (
-            <option key={o.slug} value={o.slug} disabled={note !== null} title={note ?? undefined}>
+            <option key={o.slug} value={o.slug} disabled={note !== null}>
               {note ? `${o.name} (not on this project)` : o.name}
             </option>
           );
         })}
         {known ? null : <option value={value}>{value}</option>}
-        {allowOpen ? <option value="">Open to anyone</option> : null}
+        {/* In a restricted project an open task is only seen, and so only taken, by the people on it. */}
+        {allowOpen ? <option value="">{any ? 'Open to the project team' : 'Open to anyone'}</option> : null}
       </select>
       {any ? (
         <p className="hint" id={`${id}-blocked`}>

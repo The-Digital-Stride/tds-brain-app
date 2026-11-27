@@ -132,6 +132,8 @@ export function SearchSelect({
   useEffect(() => () => cancelAnimationFrame(reselect.current), []);
 
   const chosen = options.find((o) => o.value === value);
+  // Shown only while the box shows the chosen name, not while the person is typing a search.
+  const locked = text === null && chosen?.restricted === true;
   const query = text ?? '';
   const groups = useMemo(() => shownGroups(options, query, recent), [options, query, recent]);
   const rows = useMemo(() => groups.flatMap((g) => g.rows), [groups]);
@@ -263,7 +265,9 @@ export function SearchSelect({
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && active ? optionId(active) : undefined}
         aria-label={ariaLabel}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={
+          [ariaDescribedBy, locked ? `${id}-restricted` : null].filter(Boolean).join(' ') || undefined
+        }
         aria-invalid={ariaInvalid || undefined}
         aria-autocomplete="list"
         autoComplete="off"
@@ -302,6 +306,12 @@ export function SearchSelect({
       <span className="ss-chevron" aria-hidden="true">
         <Icon name="chevron" size={16} />
       </span>
+      {/* The chosen project is restricted: the lock stays beside its name while the list is closed (decision 10). */}
+      {locked ? (
+        <span className="ss-mark">
+          <RestrictedBadge compact id={`${id}-restricted`} />
+        </span>
+      ) : null}
       <p className="visually-hidden" role="status">
         {said}
       </p>

@@ -515,7 +515,7 @@ describe('restricted projects in search', () => {
     const secret = rowFor('Zebra secret');
     expect(secret.length).toBeGreaterThan(0);
     for (const row of secret)
-      expect(within(row).getByText('Restricted: only the project team can see it')).toBeTruthy();
+      expect(within(row).getByText('Restricted: only its team, owners and scouts can see it')).toBeTruthy();
     const open = rowFor('Zebra site');
     expect(open.length).toBeGreaterThan(0);
     for (const row of open) expect(within(row).queryByText(/^Restricted/)).toBeNull();

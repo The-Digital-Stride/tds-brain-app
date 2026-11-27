@@ -37,7 +37,7 @@ import { stampDone } from './done-record.ts';
 import { FILES_ADD_CAPABILITY, FILES_SKILL, type FilesSkillRunner, findFilesSkill } from './files-skill.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
-import { idFor } from './library.ts';
+import { idFor, isHiddenCallNote } from './library.ts';
 import {
   classify,
   extOf,
@@ -801,7 +801,7 @@ export async function changeTodo(
     // The task as its file says: a served task in a hidden project has its label masked.
     onDisk = files.get(listed.key) ?? listed;
     if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
-    if (action.kind === 'attach') await checkAttach(root, listed, action.path);
+    if (action.kind === 'attach') await checkAttach(root, listed, action.path, index);
     // An older script (no canProject) moves the bytes as they are, so a private project's name would
     // reach todo/: refuse while the to-do is in one (decision 8; overseer sign-off, should 2).
     if (action.kind === 'move' && action.to === 'tds' && !list.canProject && inPersonalProject(onDisk)) {
@@ -857,8 +857,13 @@ export function savedNotLinkedMessage(path: string): string {
   return `The file was saved to the library at ${path}, but it couldn't be linked to this task. Add it from the library instead.`;
 }
 
-/** Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it. */
-async function checkAttach(root: string, listed: TodoItem, path: string): Promise<void> {
+/**
+ * Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it.
+ * Restricted projects: a hidden project's file (in its folder, or a call note naming it) gets the very
+ * answer a missing file gets, so a guessed path never confirms that a hidden file exists. With an
+ * unreadable index every project folder's file, and every call note naming a project, is refused (decision 4).
+ */
+async function checkAttach(root: string, listed: TodoItem, path: string, index: TaskIndex): Promise<void> {
   const linked = listed.attachments.some((a) => a.path === path);
   if (!linked && listed.attachments.length >= TODO_ATTACHMENTS_MAX)
     throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.full);
@@ -868,7 +873,11 @@ async function checkAttach(root: string, listed: TodoItem, path: string): Promis
   } catch {
     throw todoChangeError('internal');
   }
-  if (!(await isListableFile(root, realRoot, path)))
+  if (
+    hiddenPathOf(index)(path) ||
+    !(await isListableFile(root, realRoot, path)) ||
+    (await isHiddenCallNote(root, index, path))
+  )
     throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.notListable);
 }
 

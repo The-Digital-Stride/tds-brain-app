@@ -18,6 +18,11 @@ export const VISIBILITY_KEY = 'visibility';
 
 /** What a to-do's project chip, a search row or a picker says in place of a hidden project's title. */
 export const RESTRICTED_LABEL = 'Restricted project';
+/**
+ * Who sees a restricted project, in the words every screen uses. Owners and scouts are named on purpose: someone
+ * restricting a pay review must not think the scouts are shut out.
+ */
+export const RESTRICTED_WHO = 'Only its team, owners and scouts can see it';
 
 /** The person looking: this Mac's identity (shared/contract.ts Identity, structurally). */
 export interface ProjectViewer {

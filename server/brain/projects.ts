@@ -39,6 +39,7 @@ import {
   movedKey,
   parseLinkedFiles,
   parseProjectKey,
+  resolveLinkedFilePath,
   resolveTodoProject,
   splitLinkedFiles,
 } from '../../shared/projects.ts';
@@ -81,6 +82,7 @@ import {
   type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
+import { classify, extOf, isNeverListed } from './library-rules.ts';
 import { buildRefIndex, cleanRef } from './project-refs.ts';
 import { PROJECTS_CHANGE_MESSAGES, type ProjectsSkillRunner } from './projects-skill.ts';
 import { buildTidyRows, checkSuggestion, type TidyContext, type TidyTodo, tidyTarget } from './tidy.ts';
@@ -101,13 +103,26 @@ export interface ProjectsIndex {
    * Restricted projects (plan 2026-11-27, contract `ProjectsIndexAdds`). The real index always sets these
    * three; they are optional only so a test's stand-in index needn't. Read them through `isHiddenPath` and
    * `isHiddenKey` below, never directly.
+   *
+   * `hiddenPath`: true for a path that is, or is inside, a folder of a project this person can't see, and
+   * for a file directly in `clients/<client>/files/` or `images/` that a hidden card links and no card
+   * they can see links (a restricted project's Files tab uploads land there). Any other file a hidden card
+   * links from elsewhere stays visible (decision 5).
    */
   hiddenPath?(brainRel: string): boolean;
+  /**
+   * What `hiddenPath` hides, as lower-case brain paths: each hidden folder (and everything inside it) and
+   * each hidden file. Only for matching a glob against (the chat's guard); decide one path with `hiddenPath`.
+   */
+  hiddenPaths?: readonly string[];
   hiddenKey?(key: ProjectKey): boolean;
   hiddenCount?: number;
 }
 
-/** True when the path is, or is inside, a folder of a project this person can't see. */
+/**
+ * True when the path is, or is inside, a folder of a project this person can't see, or is a client file
+ * only hidden projects link (see `ProjectsIndex.hiddenPath`).
+ */
 export const isHiddenPath = (index: Pick<ProjectsIndex, 'hiddenPath'>, brainRel: string): boolean =>
   index.hiddenPath ? index.hiddenPath(brainRel) : false;
 
@@ -230,6 +245,31 @@ interface Loaded {
  * tells an outsider it exists (decision 12).
  */
 const hiddenNotFound = () => new ProjectsError('not-found', PROJECTS_CHANGE_MESSAGES['not-found']);
+
+/**
+ * The script's `link` refusal for a path with no file ("there is no file at <path>"), as the skill runner
+ * shows a refusal's reason: one line, a capital and a full stop, or the plain message when it is too long.
+ */
+/** The script's cap on a linked path (`PATH_MAX` in tdsapp-projects.cjs). */
+const LINK_PATH_MAX = 1024;
+
+/**
+ * Whether the script's `link` would get as far as looking for the file. Its refusals for the path's shape, a
+ * never-listed path and a file type the library doesn't list all come first, and must keep coming first for a
+ * path in a hidden folder too: answering "no file" ahead of them would tell a hidden folder from any other.
+ */
+function linkLooksForFile(path: string): boolean {
+  if (path === '' || path.length > LINK_PATH_MAX || resolveLinkedFilePath(path) !== path) return false;
+  const deep = /^(?:clients|projects|projects-archive)\//.test(path) ? 3 : 2;
+  if (path.split('/').length < deep || isNeverListed(path)) return false;
+  return classify(extOf(path.slice(path.lastIndexOf('/') + 1))) !== null;
+}
+
+function missingFile(path: string): ProjectsError {
+  const text = `There is no file at ${path}`.replace(/[\p{Cc}\s]+/gu, ' ').trim();
+  if (text.length > 300) return new ProjectsError('bad-request', PROJECTS_CHANGE_MESSAGES['bad-request']);
+  return new ProjectsError('bad-request', /[.!?]$/.test(text) ? text : `${text}.`);
+}
 
 /** How long a read is reused when no watcher says the brain changed. */
 export const PROJECTS_STALE_MS = 30_000;
@@ -804,19 +844,42 @@ const ownPersonal = (t: TodoRec, identity: Identity) => !t.assignee || t.assigne
  * Restricted projects (plan 2026-11-27, decision 3): what this viewer can't see. `hidden` holds the keys of
  * the cards hidden from them; `keys` adds the old keys those cards moved from (where no other card answers
  * to them); `folders` every folder of theirs on this Mac: live, archive counterpart, shadowed duplicates,
- * leftovers and moved-from folders. A folder a visible card reads is never in it.
+ * leftovers and moved-from folders. A folder a visible card reads is never in it. `files`: see
+ * `HIDDEN_LINKED_FILE`.
  */
 interface Mask {
   hidden: Set<ProjectKey>;
   keys: Set<ProjectKey>;
   folders: string[];
+  /** Exact file paths, lower case. */
+  files: string[];
   /** `hidden`, plus restricted duplicate folders whose pick is open: never 0 while `folders` has any. */
   count: number;
 }
 
+/**
+ * The Files tab files its uploads in the client's shared folders (library-upload.ts), so a restricted
+ * project's own uploads live outside its folder. Such a file, linked from a hidden card and from no card
+ * this person can see, is hidden too (review fix, finding 3). Anything else linked from elsewhere stays
+ * visible (decision 5): it was shared before the project linked it.
+ */
+const HIDDEN_LINKED_FILE = /^clients\/[^/]+\/(?:files|images)\/[^/]+$/;
+
+function hiddenLinkedFiles(hiddenCards: ProjectCard[], visibleCards: ProjectCard[]): string[] {
+  const seen = new Set(visibleCards.flatMap((c) => c.links.map((p) => p.toLowerCase())));
+  const out = new Set<string>();
+  for (const c of hiddenCards) {
+    for (const p of c.links) {
+      const lower = p.toLowerCase();
+      if (HIDDEN_LINKED_FILE.test(lower) && !seen.has(lower)) out.add(lower);
+    }
+  }
+  return [...out];
+}
+
 function maskFor(w: Walk, viewer: ProjectViewer): Mask {
   const hidden = new Set(w.cards.filter((c) => !canSeeProject(c, viewer)).map((c) => c.key));
-  const empty: Mask = { hidden, keys: new Set(), folders: [], count: 0 };
+  const empty: Mask = { hidden, keys: new Set(), folders: [], files: [], count: 0 };
   // Fail closed for a restricted duplicate too: its folder's files are its own, whatever the pick says.
   const shadowedHidden = w.shadowed.filter((c) => !canSeeProject(c, viewer));
   if (hidden.size === 0 && shadowedHidden.length === 0) return empty;
@@ -850,6 +913,10 @@ function maskFor(w: Walk, viewer: ProjectViewer): Mask {
     hidden,
     keys,
     folders: [...folders].map((f) => f.toLowerCase()).filter(notVisible),
+    files: hiddenLinkedFiles(
+      [...w.cards.filter((c) => hidden.has(c.key)), ...shadowedHidden],
+      w.cards.filter((c) => !hidden.has(c.key)),
+    ),
     count: hidden.size + shadowedHidden.filter((c) => !hidden.has(c.key) && notVisible(c.folder)).length,
   };
 }
@@ -873,8 +940,10 @@ function makeIndex(
   refs: RefIndex,
   mask: Mask,
 ): { index: ProjectsIndex; cards: ProjectCard[] } {
-  const { hidden, keys, folders } = mask;
-  const hiddenPath = (rel: string) => inFolders(folders, rel);
+  const { hidden, keys, folders, files } = mask;
+  const hiddenFiles = new Set(files);
+  const hiddenPath = (rel: string) =>
+    inFolders(folders, rel) || (typeof rel === 'string' && hiddenFiles.has(rel.toLowerCase()));
   const cards =
     folders.length === 0 && hidden.size === 0
       ? all
@@ -928,6 +997,7 @@ function makeIndex(
               }),
           },
     hiddenPath,
+    hiddenPaths: [...folders, ...files],
     hiddenKey: (key) => keys.has(key),
     hiddenCount: mask.count,
   };
@@ -1192,6 +1262,19 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
           'not-allowed',
           "A shared project can't link a personal file: it would show the team something private.",
         );
+      }
+      // Review fix, finding 2: a guessed path in a hidden folder (or a file only hidden projects link) gets
+      // the script's own answer for a missing file, so a link attempt never tells an outsider it is there.
+      // Only for a project that is there: for a missing one the script's "no project" comes first. And only
+      // for a path the script would look for (`linkLooksForFile`), so its earlier refusals stay first.
+      if (
+        card &&
+        action.kind === 'link' &&
+        typeof action.path === 'string' &&
+        linkLooksForFile(action.path) &&
+        isHiddenPath(index, action.path)
+      ) {
+        throw missingFile(action.path);
       }
     }
     try {
@@ -1499,6 +1582,10 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       if (!ids.has(`${t.scope}:${t.id}`) || (t.project ?? '').trim() !== row.label) continue;
       const target = tidyTarget(t, s);
       if (target === null) continue;
+      // Decision 7 (review fix, finding 1): the tidy-up re-points tasks as the task editor would, so the
+      // same block applies. A task whose assignee can't see the project stays put, and so in the row.
+      const place = { project: target.project, client: target.client, scope: t.scope };
+      if (!(await assignCheck(place, t.assignee)).ok) continue;
       try {
         await opts.todoSkill.run({ kind: 'project', id: t.id, scope: t.scope, ...target, expect: t.version });
       } catch (err) {

@@ -7248,7 +7248,9 @@ describe('app change guards (plan 2026-11-25-app-change-guards)', () => {
 describe('the restricted-project guard (plan 2026-11-27-restricted-projects, decision 11)', () => {
   type HookFn = (i: unknown, id?: string) => Promise<unknown>;
   const HIDDEN = 'clients/acme/projects/secret';
-  /** A stand-in index with one hidden folder; the real one's rule is tested in projects.test.ts. */
+  /** A client file only the hidden project links (projects.test.ts: such a file is hidden too). */
+  const HIDDEN_FILE = 'clients/acme/files/deck.pdf';
+  /** A stand-in index with one hidden folder and file; the real one's rule is tested in projects.test.ts. */
   const hiddenIndex =
     (hiddenCount = 1) =>
     async () =>
@@ -7257,7 +7259,9 @@ describe('the restricted-project guard (plan 2026-11-27-restricted-projects, dec
         byKey: () => null,
         keysForPath: () => [],
         resolve: () => ({ how: 'none' }),
-        hiddenPath: (rel: string) => rel === HIDDEN || rel.startsWith(`${HIDDEN}/`),
+        hiddenPath: (rel: string) =>
+          hiddenCount > 0 && (rel === HIDDEN || rel.startsWith(`${HIDDEN}/`) || rel === HIDDEN_FILE),
+        hiddenPaths: hiddenCount > 0 ? [HIDDEN, HIDDEN_FILE] : [],
         hiddenKey: () => false,
         hiddenCount,
       }) satisfies ProjectsIndex;
@@ -7334,9 +7338,83 @@ describe('the restricted-project guard (plan 2026-11-27-restricted-projects, dec
     ).toEqual(DENY);
   });
 
+  // Review fix, finding 4: wildcards, braces, split quotes and backslashes reach the folder too.
+  const reaching = [
+    ['Bash', { command: 'cat clients/acme/projects/sec*/project.md' }],
+    ['Bash', { command: 'cat "clients/acme/projects/"secret/project.md' }],
+    ['Bash', { command: 'cat \'clients/acme/projects/\'"secret"/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/{secret,x}/project.md' }],
+    ['Bash', { command: 'cat clients/acme/{projects/secret,x}/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/secre\\t/project.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/s?cret/plan.md | head' }],
+    ['Bash', { command: 'ls clients/acme/projects/*' }],
+    ['Bash', { command: 'grep -r budget clients/acme/projects/**' }],
+    ['Bash', { command: `cat ${BRAIN}/clients/*/projects/secret/plan.md` }],
+    ['Glob', { pattern: 'clients/acme/projects/*/project.md' }],
+    ['Glob', { pattern: 'clients/acme/projects/{secret,x}/*.md' }],
+    ['Glob', { pattern: '**/secret/plan.md' }],
+    ['Glob', { pattern: 'clients/acme/projects/**/*.md' }],
+    ['Glob', { pattern: '*/plan.md', path: `${BRAIN}/clients/acme/projects` }],
+    ['Glob', { pattern: '**/*.md', path: 'clients/acme/projects' }],
+    ['Grep', { pattern: 'budget', glob: 'clients/acme/projects/*/plan.md' }],
+    ['Grep', { pattern: 'budget', path: `${BRAIN}/clients/acme/projects`, glob: '*.md' }],
+    ['Grep', { pattern: 'budget', path: 'clients/acme', glob: 'projects/s*/*.md' }],
+    // The client file only the hidden project links.
+    ['Read', { file_path: `${BRAIN}/${HIDDEN_FILE}` }],
+    ['Bash', { command: `cat ${HIDDEN_FILE}` }],
+    ['Bash', { command: 'cat clients/acme/files/d*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/files/*.pdf' }],
+    // Spelled out after `**`: aimed at the file, not a broad search.
+    ['Glob', { pattern: '**/deck.pdf' }],
+    ['Glob', { pattern: 'clients/acme/files/**' }],
+  ] as const;
+
+  it.each(reaching)('denies %s %j, which can reach the hidden folder', async (tool, input) => {
+    const guard = await guardOf();
+    expect(await guard(call(tool, input), 'toolu_1')).toEqual(DENY);
+  });
+
+  const notReaching = [
+    ['Bash', { command: 'cat clients/acme/projects/secret-2/x.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/secret-*/x.md' }],
+    ['Bash', { command: 'cat clients/acme/projects/{secret-2,web}/x.md' }],
+    ['Bash', { command: 'cat "clients/acme/projects/"secret-2/x.md' }],
+    ['Bash', { command: 'ls clients/acme/projects/' }],
+    ['Bash', { command: 'ls clients/acme/projects/*.md' }],
+    ['Bash', { command: 'cat clients/acme/files/other.pdf' }],
+    ['Bash', { command: 'cat clients/acme/files/o*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/projects/secret-*/**' }],
+    ['Glob', { pattern: 'clients/acme/projects/*.md' }],
+    ['Glob', { pattern: 'clients/harvey-nash/projects/*/project.md' }],
+    // A broad search from the brain's root is an accepted limit (like grep -r there).
+    ['Glob', { pattern: '**/*.md' }],
+    ['Glob', { pattern: 'clients/**/project.md' }],
+    ['Grep', { pattern: 'budget', glob: '*.md' }],
+    // ...and stays one when a hidden file has that type: an everyday "search all my PDFs" still runs.
+    ['Glob', { pattern: '**/*.pdf' }],
+    ['Glob', { pattern: 'clients/acme/**/*.pdf' }],
+    ['Grep', { pattern: 'budget', glob: '*.pdf' }],
+    ['Grep', { pattern: 'budget', path: 'clients/acme/projects' }],
+  ] as const;
+
+  it.each(notReaching)('allows %s %j, which cannot reach it', async (tool, input) => {
+    const guard = await guardOf();
+    expect(await guard(call(tool, input), 'toolu_1')).toEqual({ continue: true });
+  });
+
+  it('refuses a project-folder glob too when the projects index cannot be read', async () => {
+    const guard = await guardOf({ projectsIndex: () => Promise.reject(new Error('boom')) });
+    expect(await guard(call('Glob', { pattern: 'clients/acme/projects/*/plan.md' }))).toEqual(DENY);
+    expect(await guard(call('Bash', { command: 'cat clients/*/projects/x/a.md' }))).toEqual(DENY);
+    expect(await guard(call('Glob', { pattern: 'clients/acme/reports/*.md' }))).toEqual({ continue: true });
+  });
+
   it('does nothing when nothing is hidden, or without a projects index', async () => {
     const none = await guardOf({ projectsIndex: hiddenIndex(0) });
     expect(await none(call('Read', { file_path: `${BRAIN}/${HIDDEN}/plan.md` }))).toEqual({ continue: true });
+    for (const [tool, input] of reaching) {
+      expect(await none(call(tool, input)), `${tool} ${JSON.stringify(input)}`).toEqual({ continue: true });
+    }
     const bare = await guardOf({ projectsIndex: undefined });
     expect(await bare(call('Read', { file_path: `${BRAIN}/${HIDDEN}/plan.md` }))).toEqual({ continue: true });
   });

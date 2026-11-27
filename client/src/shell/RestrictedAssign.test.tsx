@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { outsideProjectNote } from '../../../shared/project-visibility.ts';
 import { card, projectList } from '../apps/projects/testing.ts';
 
 // Restricted projects, decision 7: a task in a restricted project can't go to someone outside it. The pickers show
@@ -81,7 +80,9 @@ describe('the Assigned to list on a task in a restricted project', () => {
     addForm(projectList([SECRET], { seesAll: ['sue-scout'] }), SECRET.key);
     const ben = option(/Ben McAdam/);
     expect(ben.disabled).toBe(true);
-    expect(ben.title).toBe(outsideProjectNote('Ben McAdam'));
+    // Marked in the list itself, with the reason in the hint under the box (no hover tip: a menu never shows one).
+    expect(ben.textContent).toBe('Ben McAdam (not on this project)');
+    expect(screen.getByText(/can't be given its tasks\. Add them to the project team first\./)).toBeTruthy();
     expect(option(/Sam Lee/).disabled).toBe(false);
     expect(option(/Sue Scout/).disabled).toBe(false);
     // The Account Owner (me) is always fine.
@@ -118,7 +119,7 @@ describe('the Restricted badge in a project picker', () => {
     const rows = screen.getAllByRole('option');
     const secret = rows.find((r) => r.textContent?.includes('Secret merger')) as HTMLElement;
     const open = rows.find((r) => r.textContent?.includes('Open site')) as HTMLElement;
-    expect(within(secret).getByText('Restricted: only the project team can see it')).toBeTruthy();
+    expect(within(secret).getByText('Restricted: only its team, owners and scouts can see it')).toBeTruthy();
     expect(within(open).queryByText(/^Restricted/)).toBeNull();
     // A label and an icon, not colour alone.
     expect(within(secret).getByText('Restricted')).toBeTruthy();

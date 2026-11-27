@@ -65,7 +65,7 @@ const { ProjectForm } = await import('./ProjectForm.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
 const { keptDrafts } = await import('../../state/kept-drafts.ts');
 
-const BADGE = 'Restricted: only the project team can see it';
+const BADGE = 'Restricted: only its team, owners and scouts can see it';
 const OPEN = card({ slug: 'site', title: 'Open site', owner: 'pat-jones', client: 'acme' });
 const SECRET = card({
   slug: 'merger',
@@ -157,7 +157,7 @@ describe('the Who can see it choice', () => {
     expect(screen.getByRole('radio', { name: 'Everyone on the team' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'Only the project team' })).toBeTruthy();
     expect(
-      screen.getByText('Hides this project in Cortex. Its files are still in the brain on every Mac.'),
+      screen.getByText(/It is hidden, not locked: its files are still in the brain on every Mac\./),
     ).toBeTruthy();
     cleanup();
     // The script can, but this is a team member who isn't the Account Owner.
@@ -224,6 +224,9 @@ describe('the confirm before restricting', () => {
     renderForm(list());
     fireEvent.click(screen.getByRole('radio', { name: 'Only the project team' }));
     const ask = await screen.findByRole('group', { name: 'Who will see this project' });
+    // The question names the project and says who will still see it, owners and scouts included.
+    expect(ask.textContent).toContain('Restrict Open site?');
+    expect(ask.textContent).toContain('Only its team, owners and scouts will see it in Cortex.');
     expect(ask.textContent).toContain('Sam Lee has open tasks here and will stop seeing this project.');
     expect(ask.textContent).not.toContain('Pat Jones');
     expect(ask.textContent).not.toContain('Owen Owner');
@@ -232,7 +235,7 @@ describe('the confirm before restricting', () => {
     // Nothing is sent, and the choice hasn't moved, until it is confirmed.
     expect(api.changeProject).not.toHaveBeenCalled();
     expect(screen.getByRole('radio', { name: 'Everyone on the team', checked: true })).toBeTruthy();
-    fireEvent.click(within(ask).getByRole('button', { name: 'Only the project team' }));
+    fireEvent.click(within(ask).getByRole('button', { name: 'Restrict project' }));
     expect(screen.queryByRole('group', { name: 'Who will see this project' })).toBeNull();
     expect(screen.getByRole('radio', { name: 'Only the project team', checked: true })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -245,7 +248,7 @@ describe('the confirm before restricting', () => {
     renderForm(list());
     fireEvent.click(screen.getByRole('radio', { name: 'Only the project team' }));
     const ask = await screen.findByRole('group', { name: 'Who will see this project' });
-    fireEvent.click(within(ask).getByRole('button', { name: 'Keep it open to everyone' }));
+    fireEvent.click(within(ask).getByRole('button', { name: 'Keep it open' }));
     expect(screen.queryByRole('group', { name: 'Who will see this project' })).toBeNull();
     expect(screen.getByRole('radio', { name: 'Everyone on the team', checked: true })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -276,6 +279,35 @@ describe('the confirm before restricting', () => {
     fireEvent.click(samBox);
     const again = await screen.findByRole('group', { name: 'Who will see this project' });
     fireEvent.click(within(again).getByRole('button', { name: 'Take them off the team' }));
+    expect(samBox.checked).toBe(false);
+  });
+
+  it("says it couldn't check, not that nobody is affected, when the tasks can't be read", async () => {
+    api.projectTodos.mockRejectedValue(new Error('offline'));
+    renderForm(list());
+    fireEvent.click(screen.getByRole('radio', { name: 'Only the project team' }));
+    const ask = await screen.findByRole('group', { name: 'Who will see this project' });
+    expect(ask.textContent).toContain("Cortex couldn't check who has open tasks here.");
+    expect(ask.textContent).not.toContain('Nobody with open tasks');
+    expect(ask.textContent).toContain('People on an older Cortex still see it until they update.');
+    // The failed read isn't remembered: asking again reads again.
+    fireEvent.click(within(ask).getByRole('button', { name: 'Keep it open' }));
+    api.projectTodos.mockResolvedValue({ todos: [openTask('sam-lee')], count: 1 });
+    fireEvent.click(screen.getByRole('radio', { name: 'Only the project team' }));
+    const again = await screen.findByRole('group', { name: 'Who will see this project' });
+    expect(again.textContent).toContain('Sam Lee has open tasks here and will stop seeing this project.');
+  });
+
+  it("asks before taking someone off a restricted project when their tasks can't be read", async () => {
+    api.projectTodos.mockRejectedValue(new Error('offline'));
+    renderForm(projectList([SECRET], { canRestrict: true, seesAll: ['owen-owner'] }), { card: SECRET });
+    const samBox = screen.getByRole('checkbox', { name: 'Sam Lee' }) as HTMLInputElement;
+    fireEvent.click(samBox);
+    const ask = await screen.findByRole('group', { name: 'Who will see this project' });
+    expect(ask.textContent).toContain("Cortex couldn't check whether Sam Lee has open tasks here.");
+    expect(ask.textContent).toContain('Take Sam Lee off this restricted project?');
+    expect(samBox.checked).toBe(true);
+    fireEvent.click(within(ask).getByRole('button', { name: 'Take them off the team' }));
     expect(samBox.checked).toBe(false);
   });
 

@@ -33,7 +33,7 @@ import {
   type ProjectsErrorCode,
 } from '../../shared/projects-contract.ts';
 import { createProjects, type ProjectsOptions } from './projects.ts';
-import type { ProjectsSkillRunner } from './projects-skill.ts';
+import { PROJECTS_CHANGE_MESSAGES, type ProjectsSkillRunner } from './projects-skill.ts';
 import { createAskedLog } from './todo-asked.ts';
 import { listDoneTodos } from './todo-done.ts';
 import type { TodoRunAction, TodoSkillRunner } from './todo-skill.ts';
@@ -2133,6 +2133,139 @@ describe('restricted projects (plan 2026-11-27)', () => {
       ),
     ).resolves.toMatchObject({ rows: [] });
     expect(fakes.todoRuns).toEqual([]);
+  });
+
+  it('the tidy-up never moves a task into a restricted project when its assignee is outside it', async () => {
+    brain();
+    put(
+      'todo/20261120-out.md',
+      todoText({ title: 'Outsider task', client: 'acme', project: 'secret', assignee: 'carol-team' }),
+    );
+    put(
+      'todo/20261120-in.md',
+      todoText({ title: 'Team task', client: 'acme', project: 'secret', assignee: 'bob-team' }),
+    );
+    const s = as(ON_TEAM);
+    expect((await s.tidy(ON_TEAM)).rows.map((r) => r.label)).toEqual(['secret']);
+    const after = await s.applyTidy(
+      { label: 'secret', do: 'approve', suggestion: { do: 'link', key: 'acme/secret', why: 'same-slug' } },
+      ON_TEAM,
+    );
+    // Only the task whose assignee is on the project went through the task script.
+    expect(fakes.todoRuns).toMatchObject([{ kind: 'project', id: '20261120-in.md', project: 'acme/secret' }]);
+    expect(fakes.todoRuns).toHaveLength(1);
+    // The other stays where it was, so the row is still there to sort out.
+    expect(after.rows.find((r) => r.label === 'secret')?.todos.map((t) => t.id)).toContain('20261120-out.md');
+  });
+
+  it('a new project the tidy-up names over a hidden key is refused as "exists", writing nothing', async () => {
+    brain();
+    put('todo/20261120-x.md', todoText({ title: 'Old label', project: 'pitch-stuff' }));
+    const s = as(OUTSIDER);
+    for (const [client, slug] of [
+      ['acme', 'secret'],
+      ['harvey-nash', 'secret-old'],
+    ] as const) {
+      await expect(
+        s.applyTidy(
+          {
+            label: 'pitch-stuff',
+            do: 'approve',
+            suggestion: { do: 'new-project', client, slug, why: 'no-match' },
+          },
+          OUTSIDER,
+        ),
+      ).rejects.toMatchObject({ code: 'exists', message: PROJECTS_CHANGE_MESSAGES.exists });
+    }
+    expect(fakes.skillRuns).toEqual([]);
+    expect(fakes.todoRuns).toEqual([]);
+  });
+
+  it('linking a path in a hidden folder to an open project is answered as a missing file', async () => {
+    brain();
+    put(
+      `${SECRET}/project.md`,
+      `${restricted()}\n## Linked files\n\n- [deck](clients/acme/files/deck.pdf)\n`,
+    );
+    put('clients/acme/files/deck.pdf', 'pdf');
+    const s = as(OUTSIDER);
+    const expect64 = sha('clients/acme/projects/website/project.md');
+    // The script refuses a missing path with "there is no file at <path>", which the runner shows as a
+    // sentence; a hidden one gets those very words, before the script runs.
+    for (const path of [
+      `${SECRET}/plan.md`,
+      `${SECRET}/nothing-here.md`,
+      'clients/acme/projects/Secret/plan.md',
+      'clients/harvey-nash/projects/secret-old/notes.md',
+      'clients/acme/files/deck.pdf',
+    ]) {
+      await expect(
+        s.change({ kind: 'link', key: 'acme/website', path, expect: expect64 }, OUTSIDER),
+      ).rejects.toMatchObject({ code: 'bad-request', message: `There is no file at ${path}.` });
+    }
+    expect(fakes.skillRuns).toEqual([]);
+    // Someone on the project, and any open path, still reach the script.
+    await as(ON_TEAM).change(
+      { kind: 'link', key: 'acme/website', path: `${SECRET}/plan.md`, expect: expect64 },
+      ON_TEAM,
+    );
+    await s.change(
+      { kind: 'link', key: 'acme/website', path: 'clients/acme/reports/audit.md', expect: expect64 },
+      OUTSIDER,
+    );
+    expect(fakes.skillRuns.map((a) => ('path' in a ? a.path : ''))).toEqual([
+      `${SECRET}/plan.md`,
+      'clients/acme/reports/audit.md',
+    ]);
+  });
+
+  it("leaves the script's earlier link refusals first, so a hidden folder answers as any other does", async () => {
+    brain();
+    put(`${SECRET}/project.md`, restricted());
+    const s = as(OUTSIDER);
+    const expect64 = sha('clients/acme/projects/website/project.md');
+    // The script refuses a bad path shape, a never-listed path and a file type the library doesn't list
+    // before it looks for the file. Answering "no file" first for a hidden folder would tell the two apart.
+    const early = [
+      `${SECRET}/a.exe`,
+      `${SECRET}/../x.md`,
+      `${SECRET}/.git/config.md`,
+      `${SECRET}/${'a'.repeat(1100)}.md`,
+    ];
+    for (const path of early) {
+      await s.change({ kind: 'link', key: 'acme/website', path, expect: expect64 }, OUTSIDER);
+    }
+    expect(fakes.skillRuns.map((a) => ('path' in a ? a.path : ''))).toEqual(early);
+  });
+
+  it('hides a client file that only hidden projects link, and nothing else', async () => {
+    brain();
+    put(
+      `${SECRET}/project.md`,
+      `${restricted()}\n## Linked files\n\n- [deck](clients/acme/files/deck.pdf)\n- [both](clients/acme/images/both.png)\n- [report](clients/acme/reports/x.pdf)\n- [nested](clients/acme/files/sub/y.pdf)\n`,
+    );
+    put(
+      'clients/acme/projects/website/project.md',
+      `${card('Website')}\n## Linked files\n\n- [both](clients/acme/images/both.png)\n`,
+    );
+    const outsider = await as(OUTSIDER).index();
+    const hidden = (p: string) => outsider.hiddenPath?.(p);
+    expect(hidden('clients/acme/files/deck.pdf')).toBe(true);
+    expect(hidden('clients/acme/files/Deck.PDF')).toBe(true);
+    // A visible project links it too: it stays.
+    expect(hidden('clients/acme/images/both.png')).toBe(false);
+    // Linked from elsewhere than files/ or images/ (decision 5): it stays.
+    expect(hidden('clients/acme/reports/x.pdf')).toBe(false);
+    expect(hidden('clients/acme/files/sub/y.pdf')).toBe(false);
+    expect(hidden('clients/acme/files/other.pdf')).toBe(false);
+    expect(hidden('clients/acme/files')).toBe(false);
+    expect(outsider.hiddenPaths).toContain('clients/acme/files/deck.pdf');
+    expect(outsider.hiddenPaths).not.toContain('clients/acme/images/both.png');
+    expect(outsider.keysForPath('clients/acme/files/deck.pdf')).toEqual([]);
+    const member = await as(ON_TEAM).index();
+    expect(member.hiddenPath?.('clients/acme/files/deck.pdf')).toBe(false);
+    expect(member.hiddenPaths).toEqual([]);
+    expect(member.keysForPath('clients/acme/files/deck.pdf')).toEqual(['acme/secret']);
   });
 
   it('caches the masked index for 30 seconds; changed() drops it', async () => {

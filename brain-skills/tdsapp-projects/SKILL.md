@@ -182,7 +182,8 @@ This hides a project in the Cortex app only; its folder still syncs to every Mac
   `requested`) answers exactly what a project that doesn't exist gets, and `email-draft-remove` of a
   draft asked for it answers "That draft isn't waiting any more." `find-ref` and `email-check`
   answer as if no project held its code or its emails, and an email it already holds is refused as
-  "already in another project".
+  "already in another project". `link` of a file inside its folder, to a project they can see, gets
+  "there is no file at <path>", whether or not the file is there.
 - Any value but empty or `everyone` reads as restricted, so a typo never opens a project up. A
   value written by hand (such as `visibility: team only`) is kept on other changes; sending
   `visibility` writes the one standard line.

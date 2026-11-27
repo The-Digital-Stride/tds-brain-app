@@ -72,6 +72,12 @@ to every Mac through the brain. A stronger answer comes later (Ian, 2026-11-27).
    cached listing or the search index. A file linked into the project from elsewhere stays where it is
    and stays visible; it just loses that project's stamp.
    Plain: a hidden project's files don't turn up in Images, Documents, search or Home.
+   Changed in review (security): two kinds of file live outside the folder and are now hidden too. (a) The
+   project's meeting notes, filed at `clients/<client>/call-notes/` with a `project:` line. (b) A file
+   directly in `clients/<client>/files/` or `images/` that only hidden projects link, because that is where
+   the Files tab puts uploads. A file a visible project also links stays visible.
+   Plain: the project's meeting notes and its own uploads are hidden with it. The cost: linking an existing
+   shared client file into a restricted project hides it from people outside, until another project uses it.
 6. **Tasks: one rule.** A task whose project is hidden from you is served, opened or changed only when
    it is assigned to you (in Asked: only when you asked for it). It then shows a "Restricted project" chip
    that links nowhere, with no project or stage text. The rule covers the Open list and its counts, Done,
@@ -102,14 +108,20 @@ to every Mac through the brain. A stronger answer comes later (Ian, 2026-11-27).
 10. **The mark.** A "Restricted" badge (existing chip style, lock icon from the icon set) next to the title
     on the project list row, the project page header, the pickers, search rows and Home's Recent projects.
     The project form gets "Who can see it": "Everyone on the team" / "Only the project team", with the line
-    "Hides this project in Cortex. Its files are still in the brain on every Mac."
+    "A restricted project shows in Cortex only to its team, owners and scouts. It is hidden, not locked: its
+    files are still in the brain on every Mac." (reworded in review: the first wording didn't say owners and
+    scouts still see it). The badge's tip and the Client hint say "Only its team, owners and scouts can see
+    it". The confirm leads with a question ("Restrict <title>?") and its buttons are "Restrict project" /
+    "Keep it open". A closed picker keeps a small lock beside a chosen restricted project.
     Plain: anyone who can see a restricted project is told it is restricted, and what that does and doesn't
     mean.
 11. **The chat assistant.** Hidden projects never appear in the notes Cortex gives the assistant (follows
     from decision 3). A new `PreToolUse` guard denies Read, Grep, Glob, Edit, Write and NotebookEdit aimed at
     a hidden project's folder, and Bash commands that name it, with "That project is restricted to its
     team." It is in this release, in both `PreToolUse` arrays, matches the full folder path only, and isn't
-    installed when nothing is hidden. It is a guard rail: a broad search from the brain's root, or a brain
+    installed when nothing is hidden. Changed in review: wildcards, `{a,b}` braces, split quotes and
+    backslashes are now read as the shell reads them, and Glob patterns and Grep's `glob` are matched folder
+    by folder (`ProjectsIndex.hiddenPaths`). It does not cover meeting notes filed in `call-notes/`. It is a guard rail: a broad search from the brain's root, or a brain
     skill run in chat (such as /gm), can still surface a line from those files, and creating a project
     with the same name answers "that name already exists". The help page says all three.
     Plain: the assistant won't open a hidden project's folder when asked, but this is the weakest part and
@@ -200,15 +212,61 @@ in two rows.
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build (`pnpm check`)
-- [ ] No unintended large deletions: `git diff main --numstat | awk '$2 > 40'`
-- [ ] Domain gates: security expert; UX/UI expert with screenshots
-- [ ] Browser check on port 3878 (demo mode, `/tmp/tba-preview-restricted-projects/`): as a team member not
+- [x] Type-check · [x] Tests · [x] Lint · [x] Build (`pnpm check`)
+- [x] No unintended large deletions: `git diff main --numstat | awk '$2 > 40'`
+- [x] Domain gates: security expert; UX/UI expert with screenshots
+- [x] Browser check on port 3878 (demo mode, `/tmp/tba-preview-restricted-projects/`): as a team member not
   on the project (hidden everywhere: Projects, search, palette, Home, Images, Documents, tasks, pickers), as a
   team member on it, as a scout (badge); the switch and its confirm; the assign note; typed key by key
-- [ ] Help page, picture, `help/whats-new/0.95.0.md`
+- [x] Help page, picture, `help/whats-new/0.95.0.md`
 - [ ] Brain copy after merge: diff the brain's `tdsapp-projects` against `origin/main` first
 
 ## Review outcomes
 
-(Filled at the end.)
+Reviewed 2026-11-27. Every finding below was checked in the code by the lead before it was acted on.
+
+**Correctness (Opus).** 1 confirmed, 0 dropped.
+- The tidy-up moved tasks into a project without the assign block (decision 7). Fixed: the approve loop runs
+  `assignCheck`; a refused task stays in its row. Tested.
+  Plain: tidying old labels can't put someone's task into a project they can't see.
+
+**Security expert (Opus).** 4 confirmed, 0 dropped.
+- Medium: a restricted project's meeting notes stayed visible in Documents. Fixed (decision 5).
+- Medium: files uploaded through its Files tab stayed visible in the client's Documents. Fixed (decision 5).
+- Low: linking a guessed path (to a task, or to a visible project) told you whether a hidden file exists.
+  Fixed in the server and the script: answered exactly as a missing file.
+- Low: the chat guard let wildcards and split quotes through. Fixed (decision 11).
+- Left as accepted limits: `cd` into a parent folder first, a search from the brain's root, brain skills run
+  in chat, and the guard not covering `call-notes/`.
+
+**UI, accessibility and copy (Sonnet).** 5 confirmed, 0 dropped.
+- The confirm said "nobody is affected" when the task read had failed. Fixed: it says Cortex couldn't check,
+  still asks before a removal, and doesn't remember the failed read.
+- No mark on a closed picker. Fixed: a small lock beside the chosen name.
+- Focus was lost after confirming. Fixed.
+- The reason on an unavailable assignee was a hover tip only. Fixed: the tip is gone (a menu never shows
+  one); the mark is in the option's text and the reason in the hint under the box.
+- The help sentence about who sees the choice was wrong. Fixed.
+
+**UX/UI expert (Opus), with screenshots.** 7 confirmed, 0 dropped. 2 blocking, both wording.
+- Blocking: nothing said owners and scouts still see a restricted project. Fixed in the hint, the badge tip
+  and the confirm (decision 10).
+- Blocking: "The team can see it." showed under Client on a restricted project. Fixed.
+- The confirm asked no question. Fixed (decision 10). "Open to anyone" reads "Open to the project team" in a
+  restricted project. The hint is now read out with the choice. The help picture is cropped to the card,
+  with no callout. Its two wrong screenshots were retaken.
+
+**Lead's browser check (demo data, three people, typed key by key).** 58 of 58 pass. It found one thing the
+reviews hadn't: Home dropped the "Restricted project" label on a person's own task. Fixed and tested.
+
+**Re-check of the fix round (Opus).** 2 confirmed, 0 dropped. Both were faults in the fixes themselves.
+- The chat guard refused everyday searches such as `**/*.pdf` once a restricted project held a PDF. Fixed: a
+  wildcard name after `**` is a broad search and runs; naming the hidden file or its folder is still refused.
+- Linking a made-up file with a bad type or shape into a hidden folder got "no file" where any other folder
+  got the script's own refusal, so the answers still told the folders apart. Fixed: the server's check only
+  runs for a path the script would look for (`linkLooksForFile`).
+
+**Checks.** `pnpm check` passes: types, lint, 7,280+ tests, build. No file lost more than 40 lines.
+
+**Not changed, on purpose.** An empty bar shows above the project list when there are no email drafts. It
+is in `ProjectsSheet.tsx`, which this work doesn't touch, and is the same on `main`.

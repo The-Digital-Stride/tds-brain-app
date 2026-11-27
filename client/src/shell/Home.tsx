@@ -47,6 +47,14 @@ import { WhatsNewCard } from './WhatsNewCard.tsx';
 import { placeName, STATE_WORDS, starterSkills, whenWords } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
+/**
+ * Whether a task's line names its place from the project list: a known project, or one hidden from this person,
+ * which reads "Restricted project" as it does in the Tasks drawer (never the client or the folder).
+ */
+function inNamedPlace(t: TodoItem): boolean {
+  return todoProjectKey(t) !== null || t.projectMatch?.how === 'restricted';
+}
+
 function metaParts(
   t: TodoItem,
   today: string,
@@ -671,7 +679,7 @@ export function Home() {
                                     t,
                                     today,
                                     clientName,
-                                    todoProjectKey(t)
+                                    inNamedPlace(t)
                                       ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
                                       : null,
                                   ).map((part, i) => (
@@ -730,7 +738,7 @@ export function Home() {
                         <ul className="drawer-list">
                           {recentTodoRows.slice(0, rowsShown('recentTodos')).map((t) => {
                             const arrived = todoArrival(t, today, boot.identity.slug);
-                            const place = todoProjectKey(t)
+                            const place = inNamedPlace(t)
                               ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
                               : null;
                             return (

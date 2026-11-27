@@ -19,6 +19,7 @@ import { TODO_PROJECT_CAPABILITY } from '../../shared/projects-contract.ts';
 import { createBrainReaders } from './index.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, person } from './test-helpers.ts';
+import { TODO_ATTACH_CAPABILITY } from './todo-skill.ts';
 import { listTodos } from './todos.ts';
 
 const sam = person('sam-example', 'scout');
@@ -1588,6 +1589,60 @@ describe('restricted projects: the task rule and the assign block', () => {
         ),
       ).toBe('internal');
       expect(run).not.toHaveBeenCalled();
+    });
+
+    describe("attach never confirms a hidden project's file", () => {
+      const CARD = 'clients/acme-heating/projects/secret/project.md';
+      const PLAN = 'clients/acme-heating/projects/secret/plan.md';
+      const NOTE = 'clients/acme-heating/call-notes/2026-11-01-secret-kickoff.md';
+      const PLAIN_NOTE = 'clients/acme-heating/call-notes/2026-11-02-catch-up.md';
+      const REPORT = 'clients/acme-heating/reports/monthly.md';
+      const OWN = '20261105-send-report.md';
+
+      function attaching() {
+        const s = setup();
+        const runner = { ...s.runner, capabilities: async () => ['scope', TODO_ATTACH_CAPABILITY] as const };
+        for (const [rel, text] of [
+          [CARD, '---\ntitle: Secret\n---\n'],
+          [PLAN, '# Plan'],
+          [NOTE, `---\nproject: ${SECRET}\n---\n# Kickoff\n`],
+          [PLAIN_NOTE, '# Catch-up\n'],
+          [REPORT, '# Monthly'],
+        ] as const) {
+          mkdirSync(join(s.root, rel, '..'), { recursive: true });
+          writeFileSync(join(s.root, rel), text);
+        }
+        return { ...s, runner };
+      }
+      const attach = (path: string): TodoAction => ({ kind: 'attach', id: OWN, path });
+
+      it('answers a file in a hidden folder, or a hidden call note, exactly as a missing file', async () => {
+        const { root, run, runner, deps } = attaching();
+        const { changeTodo } = await import('./todos.ts');
+        const missing = await refusal(
+          changeTodo(root, attach('clients/acme-heating/projects/secret/nothing.md'), sam, runner, deps),
+        );
+        expect(missing?.code).toBe('bad-request');
+        for (const path of [CARD, PLAN, NOTE])
+          expect(await refusal(changeTodo(root, attach(path), sam, runner, deps)), path).toEqual(missing);
+        // The same when the index can't be read: no project folder's file, and no tagged note, is confirmed.
+        for (const path of [PLAN, NOTE])
+          expect(
+            await refusal(changeTodo(root, attach(path), sam, runner, { ...deps, projects: unreadable })),
+            path,
+          ).toEqual(missing);
+        expect(run).not.toHaveBeenCalled();
+      });
+
+      it('still links a normal file and an untagged call note, and is unchanged with nothing restricted', async () => {
+        const { root, run, runner, deps } = attaching();
+        const { changeTodo } = await import('./todos.ts');
+        await changeTodo(root, attach(REPORT), sam, runner, deps);
+        await changeTodo(root, attach(PLAIN_NOTE), sam, runner, deps);
+        const open: ProjectsIndex = { ...index, hiddenPath: () => false, hiddenCount: 0 };
+        await changeTodo(root, attach(NOTE), sam, runner, { ...deps, projects: async () => open });
+        expect(run).toHaveBeenCalledTimes(3);
+      });
     });
   });
 });

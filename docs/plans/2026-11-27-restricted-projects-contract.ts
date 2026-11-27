@@ -74,10 +74,17 @@ export interface ProjectsOptionsAdds {
 export interface ProjectsIndexAdds {
   /**
    * True when the brain-relative path is, or is inside, any folder of a hidden project: its live or archived
-   * folder, a duplicate folder shadowed by it, a leftover of it, and its moved-from folders. Linked files
-   * outside those folders are NOT hidden. Always false when nothing is hidden.
+   * folder, a duplicate folder shadowed by it, a leftover of it, and its moved-from folders. Also true for a
+   * file directly in `clients/<client>/files/` or `images/` that a hidden card links and no visible card
+   * links (review fix: a restricted project's Files tab uploads land there). Any other linked file outside
+   * those folders is NOT hidden. Always false when nothing is hidden.
    */
   hiddenPath(brainRel: string): boolean;
+  /**
+   * What `hiddenPath` hides, as lower-case brain paths (folders and exact files). Only for matching a glob
+   * against, in the chat guard (review fix); one path is always decided with `hiddenPath`.
+   */
+  hiddenPaths: readonly string[];
   /** True for a hidden project's key and for any old key it moved from. */
   hiddenKey(key: ProjectKey): boolean;
   /** How many projects are hidden from this person. Never sent to the client. */
@@ -146,6 +153,12 @@ export interface TodoChangeDepsAdds {
 // file), `projectFiles`, upload and delete targets (→ not found). When the index can't be read, hide every
 // path under any `clients/*/projects/`, `clients/*/projects-archive/`, `clients/_archive/*/projects/` and
 // `projects/` folder rather than showing all.
+//
+// Review fix: a client project's meeting notes are filed OUTSIDE its folder, at `clients/<client>/call-notes/`,
+// with a `project:` line. Such a note is hidden when `index.resolve(tag, client, 'tds')` answers `restricted`
+// (frontmatter read at serve time, cached by path and version; no file is read when nothing is restricted;
+// index unreadable → any note with a `project:` line is hidden). `isHiddenCallNote` shares the rule with the
+// task attach check, which answers a hidden path exactly as a missing file.
 
 // ---- script (Builder B): brain-skills/tdsapp-projects/scripts/tdsapp-projects.cjs, v0.9.0 ------------------
 //

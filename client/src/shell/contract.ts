@@ -529,6 +529,8 @@ export interface SegProps<T extends string> {
   label: string;
   /** Id of a visible label; when set, it names the group instead of `label` (which is then not read). */
   labelledBy?: string;
+  /** Id of a hint under the choice, read out with the group (a warning the choice carries). */
+  describedBy?: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;

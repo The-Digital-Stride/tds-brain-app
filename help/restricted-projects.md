@@ -26,7 +26,7 @@ A restricted project is hidden in Cortex. Only its Account Owner, its team, and 
 2. Find **Who can see it**. Choose **Only the project team**, or **Everyone on the team** to open it up again.
 3. Save. Cortex asks you to confirm before it hides a project that already exists.
 
-Only the project's Account Owner, an owner or a scout can change this. You won't see the choice if you can't.
+Anyone can choose this when they make a new project. After that, only the project's Account Owner, an owner or a scout can change it, and nobody else sees the choice. Personal projects don't have it: they are already yours alone.
 
 ![The project list, with a Restricted mark beside one project's title.](images/restricted-projects.webp)
 
@@ -34,6 +34,7 @@ Only the project's Account Owner, an owner or a scout can change this. You won't
 
 - A task in a restricted project can only go to someone who can see it. If not, Cortex tells you to add them to the project team first. See [passing a task on](help:passing-todos-on).
 - A task you already hold in a project you can't see stays yours. It shows "Restricted project" in place of the name.
+- Its meeting notes, and files added on its **Files** tab, are hidden with it. A file that a project you can see also uses stays visible.
 - **What it does not do:** this hides a project in Cortex. It is not a lock.
 - The project's files are still in the Brain on every team Mac, so they can be opened outside Cortex.
 - Someone on an older Cortex still sees the project until they update.

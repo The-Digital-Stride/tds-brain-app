@@ -284,7 +284,8 @@ export interface SessionManagerOptions {
    * a reopened chat's saved project is dropped.
    */
   projectsIndex?: () => Promise<
-    Pick<ProjectsIndex, 'cards' | 'byKey'> & Partial<Pick<ProjectsIndex, 'hiddenPath' | 'hiddenCount'>>
+    Pick<ProjectsIndex, 'cards' | 'byKey'> &
+      Partial<Pick<ProjectsIndex, 'hiddenPath' | 'hiddenPaths' | 'hiddenCount'>>
   >;
   /** Each chat's newest context reading, by `sdkSessionId`. Optional: without it nothing is kept. */
   contextReadings?: ContextReadingStore;
@@ -1097,13 +1098,126 @@ function brainRelative(raw: string, cwd: string, roots: readonly string[]): stri
   return null;
 }
 
+/** The same folders as ANY_PROJECT_FOLDER, as glob targets (`*` is any one name). */
+const ANY_PROJECT_TARGETS = [
+  'clients/_archive/*/projects/*',
+  'clients/*/projects/*',
+  'clients/*/projects-archive/*',
+  'projects/*',
+  'projects-archive/*',
+];
+
+/**
+ * A path or shell word with its `{a,b}` alternatives spelled out (at most 64), so a brace holding a `/`
+ * still reads folder by folder. A brace with no comma is left for segmentRegex.
+ */
+function expandBraces(word: string, out: string[] = []): string[] {
+  if (out.length >= 64) return out;
+  const open = word.indexOf('{');
+  if (open >= 0) {
+    const parts: string[] = [];
+    let depth = 0;
+    let start = open + 1;
+    for (let i = open + 1; i < word.length; i++) {
+      const c = word[i];
+      if (c === '{') depth++;
+      else if (c === ',' && depth === 0) {
+        parts.push(word.slice(start, i));
+        start = i + 1;
+      } else if (c === '}' && depth-- === 0) {
+        if (parts.length === 0) break;
+        parts.push(word.slice(start, i));
+        for (const p of parts) expandBraces(`${word.slice(0, open)}${p}${word.slice(i + 1)}`, out);
+        return out;
+      }
+    }
+  }
+  out.push(word);
+  return out;
+}
+
+/** A hidden client file among the targets (`ProjectsIndex.hiddenPaths`): the rest are project folders. */
+const HIDDEN_FILE_TARGET = /^clients\/[^/]+\/(?:files|images)\/[^/]+$/;
+
+/**
+ * Whether a brain-relative glob could name `target` (a hidden folder or file, lower case, `*` for any one
+ * name) or anything inside it, comparing folder by folder. `**` inside the target's own parent folder
+ * searches it; higher up it stands only for the folders above, so a part after it has to name the target
+ * itself. A broad `**\/*.md` from the brain's root or a client's folder still runs: like `grep -r` there,
+ * an accepted limit of a guard rail.
+ */
+function globReaches(pattern: string, target: string): boolean {
+  const ps = pattern.split('/').filter((s) => s !== '' && s !== '.');
+  const ts = target.split('/').filter(Boolean);
+  const last = ts.length - 1;
+  // A hidden file (not a folder): `**` followed by a wildcard name, as in `**/*.pdf`, is the same broad
+  // search the comment above accepts, and must keep running or every "find my PDFs" would be refused once a
+  // restricted project holds one. Naming the file itself after `**`, or its own folder, is still refused.
+  const file = HIDDEN_FILE_TARGET.test(target);
+  const go = (i: number, j: number): boolean => {
+    if (j === ts.length) return true;
+    if (i === ps.length) return false;
+    const p = ps[i] as string;
+    if (p === '**') {
+      if (j >= last) return true;
+      for (let k = j; k <= last; k++) {
+        if (file && k === last && GLOB_CHARS.test(ps[i + 1] ?? '')) continue;
+        if (go(i + 1, k)) return true;
+      }
+      return false;
+    }
+    const t = ts[j] as string;
+    return (t === '*' || fitsSeg(p, t)) && go(i + 1, j + 1);
+  };
+  return go(0, 0);
+}
+
+/**
+ * The words of a command as the shell reads them: quoted pieces joined to their neighbours with the quotes
+ * taken off, and every backslash read as escaping the next character (in double quotes too: when unsure,
+ * the stricter reading). Split on unquoted spaces and operators.
+ */
+function unquotedWords(command: string): string[] {
+  const words: string[] = [];
+  let word = '';
+  let started = false;
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i] as string;
+    if (quote === "'") {
+      if (c === "'") quote = null;
+      else word += c;
+    } else if (c === '\\') {
+      word += command[i + 1] ?? '';
+      i++;
+      started = true;
+    } else if (quote === '"') {
+      if (c === '"') quote = null;
+      else word += c;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+      started = true;
+    } else if (/\s/.test(c) || '|;&<>()'.includes(c)) {
+      if (started || word !== '') words.push(word);
+      word = '';
+      started = false;
+    } else word += c;
+  }
+  if (started || word !== '') words.push(word);
+  return words;
+}
+
 /**
  * Restricted projects, decision 11: whether a call aims at a hidden project's folder. File tools by their
- * path fields (Grep and Glob search `cwd` when they name none; a Glob's pattern counts as a path, a Grep's
- * is a regex over file text and doesn't). Bash by every path-shaped word of its command, with any brain
- * root taken off first so a root with a space in it still reads. `hidden` decides on a brain-relative path,
- * whole folder names only, so a look-alike folder beside a hidden one is never refused. A guard rail, not a
- * wall: a broad search from the brain's root can still reach those files' text.
+ * path fields (Grep and Glob search `cwd` when they name none; a Glob's pattern counts as a path read from
+ * the folder it searches, and so does a Grep's `glob`, which without a `/` matches at any depth; a Grep's
+ * pattern is a regex over file text and doesn't). Bash by every path-shaped word of its command, read both
+ * as written and as the shell reads it (quotes joined, backslashes resolved), with any brain root taken off
+ * first so a root with a space in it still reads. Braces are spelled out. `hidden` decides on a plain
+ * brain-relative path, whole folder names only; a glob is matched folder by folder against `targets`
+ * (`ProjectsIndex.hiddenPaths`), so a look-alike folder beside a hidden one is never refused unless the
+ * pattern could match the hidden one too. A guard rail, not a wall: a broad search from the brain's root,
+ * a `cd` into a parent first or a shell variable can still reach those files.
  */
 export function reachesHiddenProject(
   toolName: string,
@@ -1111,12 +1225,16 @@ export function reachesHiddenProject(
   cwd: string,
   roots: readonly string[],
   hidden: (brainRel: string) => boolean,
+  targets: readonly string[] = [],
 ): boolean {
   if (!isRec(input)) return false;
-  const hit = (raw: string, from = cwd) => {
-    const rel = brainRelative(raw, from, roots);
-    return rel !== null && rel !== '' && hidden(rel);
+  const reaches = (rel: string | null) => {
+    if (rel === null || rel === '') return false;
+    if (hidden(rel)) return true;
+    return GLOB_CHARS.test(rel) && targets.some((t) => globReaches(rel, t.toLowerCase()));
   };
+  const hit = (raw: string, from = cwd) =>
+    expandBraces(raw).some((alt) => reaches(brainRelative(alt, from, roots)));
   if (RESTRICTED_FILE_TOOLS.has(toolName)) {
     const paths: string[] = [];
     for (const k of ['file_path', 'notebook_path', 'path']) {
@@ -1126,10 +1244,12 @@ export function reachesHiddenProject(
     const searches = toolName === 'Grep' || toolName === 'Glob';
     if (searches && paths.length === 0) paths.push(cwd);
     if (paths.some((p) => hit(p))) return true;
-    if (toolName === 'Glob' && typeof input.pattern === 'string') {
-      // The pattern is read from the folder it searches.
-      const base = cleanPath(paths[0] as string);
-      return hit(input.pattern, base.startsWith('/') ? base : `${cwd}/${base}`);
+    const base = cleanPath(paths[0] ?? cwd);
+    const from = base.startsWith('/') ? base : `${cwd}/${base}`;
+    if (toolName === 'Glob' && typeof input.pattern === 'string') return hit(input.pattern, from);
+    if (toolName === 'Grep' && typeof input.glob === 'string' && input.glob.trim() !== '') {
+      const glob = cleanPath(input.glob);
+      return hit(glob.includes('/') ? glob : `**/${glob}`, from);
     }
     return false;
   }
@@ -1141,12 +1261,17 @@ export function reachesHiddenProject(
       command = command.replace(new RegExp(`${r}(?=/|["'\\s]|$)/?`, 'gi'), '');
     }
   }
-  const words = shellWords(command).flatMap((w) => [w, ...w.split(/[=:]/).slice(1)]);
+  const words = [...shellWords(command), ...unquotedWords(command)].flatMap((w) => [
+    w,
+    ...w.split(/[=:]/).slice(1),
+  ]);
   // A word is read as brain-relative (an absolute brain path, once its root is gone) and from `cwd`.
-  return words.some((w) => {
-    const p = cleanPath(w);
-    return p !== '' && !p.startsWith('/') && (hidden(p) || hit(p));
-  });
+  return words.some((w) =>
+    expandBraces(w).some((alt) => {
+      const p = cleanPath(alt);
+      return p !== '' && !p.startsWith('/') && (reaches(p) || hit(p));
+    }),
+  );
 }
 
 /** The TDS logo sprite the branded copy uses (R5), read from the brain; never larger than this. */
@@ -3257,17 +3382,20 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
       if (tool !== 'Bash' && !RESTRICTED_FILE_TOOLS.has(tool)) return { continue: true };
       let hidden: (rel: string) => boolean;
+      let targets: readonly string[];
       try {
         const index = await opts.projectsIndex();
         if (!index.hiddenCount) return { continue: true };
         hidden = (rel) => isHiddenPath(index, rel);
+        targets = index.hiddenPaths ?? [];
       } catch {
         hidden = (rel) => ANY_PROJECT_FOLDER.test(rel);
+        targets = ANY_PROJECT_TARGETS;
       }
       const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : opts.brainRoot;
       let reaches = true;
       try {
-        reaches = reachesHiddenProject(tool, input.tool_input, cwd, brainRoots, hidden);
+        reaches = reachesHiddenProject(tool, input.tool_input, cwd, brainRoots, hidden, targets);
       } catch {
         // A thrown hook would let the call run: refuse instead.
       }

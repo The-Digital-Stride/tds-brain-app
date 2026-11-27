@@ -1,6 +1,6 @@
 import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
-import { mayRestrict } from '../../../../shared/project-visibility.ts';
+import { mayRestrict, RESTRICTED_WHO } from '../../../../shared/project-visibility.ts';
 import {
   PROJECT_SLUG_MAX,
   PROJECT_TITLE_MAX,
@@ -30,7 +30,10 @@ import {
   type MoveState,
   mergeOntoLatest,
   personName,
+  RESTRICT_MEANS,
+  restrictHeading,
   restrictQuestion,
+  restrictUncheckedQuestion,
   STATUS_WORDS,
   STATUSES,
   serviceWords,
@@ -43,6 +46,10 @@ import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
 
 /** Form order, so the first invalid field gets focus. Ids match `id(name)` below. */
+// Shown under "Who can see it" whichever way it is set: who still sees a restricted project, and that hiding it in
+// Cortex is not a lock (the plan's accepted limit, said where the choice is made).
+const VISIBILITY_HINT =
+  'A restricted project shows in Cortex only to its team, owners and scouts. It is hidden, not locked: its files are still in the brain on every Mac.';
 const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brief', 'team'] as const;
 
 /** Shown after an edit when the card was saved but the updates log entry wasn't. */
@@ -136,8 +143,10 @@ export function ProjectForm({
   const [kindNote, setKindNote] = useState('');
   const [reloaded, setReloaded] = useState('');
   // The question before restricting a project, or before taking someone with open tasks off a restricted one.
-  const [restrictAsk, setRestrictAsk] = useState<{ text: string; person?: string } | null>(null);
-  const openTaskPeople = useRef<Promise<(string | null)[]> | null>(null);
+  const [restrictAsk, setRestrictAsk] = useState<{ question: string; text: string; person?: string } | null>(
+    null,
+  );
+  const openTaskPeople = useRef<Promise<(string | null)[] | null> | null>(null);
   const initial = useRef(JSON.stringify(v));
   const seen = useRef<ProjectCard | null>(card);
   const base = useId();
@@ -215,27 +224,56 @@ export function ProjectForm({
     );
   };
 
-  // Who has open tasks in this project (read when first needed; a new project has none).
-  const assigneesNow = (): Promise<(string | null)[]> => {
+  // Who has open tasks in this project (read when first needed; a new project has none). Null when the read failed:
+  // nobody was checked, so the question says so, and a failed read isn't kept (the next ask reads again).
+  const assigneesNow = (): Promise<(string | null)[] | null> => {
     if (!card) return Promise.resolve([]);
     if (!openTaskPeople.current) {
-      openTaskPeople.current = api.projectTodos(card.key).then(
+      const read: Promise<(string | null)[] | null> = api.projectTodos(card.key).then(
         (r) => r.todos.map((t) => t.assignee),
-        () => [],
+        () => {
+          if (openTaskPeople.current === read) openTaskPeople.current = null;
+          return null;
+        },
       );
+      openTaskPeople.current = read;
     }
     return openTaskPeople.current;
   };
   const askRestrict = async (next: { owner: string; team: string[] }, who: string | null) => {
+    const assignees = await assigneesNow();
+    const project = { owner: next.owner || null, team: next.team };
+    if (assignees === null) {
+      // Someone who would still see the project (its Account Owner, an owner or scout) needs no question.
+      if (who !== null && whoStopsSeeing([who], project, list?.seesAll, team).length === 0) return false;
+      setRestrictAsk(
+        who === null
+          ? { question: restrictHeading(v.title), text: `${RESTRICT_MEANS} ${restrictUncheckedQuestion()}` }
+          : {
+              question: restrictHeading(v.title, personName(who, team)),
+              text: restrictUncheckedQuestion(personName(who, team)),
+              person: who,
+            },
+      );
+      return true;
+    }
     const found = whoStopsSeeing(
-      who === null ? await assigneesNow() : (await assigneesNow()).filter((a) => a === who),
-      { owner: next.owner || null, team: next.team },
+      who === null ? assignees : assignees.filter((a) => a === who),
+      project,
       list?.seesAll,
       team,
     );
     // Taking someone off the team asks only when it matters: they have open tasks and would lose sight of it.
     if (who !== null && found.length === 0) return false;
-    setRestrictAsk({ text: restrictQuestion(found, who === null), ...(who !== null ? { person: who } : {}) });
+    setRestrictAsk(
+      who === null
+        ? { question: restrictHeading(v.title), text: `${RESTRICT_MEANS} ${restrictQuestion(found, true)}` }
+        : {
+            question: restrictHeading(v.title, personName(who, team)),
+            text: restrictQuestion(found, false),
+            person: who,
+          },
+    );
     return true;
   };
   const setVisibility = (visibility: FormValues['visibility']) => {
@@ -257,12 +295,16 @@ export function ProjectForm({
       if (!asked) set({ team: next });
     });
   };
+  // The line under Client: it must never say "the team" of a project the form is restricting.
+  const whoSees = v.visibility === 'restricted' ? `${RESTRICTED_WHO}.` : 'The team can see it.';
   const answerRestrict = () => {
     const ask = restrictAsk;
     setRestrictAsk(null);
     if (!ask) return;
     if (ask.person !== undefined) set({ team: v.team.filter((x) => x !== ask.person) });
     else set({ visibility: 'restricted' });
+    // The question is gone: put focus back on the control that raised it, as cancelling does.
+    keepFocus.restore();
   };
 
   const submit = async (e: FormEvent) => {
@@ -423,7 +465,7 @@ export function ProjectForm({
               {canMove === 'yes'
                 ? card.space === 'personal'
                   ? 'Only you can see it. You can move it to a client.'
-                  : 'The team can see it.'
+                  : whoSees
                 : canMove === 'no-skill'
                   ? MOVE_NO_SKILL
                   : canMove === 'legacy'
@@ -460,7 +502,7 @@ export function ProjectForm({
               ) : null}
             </div>
             {justMe ? null : (
-              <Field id={id('client')} label="Client" error={errors.client} hint="The team can see it.">
+              <Field id={id('client')} label="Client" error={errors.client} hint={whoSees}>
                 <SearchSelect
                   id={id('client')}
                   aria-invalid={errors.client ? true : undefined}
@@ -573,6 +615,7 @@ export function ProjectForm({
             <Seg
               label="Who can see it"
               labelledBy={id('visibility-label')}
+              describedBy={id('visibility-hint')}
               value={v.visibility}
               options={[
                 { value: 'everyone', label: 'Everyone on the team' },
@@ -581,7 +624,7 @@ export function ProjectForm({
               onChange={setVisibility}
             />
             <p className="hint" id={id('visibility-hint')}>
-              Hides this project in Cortex. Its files are still in the brain on every Mac.
+              {VISIBILITY_HINT}
             </p>
           </div>
         ) : null}
@@ -590,9 +633,14 @@ export function ProjectForm({
             // A new question is a new question: Keep takes focus again.
             key={restrictAsk.person ?? 'switch'}
             label="Who will see this project"
-            text={restrictAsk.text}
-            action={restrictAsk.person !== undefined ? 'Take them off the team' : 'Only the project team'}
-            safe={restrictAsk.person !== undefined ? 'Keep them on the team' : 'Keep it open to everyone'}
+            text={
+              <>
+                <strong className="proj-move-q">{restrictAsk.question}</strong>
+                <span className="proj-move-text">{restrictAsk.text}</span>
+              </>
+            }
+            action={restrictAsk.person !== undefined ? 'Take them off the team' : 'Restrict project'}
+            safe={restrictAsk.person !== undefined ? 'Keep them on the team' : 'Keep it open'}
             variant="primary"
             busy={false}
             onConfirm={answerRestrict}

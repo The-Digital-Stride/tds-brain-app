@@ -252,4 +252,40 @@ describe('library search: restricted projects (plan 2026-11-27, decision 5)', ()
     const open = await lib(root, { projects: hiding('nowhere') }).search('launch', 'document');
     expect(open.hits.map((h) => h.item.path)).toEqual(none.hits.map((h) => h.item.path));
   });
+
+  describe('call notes filed outside the project folder', () => {
+    const notes = {
+      'clients/acme/call-notes/2026-11-01-launch-secret.md': '---\nproject: secret\n---\n# Launch secret\n',
+      'clients/acme/call-notes/2026-11-02-launch-web.md': '---\nproject: acme/web\n---\n# Launch web\n',
+      'clients/acme/call-notes/2026-11-03-launch-plain.md': '# Launch plain\n',
+    };
+    const index =
+      (restricted: boolean): (() => Promise<ProjectsIndex>) =>
+      async () => ({
+        ...(await hiding(SECRET)()),
+        resolve: (value, client) =>
+          restricted && (value === 'secret' || value === `${client}/secret`)
+            ? { how: 'restricted' }
+            : { how: 'none' },
+      });
+
+    it("never finds a hidden project's notes for an outsider, and finds them for someone who can see it", async () => {
+      const root = brain(notes);
+      expect((await ids(lib(root, { projects: index(true) }), 'launch')).sort()).toEqual([
+        '2026-11-02-launch-web.md',
+        '2026-11-03-launch-plain.md',
+      ]);
+      expect(await ids(lib(root, { projects: index(false) }), 'launch')).toHaveLength(3);
+    });
+
+    it("finds only untagged notes when the index can't be read", async () => {
+      const root = brain(notes);
+      const l = lib(root, {
+        projects: async () => {
+          throw new Error('no index');
+        },
+      });
+      expect(await ids(l, 'launch')).toEqual(['2026-11-03-launch-plain.md']);
+    });
+  });
 });

@@ -106,9 +106,12 @@ export interface LibraryOptions {
    * at serve time and never cached with the listing: a card edit changes items cached in another scope.
    * Missing, or failing: items carry no `projects`.
    * Restricted projects (plan 2026-11-27, decision 5): also leaves a hidden project's files out of every
-   * answer, at serve time. Failing: every project folder's files are left out (decision 4).
+   * answer, at serve time, and its call notes filed outside its folder (`isHiddenCallNote`). Failing: every
+   * project folder's files, and every call note naming a project, are left out (decision 4).
    */
   projects?: () => Promise<ProjectsIndex>;
+  /** Tests count the call notes whose frontmatter is read to judge them. */
+  onNoteRead?: (rel: string) => void;
 }
 
 /** Names and paths the script refuses to delete (shared/files-contract.ts), checked case-insensitively. */
@@ -263,7 +266,86 @@ interface Found {
 /** What serving reads from the projects index now (see `serveView`). */
 interface ServeView {
   keys: ((rel: string) => ProjectKey[]) | null;
+  /** A hidden project's path: in its folder, or a call note of it that `judge` has already read. */
   hidden: (rel: string) => boolean;
+  /**
+   * Reads the frontmatter of the call notes among `items` (cached by path and version), so `hidden` then
+   * answers for them too. Every answer that filters with `hidden` calls this first. Does nothing when
+   * nothing is restricted.
+   */
+  judge: (items: readonly NoteItem[]) => Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Restricted projects: call notes (plan 2026-11-27, decisions 4 and 5). A client project's meeting notes
+// are filed outside its folder, at `clients/<client>/call-notes/`, and name it in a `project:` line, so the
+// folder rule alone would show them. They are judged at serve time from that line, never in a listing.
+// ---------------------------------------------------------------------------
+
+/** What judging a call note needs from an item: its path and what says the file changed. */
+type NoteItem = Pick<LibraryItem, 'path' | 'version' | 'bytes' | 'modified'>;
+
+/** How much of a call note is read for its frontmatter. */
+const NOTE_HEAD_BYTES = 16 * 1024;
+/** Past this many cached answers the cache starts again: a brain has far fewer call notes. */
+const NOTE_CACHE_MAX = 20_000;
+
+/** Which projects hide call notes: the index (resolving the `project:` line), or `'unread'` (any line). */
+type NoteRule = ProjectsIndex | 'unread';
+
+/** The client a Markdown file under `clients/<client>/call-notes/` (any depth) is filed for, else null. */
+export function callNoteClient(rel: string): string | null {
+  const segs = rel.split('/');
+  if (segs.length < 4 || segs[0]?.toLowerCase() !== 'clients' || segs[2]?.toLowerCase() !== 'call-notes')
+    return null;
+  const client = segs[1] ?? '';
+  return client !== '' && extOf(segs[segs.length - 1] ?? '') === 'md' ? client : null;
+}
+
+/**
+ * A call note's `project:` value ('' when it names none), or null when it can't be read, or its
+ * frontmatter runs past what was read (the line could be further down).
+ */
+async function readNoteTag(abs: string): Promise<string | null> {
+  const read = await readCapped(abs, NOTE_HEAD_BYTES);
+  if (!read) return null;
+  const text = read.data.toString('utf8');
+  if (read.truncated) {
+    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n');
+    if (lines[0]?.trim() === '---' && !lines.slice(1).some((l) => l.trim() === '---')) return null;
+  }
+  return asString(parseFrontmatter(text).data.project).trim();
+}
+
+/** Whether a call note with this tag is hidden. Unreadable is hidden: something is restricted (decision 4). */
+function noteHiddenBy(rule: NoteRule, client: string, tag: string | null): boolean {
+  if (tag === null) return true;
+  if (tag === '') return false;
+  return rule === 'unread' || rule.resolve(tag, client, 'tds').how === 'restricted';
+}
+
+/** The rule to judge call notes by, or null when none can be hidden (nothing restricted: no file is read). */
+function noteRuleOf(index: ProjectsIndex | 'unread' | null): NoteRule | null {
+  if (index === null) return null;
+  if (index === 'unread') return 'unread';
+  return (index.hiddenCount ?? 0) > 0 ? index : null;
+}
+
+/**
+ * Restricted projects: whether `rel` (a clean path from the brain's root) is a call note of a project hidden
+ * from this person, read now. `index` as the to-do readers hold it: null (none given: nothing hidden), or
+ * `'unread'` when it failed (any call note naming a project is hidden). For one-off checks (linking a file
+ * to a task); the library's own answers judge through its cache.
+ */
+export async function isHiddenCallNote(
+  root: string,
+  index: ProjectsIndex | 'unread' | null,
+  rel: string,
+): Promise<boolean> {
+  const client = callNoteClient(rel);
+  const rule = noteRuleOf(index);
+  if (client === null || rule === null) return false;
+  return noteHiddenBy(rule, client, await readNoteTag(join(root, ...rel.split('/'))));
 }
 
 const PERSONAL_NAME = 'My personal files';
@@ -1002,17 +1084,49 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
    * read: every project folder hidden, since nobody can say which are restricted (decision 4).
    */
   async function serveView(): Promise<ServeView> {
-    if (!opts.projects) return { keys: null, hidden: () => false };
+    if (!opts.projects) return { keys: null, hidden: () => false, judge: async () => {} };
+    let index: ProjectsIndex | 'unread';
     try {
-      const index = await opts.projects();
-      return {
-        // A hidden project never stamps a file, even one linked from outside its folder.
-        keys: (rel) => index.keysForPath(rel).filter((k) => !isHiddenKey(index, k)),
-        hidden: (rel) => isHiddenPath(index, rel),
-      };
+      index = await opts.projects();
     } catch {
-      return { keys: null, hidden: isInSharedProjectFolder };
+      index = 'unread';
     }
+    const inFolder = index === 'unread' ? isInSharedProjectFolder : (rel: string) => isHiddenPath(index, rel);
+    const rule = noteRuleOf(index);
+    const notes = new Set<string>();
+    const judge = async (items: readonly NoteItem[]): Promise<void> => {
+      if (rule === null) return;
+      const todo = items.filter(
+        (i) => callNoteClient(i.path) !== null && !notes.has(i.path) && !inFolder(i.path),
+      );
+      await pool(todo, META_CONCURRENCY, async (i) => {
+        const client = callNoteClient(i.path) ?? '';
+        const version = i.version ?? `${i.bytes}-${i.modified}`;
+        if (noteHiddenBy(rule, client, await noteTag(i.path, version))) notes.add(i.path);
+      });
+    };
+    const hidden = (rel: string) => inFolder(rel) || notes.has(rel);
+    if (index === 'unread') return { keys: null, hidden, judge };
+    const read = index;
+    return {
+      // A hidden project never stamps a file, even one linked from outside its folder.
+      keys: (rel) => read.keysForPath(rel).filter((k) => !isHiddenKey(read, k)),
+      hidden,
+      judge,
+    };
+  }
+
+  /** Each call note's `project:` value by path, for the version it was read at (null: unreadable, not kept). */
+  const noteTags = new Map<string, { version: string; tag: string }>();
+  async function noteTag(rel: string, version: string): Promise<string | null> {
+    const hit = noteTags.get(rel);
+    if (hit && hit.version === version) return hit.tag;
+    opts.onNoteRead?.(rel);
+    const tag = await readNoteTag(join(root, ...rel.split('/')));
+    if (tag === null) return null;
+    if (noteTags.size >= NOTE_CACHE_MAX) noteTags.clear();
+    noteTags.set(rel, { version, tag });
+    return tag;
   }
 
   /** `item` with the projects it belongs to, as of now. The cached item is never changed. */
@@ -1021,12 +1135,14 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   }
 
   /** The items to serve: a hidden project's left out, the rest stamped. */
-  function servedItems(items: LibraryItem[], view: ServeView): LibraryItem[] {
+  async function servedItems(items: LibraryItem[], view: ServeView): Promise<LibraryItem[]> {
+    await view.judge(items);
     return items.filter((i) => !view.hidden(i.path)).map((i) => withProjects(i, view));
   }
 
   /** A listing without a hidden project's files, or its groups (a group can be named after its folder). */
-  function withoutHidden(listing: LibraryListing, view: ServeView): LibraryListing {
+  async function withoutHidden(listing: LibraryListing, view: ServeView): Promise<LibraryListing> {
+    await view.judge(listing.items);
     const items = listing.items.filter((i) => !view.hidden(i.path));
     if (items.length === listing.items.length) return listing;
     const left = new Set(items.map((i) => i.group));
@@ -1193,16 +1309,19 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const { listings, partial } = await gatherListings();
     const view = await serveView();
 
-    const found: { hit: LibrarySearchHit; tier: number; at: number }[] = [];
+    const matched: { hit: LibrarySearchHit; tier: number; at: number }[] = [];
     for (const { scope, items } of listings) {
       const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
       for (const item of items) {
-        if (item.kind !== kind || view.hidden(item.path)) continue;
+        if (item.kind !== kind) continue;
         const tier = searchTier(item, scope.name, query, qWords);
         if (tier === null) continue;
-        found.push({ hit: { item, scope: info }, tier, at: Date.parse(item.modified) || 0 });
+        matched.push({ hit: { item, scope: info }, tier, at: Date.parse(item.modified) || 0 });
       }
     }
+    // Only the matches are judged, so a search reads no call note it wouldn't show.
+    await view.judge(matched.map((f) => f.hit.item));
+    const found = matched.filter((f) => !view.hidden(f.hit.item.path));
     found.sort(
       (a, b) =>
         a.tier - b.tier ||
@@ -1228,7 +1347,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     if (project && !keys) return { files: [], partial: false };
     // Personal files are never listed unasked, so their folder is never built for this either.
     const { listings, partial } = await gatherListings((scope) => scope.kind !== 'personal');
-    const found: { hit: LibrarySearchHit; at: number }[] = [];
+    const matched: { hit: LibrarySearchHit; at: number }[] = [];
     for (const { scope, items } of listings) {
       const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
       for (const item of items) {
@@ -1241,9 +1360,12 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           if (changed === undefined) continue;
           at = Date.parse(changed) || 0;
         }
-        found.push({ hit: { item: projects ? { ...item, projects } : item, scope: info }, at });
+        matched.push({ hit: { item: projects ? { ...item, projects } : item, scope: info }, at });
       }
     }
+    // Judged after the other filters, so only call notes that could be shown are read.
+    await view.judge(matched.map((f) => f.hit.item));
+    const found = matched.filter((f) => !view.hidden(f.hit.item.path));
     found.sort(
       (a, b) => b.at - a.at || a.hit.item.path.localeCompare(b.hit.item.path, 'en', { sensitivity: 'base' }),
     );
@@ -1258,6 +1380,9 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       const view = await serveView();
       const hit = await itemForPath(rel, view.hidden);
       if (!hit?.item) return hit;
+      // A hidden project's call note answers as one that isn't there: the same key, no item.
+      await view.judge([hit.item]);
+      if (view.hidden(hit.item.path)) return { ...hit, item: null };
       const scope = await findScope(hit.scope.id);
       return scope ? { ...hit, item: withProjects(await deletableItem(scope, hit.item), view) } : hit;
     } catch {
@@ -1296,7 +1421,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         if (!scope) return null;
         const entry = await entryFor(scope);
         const view = await serveView();
-        const listing = withoutHidden(await withDeletable(scope, entry), view);
+        const listing = await withoutHidden(await withDeletable(scope, entry), view);
         const keys = view.keys;
         return keys
           ? { ...listing, items: listing.items.map((i) => ({ ...i, projects: keys(i.path) })) }
@@ -1322,7 +1447,11 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         if (!item || view.hidden(item.path)) return null;
         // `canDelete` goes on before `check`, never on a copy after: readChecked/openChecked trust only
         // the very object `check` returned.
-        return await check(scope, withProjects(await deletableItem(scope, item), view), view.hidden);
+        const file = await check(scope, withProjects(await deletableItem(scope, item), view), view.hidden);
+        if (!file) return null;
+        // A call note is judged as it is on disk now (its fresh version), not as it was listed.
+        await view.judge([file.item]);
+        return view.hidden(file.item.path) ? null : file;
       } catch {
         return null;
       }
@@ -1345,7 +1474,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         if (scope && !isNeverListed(card.folder)) {
           const entry = await entryFor(scope);
           const view = await serveView();
-          for (const item of servedItems(
+          for (const item of await servedItems(
             (await withDeletable(scope, entry)).items.filter((i) => i.path.toLowerCase().startsWith(folder)),
             view,
           ))

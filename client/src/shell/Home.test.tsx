@@ -401,7 +401,7 @@ describe('Home', () => {
       if (!section) throw new Error('no card');
       const rows = within(section).getAllByRole('listitem');
       expect(
-        within(rows[0] as HTMLElement).getByText('Restricted: only the project team can see it'),
+        within(rows[0] as HTMLElement).getByText('Restricted: only its team, owners and scouts can see it'),
       ).toBeTruthy();
       expect(within(rows[1] as HTMLElement).queryByText(/^Restricted/)).toBeNull();
     });
@@ -1332,6 +1332,19 @@ describe('Home: recent cards', () => {
       projectChoice.set('northwind/site');
       await renderHome();
       expect(await card('Recent tasks').findByText('No tasks of yours in this project.')).toBeTruthy();
+    });
+
+    it('says "Restricted project", never the client, on a task whose project is hidden from this person', async () => {
+      withTodos([
+        rtodo('mine.md', 'Book the room', '2026-11-20', {
+          client: 'northwind',
+          projectMatch: { how: 'restricted' },
+        }),
+      ]);
+      await renderHome();
+      const row = (await card('Recent tasks').findByText('Book the room')).closest('li') as HTMLElement;
+      expect(row.textContent).toContain('Restricted project');
+      expect(row.textContent).not.toContain('Northwind');
     });
 
     it('Working on narrows it', async () => {

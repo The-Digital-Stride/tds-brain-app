@@ -263,15 +263,13 @@ describe('SaveToProject', () => {
       projectsStore.apply(after);
       show();
       await screen.findByLabelText('Objective');
-      expect(screen.getByText('Restricted: only the project team can see it')).toBeTruthy();
+      expect(screen.getByText('Restricted: only its team, owners and scouts can see it')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
       await screen.findByRole('heading', { name: 'Saved' });
       const who = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
       const sam = within(who).getByRole('option', { name: /Sam Roe/ }) as HTMLOptionElement;
       expect(sam.disabled).toBe(true);
-      expect(sam.title).toBe(
-        "Sam Roe isn't on this restricted project. Add them to the project team first, then give them the task.",
-      );
+      expect(sam.textContent).toBe('Sam Roe (not on this project)');
       expect((within(who).getByRole('option', { name: 'Jo Lee' }) as HTMLOptionElement).disabled).toBe(false);
     });
 

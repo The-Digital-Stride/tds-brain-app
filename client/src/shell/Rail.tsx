@@ -94,7 +94,8 @@ function Item({
     >
       <Icon name={icon} />
       {/* Icons only: the count rides on the icon. The aria-label already says the number. */}
-      {count && !wide ? (
+      {/* With news, the red count alone rides on the icon: two badges hid it (UX gate R2). */}
+      {count && !wide && !freshCount ? (
         <span className="rail-badge" aria-hidden="true">
           {count}
         </span>

@@ -19,6 +19,8 @@ export interface AskedPlace {
 export interface AskedUpdate {
   todo: AskedTodo;
   line: { text: string; at: string; more: number };
+  /** Opened this visit and nothing newer since: the row stays, without its dot. */
+  seen?: boolean;
 }
 
 /** The order previous and next walk in this tab: the updated ones first, then waiting, then done. */
@@ -35,10 +37,13 @@ function AskedRow({
   place,
   onProject,
   line,
+  seen,
 }: {
   todo: AskedTodo;
   /** Set in the Updated fold: the same dot as a new row, and the newest change. */
   line?: AskedUpdate['line'];
+  /** The row's change has been seen this visit: no dot. */
+  seen?: boolean;
   open: boolean;
   onOpen: (t: AskedTodo) => void;
   place: AskedPlace | null;
@@ -50,9 +55,9 @@ function AskedRow({
   return (
     <li className="todo" data-panel-open={open ? 'true' : undefined}>
       <div className="todo-main">
-        {line ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
+        {line && !seen ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
-          {line ? <span className="visually-hidden">Updated. </span> : null}
+          {line && !seen ? <span className="visually-hidden">Updated. </span> : null}
           <button
             type="button"
             className="line-title todo-open"
@@ -225,11 +230,12 @@ export function AskedList({
           }
         >
           <ul className="drawer-list">
-            {updated.map(({ todo, line }) => (
+            {updated.map(({ todo, line, seen }) => (
               <AskedRow
                 key={todo.key}
                 todo={todo}
                 line={line}
+                seen={seen}
                 open={openKey === todo.key}
                 onOpen={onOpen}
                 place={placeOf ? placeOf(todo) : null}

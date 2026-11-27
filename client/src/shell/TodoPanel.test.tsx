@@ -1647,8 +1647,8 @@ describe('task change notices', () => {
         .getAllByRole('button', { name: /^(First|Second)$/ })
         .map((b) => b.textContent);
       expect(titles).toEqual(['Second', 'First']);
-      expect(within(rowOf('Second')).getByText(/^Ben McAdam added an update · .+ and 1 more$/)).toBeTruthy();
-      const single = within(rowOf('First')).getByText(/^Ben McAdam added an update · .+$/);
+      expect(within(rowOf('Second')).getByText(/^Ben added an update · .+ and 1 more$/)).toBeTruthy();
+      const single = within(rowOf('First')).getByText(/^Ben added an update · .+$/);
       expect(single.textContent).not.toContain('more');
       // Not repeated in the groups below.
       expect(screen.getAllByRole('button', { name: 'First' })).toHaveLength(1);
@@ -1748,13 +1748,21 @@ describe('task change notices', () => {
       const t = todo('a.md', 'First', { updates: [entry('One.', 30)] });
       withNotices([t, todo('c.md', 'Third')]);
       const view = mount();
+      // Before it is opened, the row has its dot and its hidden word.
+      expect(
+        screen.getByRole('button', { name: 'First' }).closest('li')?.querySelector('.todo-new'),
+      ).toBeTruthy();
       await open('First');
       writeMarker(view, t);
       press('Escape');
       const updated = [...document.querySelectorAll('.fold')].find(
         (f) => f.querySelector('.fold-title')?.textContent === 'Updated',
       ) as HTMLElement;
-      expect(within(updated).getByRole('button', { name: 'First' })).toBeTruthy();
+      const row = within(updated).getByRole('button', { name: 'First' }).closest('li') as HTMLElement;
+      // It has been read, and the rail no longer counts it: the row stays, without the dot or "Updated." (UX gate R2).
+      expect(row.querySelector('.todo-new')).toBeNull();
+      expect(within(row).queryByText('Updated.')).toBeNull();
+      expect(within(row).getByText(/added an update/)).toBeTruthy();
       // The tab changes: it is gone from Updated, as a looked-at task should be.
       fireEvent.click(screen.getByRole('radio', { name: /^Open/ }));
       fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
@@ -1791,7 +1799,7 @@ describe('task change notices', () => {
       fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
       expect(foldHeads()[0]).toBe('Updated');
       const updated = document.querySelector('.fold') as HTMLElement;
-      expect(within(updated).getByText(/^Ben McAdam added an update · /)).toBeTruthy();
+      expect(within(updated).getByText(/^Ben added an update · /)).toBeTruthy();
       expect(screen.getAllByRole('button', { name: 'Send the quote' })).toHaveLength(1);
       expect(screen.getByRole('button', { name: 'Book the venue' })).toBeTruthy();
       fireEvent.click(within(updated).getByRole('button', { name: 'Mark all as seen' }));

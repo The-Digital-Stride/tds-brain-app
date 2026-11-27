@@ -308,7 +308,7 @@ describe('changeLine', () => {
       at: '2026-11-30T10:00:00+00:00',
     };
     expect(changeLine(change, team)).toEqual({
-      text: 'Ben McAdam added an update',
+      text: 'Ben added an update',
       at: '2026-11-30T10:00:00+00:00',
       more: 1,
     });
@@ -321,21 +321,21 @@ describe('changeLine', () => {
       count: 1,
       at: 'x',
     };
-    expect(changeLine(auto, team).text).toBe('Ben McAdam changed the due date to 3 Dec 2026');
+    expect(changeLine(auto, team).text).toBe('Ben changed the due date to 3 Dec 2026');
     const back = {
       entries: [entry('handover', 'handed it back to sam-example')],
       finished: null,
       count: 1,
       at: 'x',
     };
-    expect(changeLine(back, team).text).toBe('Ben McAdam handed it back to Sam Example');
+    expect(changeLine(back, team).text).toBe('Ben handed it back to Sam');
     const pass = {
       entries: [entry('handover', 'passed it from ben-mcadam to sam-example')],
       finished: null,
       count: 1,
       at: 'x',
     };
-    expect(changeLine(pass, team).text).toBe('Ben McAdam passed it to Sam Example');
+    expect(changeLine(pass, team).text).toBe('Ben passed it to Sam');
   });
 
   it('says a finish when that is the newest thing, with or without a name', () => {
@@ -346,7 +346,7 @@ describe('changeLine', () => {
       at: '2026-11-30T10:00:20+00:00',
     };
     expect(changeLine(done, team)).toEqual({
-      text: 'Ben McAdam marked it as done',
+      text: 'Ben marked it as done',
       at: '2026-11-30T10:00:20+00:00',
       more: 1,
     });
@@ -380,5 +380,14 @@ describe('todosRailLabel', () => {
     expect(todosRailLabel(5, 3)).toBe('Tasks, 5 of yours, 3 new or updated');
     expect(todosRailLabel(5, 0)).toBe('Tasks, 5 of yours');
     expect(todosRailLabel(0, 0)).toBeUndefined();
+  });
+});
+
+describe('todosRailLabel with news', () => {
+  it('says the new or updated count even when the person holds no task (UX gate R2)', () => {
+    expect(todosRailLabel(0, 2)).toBe('Tasks, 2 new or updated');
+    expect(todosRailLabel(0, 0)).toBeUndefined();
+    expect(todosRailLabel(3, 2)).toBe('Tasks, 3 of yours, 2 new or updated');
+    expect(todosRailLabel(3, 0)).toBe('Tasks, 3 of yours');
   });
 });

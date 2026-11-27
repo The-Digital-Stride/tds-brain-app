@@ -420,4 +420,20 @@ describe('a handover and the note written with it', () => {
     expect(screen.getAllByText('New')).toHaveLength(1);
     expect(screen.getByText('1 new since you last looked.')).toBeTruthy();
   });
+
+  it('counts the one card once when both its lines were unseen, so the number matches the tags (UX gate R2)', () => {
+    const n = note('Over to you.');
+    const h = handover();
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[h, n]}
+        newKeys={new Set([entryKey(n), entryKey(h)])}
+      />,
+    );
+    expect(screen.getAllByText('New')).toHaveLength(1);
+    expect(screen.getByText('1 new since you last looked.')).toBeTruthy();
+  });
 });

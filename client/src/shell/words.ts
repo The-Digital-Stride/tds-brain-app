@@ -115,8 +115,10 @@ export function chatsRailLabel(live: LiveSession[]): string {
  * tasks with a change since the person looked, so it says both. Undefined when there is nothing to add.
  */
 export function todosRailLabel(mine: number, fresh: number): string | undefined {
-  if (mine === 0) return undefined;
-  return `Tasks, ${mine} of yours${fresh > 0 ? `, ${fresh} new or updated` : ''}`;
+  const news = fresh > 0 ? `, ${fresh} new or updated` : '';
+  // Someone who holds no task can still have news on the ones they asked for: the red count must be said too.
+  if (mine === 0) return fresh > 0 ? `Tasks${news}` : undefined;
+  return `Tasks, ${mine} of yours${news}`;
 }
 
 /** "SE" for "Sam Example": first and last names' first letters. */
@@ -419,17 +421,21 @@ export function changeLine(
   change: TodoChange,
   team: readonly { slug: string; name: string }[],
 ): { text: string; at: string; more: number } {
+  // First names, as the rows' own lines have them ("From Alex", "With Alex since…"); the panel says names in full.
+  const first = (name: string): string => name.trim().split(/\s+/)[0] || name;
+  const shortNames = (line: string): string =>
+    team.reduce((out, m) => (m.name ? out.split(m.name).join(first(m.name)) : out), line);
   const newest = change.entries[0];
   const finishedIsNewest = change.finished !== null && change.finished.at === change.at;
   let text: string;
   if (finishedIsNewest || !newest) {
-    text = `${change.finished?.byName || 'Someone'} marked it as done`;
+    text = `${change.finished?.byName ? first(change.finished.byName) : 'Someone'} marked it as done`;
   } else {
-    const who = newest.byName || newest.by || 'Someone';
+    const who = newest.byName ? first(newest.byName) : newest.by || 'Someone';
     text =
       newest.kind === 'note'
         ? `${who} added an update`
-        : `${who} ${newest.kind === 'handover' ? handoverEntryLine(who, newest.text, team) : newest.text}`;
+        : `${who} ${newest.kind === 'handover' ? shortNames(handoverEntryLine(newest.byName || newest.by || '', newest.text, team)) : newest.text}`;
   }
   return { text, at: change.at, more: change.count - 1 };
 }

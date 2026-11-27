@@ -281,10 +281,6 @@
     line-height: 16px;
     text-align: center;
   }
-  /* Icons only: the navy count of your tasks keeps the top corner, so the red one takes the lower corner. */
-  .rail-badge + .rail-pip[data-new="true"][data-count] {
-    top: 20px;
-  }
   /* The dot hangs in the row's left padding, so every title lines up whether new or not. */
   .todo-new {
     position: absolute;

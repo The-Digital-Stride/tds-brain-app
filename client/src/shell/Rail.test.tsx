@@ -84,6 +84,17 @@ describe('Rail tasks item', () => {
     expect(container.querySelector('.rail-pip[data-new="true"]')?.textContent).toBe('1');
   });
 
+  it('with icons only shows the red count alone, and the navy count when nothing is new (UX gate R2)', () => {
+    setStore([todo('a.md', 'ben-mcadam'), todo('b.md', null)]);
+    const fresh = render(<Rail />);
+    expect(fresh.container.querySelector('.rail-pip[data-new="true"]')?.textContent).toBe('1');
+    expect(fresh.container.querySelector('.rail-badge')).toBeNull();
+    fresh.unmount();
+    setStore([todo('a.md', 'ben-mcadam')], { 'a.md': at });
+    const quiet = render(<Rail />);
+    expect(quiet.container.querySelector('.rail-badge')?.textContent).toBe('1');
+  });
+
   it('has no pip and no "new" when nothing is new', () => {
     setStore([todo('a.md', 'ben-mcadam')], { 'a.md': at });
     const { container } = render(<Rail />);

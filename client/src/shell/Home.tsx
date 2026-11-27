@@ -324,6 +324,8 @@ export function Home() {
     shownCards.map(({ id, title }) => ({ id, title })),
     boot ? homeOrderKey(boot.identity.slug) : null,
     HOME_CARDS,
+    // New in 0.97.0: for someone with a saved order it sits by its default neighbour, not at the bottom.
+    ['task-updates'],
   );
   if (!boot) return null;
 
@@ -769,16 +771,21 @@ export function Home() {
                         <ul className="drawer-list">
                           {updateRows.slice(0, rowsShown('taskUpdates')).map((row) => {
                             const line = changeLine(row.change, todos.team);
-                            const who =
-                              row.kind === 'asked' && row.todo.state === 'waiting'
-                                ? `With ${row.todo.assigneeName.split(/\s+/)[0] || row.todo.assigneeName} · `
-                                : '';
                             return (
                               <HomeRow key={row.todo.key} onOpen={() => openUpdated(row)} star={null}>
                                 <span className="line-text">
                                   <span className="line-title">{row.todo.title}</span>
                                   <span className="line-meta">
-                                    {`${who}${[line.text, updateWhen(line.at)].filter(Boolean).join(' · ')}${line.more > 0 ? ` and ${line.more} more` : ''}`}
+                                    {/* Home's lines join their parts with ", " (design system, Row meta lines). The line names who acted. */}
+                                    {[
+                                      line.text,
+                                      updateWhen(line.at).replace(/^(Today|Yesterday)/, (d) =>
+                                        d.toLowerCase(),
+                                      ),
+                                      line.more > 0 ? `and ${line.more} more` : '',
+                                    ]
+                                      .filter(Boolean)
+                                      .join(', ')}
                                   </span>
                                 </span>
                               </HomeRow>

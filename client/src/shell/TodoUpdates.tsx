@@ -152,7 +152,8 @@ export function TodoUpdates({ updates, more, extras, team, newKeys, compose, onS
   const headId = useId();
   const cards = toCards(updates ?? []);
   const isNew = (e: TodoUpdate): boolean => newKeys?.has(entryKey(e)) === true;
-  const newCount = (updates ?? []).filter(isNew).length;
+  // Counted as shown: a hand back and its note are one card with one "New" tag, so they count once.
+  const newCount = cards.filter((c) => isNew(c.entry) || (c.note !== undefined && isNew(c.note))).length;
   const lines = extras ?? [];
   if (!compose && cards.length === 0 && lines.length === 0) return null;
   return (

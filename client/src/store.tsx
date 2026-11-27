@@ -1143,8 +1143,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // marks each carry the earlier ones, and how many saves of each are still waiting for their reply.
   const seenRef = useRef<Record<string, string>>({});
   const seenSaving = useRef(0);
+  const seenSentAt = useRef(0);
   const lookedRef = useRef<TodoLooked>({});
   const lookedSaving = useRef(0);
+  const lookedSentAt = useRef(0);
   /**
    * A prefs reply for another setting, with each saved list (the stars and the Home layout) and each task marker
    * map kept as shown while one of its saves is waiting. Without this, the reply to a "seen" save, which carries
@@ -1164,7 +1166,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [keepChatStars, keepTodoStars, keepFileStars, keepHidden, keepShortcuts],
   );
   const bootLists = [chatFavourites, todoFavourites, fileFavourites, hiddenList, shortcutList];
-  keepListsRef.current = (prefs, begun) => bootLists.reduce((p, list) => list.keepBoot(p, begun), prefs);
+  keepListsRef.current = (prefs, begun) => {
+    const kept = bootLists.reduce((p, list) => list.keepBoot(p, begun), prefs);
+    // The task markers, the same way: a reload that read the prefs file before a mark was sent would put the old
+    // map back, and the next mark would save over the lost one (re-check R2).
+    const seenOld = seenSentAt.current > begun;
+    const lookedOld = lookedSentAt.current > begun;
+    if (!seenOld && !lookedOld) return kept;
+    return {
+      ...kept,
+      ...(seenOld ? { todoSeen: seenRef.current } : {}),
+      ...(lookedOld ? { todoLooked: lookedRef.current } : {}),
+    };
+  };
 
   const setHiddenList = hiddenList.set;
   const setShortcutList = shortcutList.set;
@@ -1640,6 +1654,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Optimistic, so the dot goes at once; the server's reply (pruned, capped) replaces it.
       setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoSeen: next } } : b));
       seenSaving.current += 1;
+      seenSentAt.current = prefStamp();
       api
         .updatePrefs({ todoSeen: next })
         .then((prefs) => {
@@ -1690,6 +1705,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Optimistic, so the badge drops at once; the server's reply (pruned, capped) replaces it.
       setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoLooked: saved } } : b));
       lookedSaving.current += 1;
+      lookedSentAt.current = prefStamp();
       api
         .updatePrefs({ todoLooked: saved })
         .then((prefs) => {

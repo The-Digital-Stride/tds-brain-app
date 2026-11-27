@@ -599,7 +599,7 @@ const SCENES: Record<string, Scene> = {
     // "New to you" stays in the picture: the page explains how the two sections differ.
     await page
       .locator('#drawer')
-      .getByText('Alex Morgan added an update', { exact: false })
+      .getByText('Alex added an update', { exact: false })
       .first()
       .waitFor();
     await sleep(300);

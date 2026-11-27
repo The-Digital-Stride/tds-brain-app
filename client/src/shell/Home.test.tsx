@@ -1866,11 +1866,9 @@ describe('Home: Task updates', () => {
     await c.findByText('Asked newest');
     const rows = c.getAllByRole('listitem');
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toMatch(
-      /^Asked newestWith Ben · Ben McAdam added an update · Today, \d\d:\d\d$/,
-    );
+    expect(rows[0]?.textContent).toMatch(/^Asked newestBen added an update, today, \d\d:\d\d$/);
     expect(rows[1]?.textContent).toMatch(
-      /^Held oldBen McAdam added an update · (Today|Yesterday), \d\d:\d\d and 1 more$/,
+      /^Held oldBen added an update, (today|yesterday), \d\d:\d\d, and 1 more$/,
     );
     expect(c.queryByText('My own note')).toBeNull();
     expect(screen.getByText(/and 2 tasks have updates\.$/)).toBeTruthy();
@@ -1930,7 +1928,7 @@ describe('Home: Task updates', () => {
     );
     await renderHome();
     const row = (await card('Task updates').findByText('Finished one')).closest('li') as HTMLElement;
-    expect(row.textContent).toMatch(/^Finished oneBen McAdam marked it as done · /);
+    expect(row.textContent).toMatch(/^Finished oneBen marked it as done, /);
   });
 
   it('shows "Show more" past the usual rows', async () => {

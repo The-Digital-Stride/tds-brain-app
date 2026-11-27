@@ -57,6 +57,8 @@ export function useCardOrder(
   cards: OrderCard[],
   storageKey: string | null,
   allIds: string[] = cards.map((c) => c.id),
+  /** Ids that, when a saved order doesn't have them yet, go beside their default neighbour and not last. */
+  near: readonly string[] = [],
 ): CardOrder {
   const [saved, setSaved] = useState<string[]>(() => (storageKey ? readOrder(storageKey) : []));
   const [announce, setAnnounce] = useState('');
@@ -70,7 +72,7 @@ export function useCardOrder(
     setSaved(storageKey ? readOrder(storageKey) : []);
   }, [storageKey]);
 
-  const shown = arrange(cards, saved);
+  const shown = arrange(cards, saved, near);
   const ids = shown.map((c) => c.id);
   const moved = ids.some((id, i) => id !== cards[i]?.id);
 
@@ -100,6 +102,7 @@ export function useCardOrder(
           ? arrange(
               allIds.map((x) => ({ id: x })),
               saved,
+              near,
             ).map((x) => x.id)
           : allIds;
       save(mergeOrder(full, next));

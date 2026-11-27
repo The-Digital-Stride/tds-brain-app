@@ -175,6 +175,7 @@ function TodoRow({
   controls,
   fresh,
   update,
+  updateSeen,
   showScope,
   onOpened,
   favourite,
@@ -192,6 +193,8 @@ function TodoRow({
   fresh: boolean;
   /** In "Updated" (or starred and updated): the same dot, and a line saying the newest change. */
   update?: { text: string; at: string; more: number };
+  /** Opened this visit and nothing newer since: the row stays in Updated, without the dot (the rail agrees). */
+  updateSeen?: boolean;
   /** The scope filter is All: a personal row says so. */
   showScope: boolean;
   /** The row was opened (chat or editor): "New to you" marks it seen. */
@@ -229,7 +232,7 @@ function TodoRow({
   const whereText =
     !chip && showPlace ? todoPlaceParts(todo, projectList?.projects, boot?.clients ?? []).join(' · ') : '';
   const hasWhere = Boolean(chip) || whereText !== '';
-  const marked = fresh || update !== undefined;
+  const marked = fresh || (update !== undefined && !updateSeen);
   const when = update ? updateWhen(update.at) : '';
   const describedBy = [marked ? newId : '', parts.length > 0 ? metaId : '', hasWhere ? whereId : '']
     .filter(Boolean)
@@ -755,6 +758,16 @@ export function TodosDrawer() {
     { todoSeen: seenMap, todoLooked: lookedMap },
     new Date(),
   );
+  // What the saved markers say is still unseen (what the rail counts): a row kept in Updated for this visit
+  // after it was opened shows without its dot.
+  const unseenNow = changedTodos(
+    todos,
+    asked,
+    viewer,
+    { todoSeen: seenMap, todoLooked: lookedSaved },
+    new Date(),
+  );
+  const unseenIds = new Set([...unseenNow.held, ...unseenNow.asked].map((c) => c.todo.id));
   const panelUnseen =
     panelSubject && panelMark?.id === panelSubjectId
       ? (todoChange(panelSubject, viewer, panelMark.mark, new Date())?.entries ?? [])
@@ -852,7 +865,11 @@ export function TodosDrawer() {
   const updatedAsked = changed.asked.filter(({ todo }) =>
     [...(askedShown?.waiting ?? []), ...(askedShown?.done ?? [])].some((t) => t.key === todo.key),
   );
-  const askedLines = updatedAsked.map(({ todo, change }) => ({ todo, line: changeLine(change, todos.team) }));
+  const askedLines = updatedAsked.map(({ todo, change }) => ({
+    todo,
+    line: changeLine(change, todos.team),
+    seen: !unseenIds.has(todo.id),
+  }));
   const showScope = tab === 'mine' && active.scope === 'all';
   // The group the global search sent us to stays open, whatever else is closed.
   const holdsRevealed = (list: TodoItem[]) => revealed !== null && list.some((t) => t.key === revealed.key);
@@ -1233,6 +1250,7 @@ export function TodosDrawer() {
         controls={t.scope === 'personal' && !todos.canUsePersonal ? { ...rows, actionable: false } : rows}
         fresh={isFresh && !visitSeen.has(t.key)}
         update={change ? changeLine(change, todos.team) : undefined}
+        updateSeen={change !== undefined && !unseenIds.has(t.id)}
         showScope={showScope}
         onOpened={opened}
         favourite={favs.includes(t.key)}

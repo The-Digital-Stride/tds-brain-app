@@ -17,8 +17,12 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
 
+let stream: FakeEventSource | undefined;
 class FakeEventSource {
   static CLOSED = 2;
+  constructor() {
+    stream = this;
+  }
   readyState = 1;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
@@ -142,6 +146,41 @@ describe('store: the Asked list', () => {
 });
 
 describe('store.markTodosLooked', () => {
+  it('keeps a looked marker when a full reload that began before the save lands after it (re-check R2)', async () => {
+    await mount();
+    const sent: Record<string, unknown>[] = [];
+    api.updatePrefs.mockImplementation(async (p: Record<string, unknown>) => {
+      sent.push(p);
+      return { pins: [], ...p };
+    });
+    // A reload that reads the prefs file before the mark is saved, and lands after it.
+    let land: (b: unknown) => void = () => {};
+    api.bootstrap.mockReturnValueOnce(new Promise((r) => (land = r)));
+    act(() =>
+      stream?.onmessage?.({
+        data: JSON.stringify({ kind: 'event', event: { type: 'brain-changed', area: 'clients' } }),
+      }),
+    );
+    expect(api.bootstrap).toHaveBeenCalledTimes(2);
+    const a = { ...held('a.md', [note('One')]), handover: { at: '2026-11-27T10:00:00+00:00' } } as TodoItem;
+    await act(async () => {
+      store?.markTodosSeen([a]);
+      store?.markTodosLooked([{ kind: 'held', todo: a }]);
+    });
+    await act(async () =>
+      land({
+        identity: { ...ME, email: null, role: 'owner', knownMember: true },
+        prefs: { pins: [], todoLooked: {}, todoSeen: {} },
+        clients: [],
+      }),
+    );
+    expect(Object.keys(store?.boot?.prefs.todoLooked ?? {})).toEqual(['a.md']);
+    expect(store?.boot?.prefs.todoSeen).toEqual({ 'a.md': '2026-11-27T10:00:00+00:00' });
+    const b = held('b.md', [note('Two')]);
+    await act(async () => store?.markTodosLooked([{ kind: 'held', todo: b }]));
+    expect(Object.keys((sent.at(-1)?.todoLooked as object) ?? {}).sort()).toEqual(['a.md', 'b.md']);
+  });
+
   it('keeps a looked marker when the reply to a seen save lands first (review R2)', async () => {
     await mount();
     // A server that applies saves in order and answers each with the whole prefs file as it then stands.

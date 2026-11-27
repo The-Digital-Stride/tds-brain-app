@@ -3,7 +3,7 @@ name: tdsapp-ads
 description: The bridge TDS Cortex's Ad Manager uses to read and decide ads-manager proposals, run a dry run or the live apply, draft the client email, record the client's yes or a decision, sign off a monthly report, and read the Ads board and Daily Standup - always through the brain's own ads-manager scripts, as the person at this Mac. USE WHEN TDS Cortex runs it for Ad Manager, or someone asks "what ads proposals are waiting for me?", "show the ads board for Acme", "dry run that proposal", "set up the standup for Acme", or "rate the standup calls". Approving, rejecting, recording a decision or the client's yes, signing off a report and applying a change are the person's own decisions, made in Ad Manager: Claude never runs `decide`, `decided`, `client-approved`, `sign-monthly` or `apply` from a chat.
 version: 0.4
 last_updated: 2026-11-20
-roles: owner, scout
+roles: owner, scout, team
 maturity: draft
 members: false
 agency: true
@@ -15,8 +15,7 @@ One script, `scripts/tdsapp-ads.cjs`, that TDS Cortex runs for its Ad Manager (t
 first tool). It does what the Workbench's Ads tab does, without the Workbench running: the approvals
 panel, the ads board and the Daily Standup.
 
-It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to
-the team.
+Released to the whole team for the first release (Ian, 2026-11-25).
 
 ## How it works
 

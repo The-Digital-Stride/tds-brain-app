@@ -5,7 +5,7 @@ area: getting-around
 order: 9
 summary: Read a client's Google Ads tables, and see what stands out.
 benefit: You spot the problem rows fast, then sort and arrange the tables to suit you.
-roles: [owner, scout]
+roles: all
 related: [ad-manager, ads-command-centre, workbench]
 since: 0.50.0
 reviewed: 2026-11-19

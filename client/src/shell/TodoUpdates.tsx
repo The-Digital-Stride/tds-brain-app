@@ -1,7 +1,11 @@
-import { type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef } from 'react';
+import { type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react';
 import type { TeamMember } from '../../../shared/contract.ts';
-import { TODO_UPDATE_MAX, type TodoUpdate } from '../../../shared/todo-updates-contract.ts';
-import { updateWhen } from './words.ts';
+import {
+  TODO_LINK_URL_MAX,
+  TODO_UPDATE_MAX,
+  type TodoUpdate,
+} from '../../../shared/todo-updates-contract.ts';
+import { updateWhen, updateWhenFull } from './words.ts';
 
 /** The count shows once the text is this close to the limit. */
 const COUNT_FROM = TODO_UPDATE_MAX - 200;
@@ -14,6 +18,9 @@ function linkify(line: string, keyBase: string): ReactNode[] {
   let n = 0;
   for (const m of line.matchAll(re)) {
     let url = m[0];
+    // A link longer than the script would ever write stays text: the trim below re-reads the whole match on
+    // each pass, so a hand-edited line of a million brackets would freeze the tab (security review).
+    if (url.length > TODO_LINK_URL_MAX) continue;
     // Sentence punctuation after the link is not part of it; a closing bracket only when nothing opened it.
     while (/[.,;:!?]$/.test(url) || (url.endsWith(')') && !url.includes('('))) url = url.slice(0, -1);
     let safe = false;
@@ -64,10 +71,16 @@ function withNames(text: string, team: readonly TeamMember[]): string {
   return out;
 }
 
+/** A handover line with names; "from" the very person the line starts with is left out, so no name reads twice. */
+function handoverLine(who: string, text: string, team: readonly TeamMember[]): string {
+  const named = withNames(text, team);
+  return who ? named.replace(` from ${who} to `, ' to ') : named;
+}
+
 function When({ at }: { at: string }) {
   const text = updateWhen(at);
   return text ? (
-    <time className="todo-update-when" dateTime={at}>
+    <time className="todo-update-when" dateTime={at} title={updateWhenFull(at)}>
       {text}
     </time>
   ) : null;
@@ -113,6 +126,8 @@ export function TodoUpdates({ updates, more, extras, team, compose, onStatus }: 
       <h3 className="todo-files-head" id={headId}>
         Updates
       </h3>
+      {/* The box sits above the newest-first list, so a new update appears right under it. */}
+      {compose ? <AddUpdate compose={compose} onStatus={onStatus} /> : null}
       {entries.length === 0 && lines.length === 0 ? <p className="todo-empty">No updates yet.</p> : null}
       {entries.length > 0 ? (
         <ul className="todo-update-list">
@@ -130,7 +145,9 @@ export function TodoUpdates({ updates, more, extras, team, compose, onStatus }: 
               // biome-ignore lint/suspicious/noArrayIndexKey: entries can share a minute and never reorder.
               <li key={i} className="todo-update" data-kind={e.kind}>
                 <p className="todo-update-line">
-                  {e.byName || e.by || 'Someone'} {e.kind === 'handover' ? withNames(e.text, team) : e.text}{' '}
+                  {e.byName || e.by || 'Someone'}{' '}
+                  {e.kind === 'handover' ? handoverLine(e.byName || e.by || '', e.text, team) : e.text}
+                  {updateWhen(e.at) ? <span className="todo-sep"> · </span> : null}
                   <When at={e.at} />
                 </p>
               </li>
@@ -147,7 +164,6 @@ export function TodoUpdates({ updates, more, extras, team, compose, onStatus }: 
           ))}
         </ul>
       ) : null}
-      {compose ? <AddUpdate compose={compose} onStatus={onStatus} /> : null}
     </section>
   );
 }
@@ -165,19 +181,31 @@ function AddUpdate({
   const empty = text.trim() === '';
   const nearLimit = text.length >= COUNT_FROM;
 
+  // Set before the call and cleared after it, so a second press before the reply sends nothing.
+  const sending = useRef(false);
+  const [inFlight, setInFlight] = useState(false);
+  const off = busy || inFlight;
+
   const send = async (markDone: boolean) => {
-    if (busy) return;
+    if (busy || sending.current) return;
     if (empty) {
       onStatus('Write an update first.', true);
       box.current?.focus();
       return;
     }
-    const ok = await onAdd(text.trim(), markDone);
-    if (!ok) return;
-    if (!markDone) {
-      setText('');
-      onStatus('Update added.');
-      box.current?.focus({ preventScroll: true });
+    sending.current = true;
+    setInFlight(true);
+    try {
+      const ok = await onAdd(text.trim(), markDone);
+      if (!ok) return;
+      if (!markDone) {
+        setText('');
+        onStatus('Update added.');
+        box.current?.focus({ preventScroll: true });
+      }
+    } finally {
+      sending.current = false;
+      setInFlight(false);
     }
   };
   const submit = (e: FormEvent) => {
@@ -215,23 +243,23 @@ function AddUpdate({
           type="submit"
           className="btn"
           data-size="small"
-          aria-disabled={busy || undefined}
+          aria-disabled={off || undefined}
           onClick={(e) => {
             // aria-disabled keeps focus on the button, so the press itself must do nothing.
-            if (busy) e.preventDefault();
+            if (off) e.preventDefault();
           }}
         >
-          Add update
+          Add an update
         </button>
         {canDone ? (
           <button
             type="button"
             className="btn"
             data-size="small"
-            aria-disabled={busy || undefined}
+            aria-disabled={off || undefined}
             onClick={() => void send(true)}
           >
-            Add update and mark as done
+            Add an update and mark as done
           </button>
         ) : null}
       </div>

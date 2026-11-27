@@ -7,7 +7,12 @@ import { TodoUpdates, type TodoUpdatesProps } from './TodoUpdates.tsx';
 
 // The Updates block on its own: the list (each kind of entry, plain text with safe links) and the box that adds
 // one. How the panel sends it is tested in TodoPanel.test.tsx.
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+/** Dates read against today ("Today, 14:05", no year this year), so the list tests fix it. */
+const today = (iso: string) => vi.useFakeTimers({ toFake: ['Date'], now: new Date(iso) });
 
 const team = [
   { slug: 'sam-example', name: 'Sam Example' },
@@ -52,6 +57,7 @@ function Box({
 
 describe('the list', () => {
   it('shows a note with its writer, the time in UK time and its text, newest first', () => {
+    today('2026-12-05T12:00:00Z');
     render(
       <TodoUpdates
         team={team}
@@ -68,8 +74,10 @@ describe('the list', () => {
     expect(items[0]?.textContent).toContain('Second thing');
     expect(items[1]?.textContent).toContain('First thing');
     expect(within(items[1] as HTMLElement).getByText('Ben McAdam')).toBeTruthy();
-    const time = within(items[1] as HTMLElement).getByText('27 Nov 2026, 14:05');
+    const time = within(items[1] as HTMLElement).getByText('27 Nov, 14:05');
     expect(time.tagName).toBe('TIME');
+    // The full date and time stay in the tooltip.
+    expect(time.getAttribute('title')).toBe('27 Nov 2026, 14:05');
     expect(time.getAttribute('datetime')).toBe('2026-11-27T14:05:00+00:00');
   });
 
@@ -81,6 +89,7 @@ describe('the list', () => {
   });
 
   it('shows an automatic entry and a handover as one quiet line, with names for slugs', () => {
+    today('2026-12-05T12:00:00Z');
     render(
       <TodoUpdates
         team={team}
@@ -102,11 +111,10 @@ describe('the list', () => {
     );
     const items = screen.getAllByRole('listitem');
     // Newest first: the file was added after the handover.
-    expect(items[0]?.textContent).toBe('Ben McAdam added a file: quote.pdf 27 Nov 2026, 14:09');
+    expect(items[0]?.textContent).toBe('Ben McAdam added a file: quote.pdf · 27 Nov, 14:09');
     expect(items[0]?.getAttribute('data-kind')).toBe('auto');
-    expect(items[1]?.textContent).toBe(
-      'Ben McAdam passed it from Ben McAdam to Sam Example 26 Nov 2026, 10:00',
-    );
+    // The person who passed it on is named once (UX gate: "from Ben McAdam" after their own name read as a typo).
+    expect(items[1]?.textContent).toBe('Ben McAdam passed it to Sam Example · 26 Nov, 10:00');
     expect(items[1]?.getAttribute('data-kind')).toBe('handover');
   });
 
@@ -153,6 +161,20 @@ describe('text from people stays text', () => {
     expect(document.querySelector('.todo-update-text')?.textContent).toContain('. Thanks');
   });
 
+  it('leaves a very long run of brackets after an address as text, and still links a normal address', () => {
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[note(`https://a.co/${')'.repeat(3000)}`), note('See https://b.example.com/ok')]}
+      />,
+    );
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe('https://b.example.com/ok');
+  });
+
   it('never makes HTML, markdown or other schemes into anything but text', () => {
     render(
       <TodoUpdates
@@ -169,12 +191,39 @@ describe('text from people stays text', () => {
 });
 
 describe('adding an update', () => {
+  it('puts the box above the newest-first list', () => {
+    render(<Box updates={[note('Older')]} />);
+    const box = screen.getByLabelText('Add an update');
+    const list = document.querySelector('.todo-update-list') as HTMLElement;
+    expect(box.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('sends once when pressed twice before the reply', async () => {
+    let reply: (v: boolean) => void = () => {};
+    const onAdd = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          reply = r;
+        }),
+    );
+    render(<Box onAdd={onAdd} />);
+    fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Once' } });
+    const button = screen.getByRole('button', { name: 'Add an update' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.keyDown(screen.getByLabelText('Add an update'), { key: 'Enter', metaKey: true });
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    reply(true);
+    await waitFor(() => expect(button.getAttribute('aria-disabled')).toBeNull());
+  });
+
   it('sends the text, then clears the box and says so', async () => {
     const onAdd = vi.fn().mockResolvedValue(true);
     const onStatus = vi.fn();
     render(<Box onAdd={onAdd} onStatus={onStatus} />);
     fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: '  Sent the quote.  ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
     await waitFor(() => expect(onAdd).toHaveBeenCalledWith('Sent the quote.', false));
     await waitFor(() =>
       expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe(''),
@@ -186,7 +235,7 @@ describe('adding an update', () => {
     const onAdd = vi.fn().mockResolvedValue(false);
     render(<Box onAdd={onAdd} />);
     fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'Keep me' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
     await waitFor(() => expect(onAdd).toHaveBeenCalled());
     expect((screen.getByLabelText('Add an update') as HTMLTextAreaElement).value).toBe('Keep me');
   });
@@ -195,18 +244,18 @@ describe('adding an update', () => {
     const onAdd = vi.fn();
     const onStatus = vi.fn();
     render(<Box onAdd={onAdd} onStatus={onStatus} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
     expect(onAdd).not.toHaveBeenCalled();
     expect(onStatus).toHaveBeenCalledWith('Write an update first.', true);
   });
 
-  it('offers "Add update and mark as done" only to someone who can tick, and sends it with the text', async () => {
+  it('offers "Add an update and mark as done" only to someone who can tick, and sends it with the text', async () => {
     const onAdd = vi.fn().mockResolvedValue(true);
     const { rerender } = render(<Box onAdd={onAdd} />);
-    expect(screen.queryByRole('button', { name: 'Add update and mark as done' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add an update and mark as done' })).toBeNull();
     rerender(<Box onAdd={onAdd} canDone />);
     fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'All done' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add update and mark as done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update and mark as done' }));
     await waitFor(() => expect(onAdd).toHaveBeenCalledWith('All done', true));
   });
 
@@ -214,7 +263,7 @@ describe('adding an update', () => {
     const onAdd = vi.fn();
     render(<Box onAdd={onAdd} busy />);
     fireEvent.change(screen.getByLabelText('Add an update'), { target: { value: 'x' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add an update' }));
     expect(onAdd).not.toHaveBeenCalled();
   });
 

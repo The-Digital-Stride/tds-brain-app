@@ -20,7 +20,7 @@ import { createBrainReaders } from './index.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, person } from './test-helpers.ts';
 import { TODO_ATTACH_CAPABILITY } from './todo-skill.ts';
-import { changeTodo, listTodos } from './todos.ts';
+import { changeTodo, listTodos, TODO_UPDATES_MESSAGES } from './todos.ts';
 
 const sam = person('sam-example', 'scout');
 
@@ -2040,8 +2040,12 @@ describe('task updates: what the server sends and lets through', () => {
       expect(refused).toBeInstanceOf(TodoChangeError);
       expect((refused as TodoChangeError).code).toBe('bad-request');
       expect((refused as TodoChangeError).message).toMatch(/Updates/);
-      // With a section on disk the script keeps its own, so an older app's whole details still go through.
-      expect(await codeOf(go(s, edit('20261121-logged.md', heading)))).toBeNull();
+      // With a section on disk, the same section sent back goes on to the script, which keeps its own.
+      const whole = BODY.replace('# Quote\n\n', '').trim();
+      expect(await codeOf(go(s, edit('20261121-logged.md', whole)))).toBeNull();
+      // One that differs is the person's own typing: refused in the app's words, not the script's.
+      const typed = await go(s, edit('20261121-logged.md', heading)).catch((e: TodoChangeError) => e);
+      expect((typed as TodoChangeError).message).toBe(TODO_UPDATES_MESSAGES.headingInDetails);
       // An add has no section to keep.
       expect(
         await codeOf(
@@ -2051,6 +2055,67 @@ describe('task updates: what the server sends and lets through', () => {
       // Without the capability the words are ordinary text, as before.
       const old = setup({ [ID]: task(['assignee: sam-example'], '# Quote\n') }, ['scope']);
       expect(await codeOf(go(old, edit(ID, heading)))).toBeNull();
+    });
+
+    // Review round 1: `## Handover history` is the script's record too.
+    it('refuses a `## Handover history` heading in typed details when the task has none on disk, saying "task"', async () => {
+      const s = setup({
+        [ID]: task(['assignee: sam-example'], '# Quote\n\nPlain.\n'),
+        '20261121-logged.md': task(MINE),
+      });
+      const heading =
+        'Notes.\n\n## Handover history\n\n- 27 Nov 2026, 10:00 UK: Alex Sample handed it back to sam-example (TDS Cortex).';
+      const edit = (id: string, details: string): TodoAction => ({
+        kind: 'edit',
+        id,
+        title: 'Quote',
+        details,
+      });
+      const refused = await go(s, edit(ID, heading)).catch((e: TodoChangeError) => e);
+      expect(refused).toBeInstanceOf(TodoChangeError);
+      expect((refused as TodoChangeError).code).toBe('bad-request');
+      expect((refused as TodoChangeError).message).toBe(TODO_UPDATES_MESSAGES.handoverInDetails);
+      expect(TODO_UPDATES_MESSAGES.handoverInDetails).toMatch(/Handover history/);
+      expect(TODO_UPDATES_MESSAGES.handoverInDetails).toMatch(/\btask\b/);
+      expect(TODO_UPDATES_MESSAGES.handoverInDetails).not.toMatch(/to-?do/i);
+      // In a code fence it is ordinary text.
+      expect(await codeOf(go(s, edit(ID, 'Notes.\n\n```\n## Handover history\n```')))).toBeNull();
+      // With a section on disk, one that differs from it is refused in the app's words too.
+      const typed = await go(s, edit('20261121-logged.md', heading)).catch((e: TodoChangeError) => e);
+      expect((typed as TodoChangeError).message).toBe(TODO_UPDATES_MESSAGES.handoverInDetails);
+      const add = await go(s, {
+        kind: 'add',
+        title: 'T',
+        due: null,
+        assignee: 'sam-example',
+        details: heading,
+      }).catch((e: TodoChangeError) => e);
+      expect((add as TodoChangeError).message).toBe(TODO_UPDATES_MESSAGES.handoverInDetails);
+      expect(s.run).toHaveBeenCalledTimes(1);
+      // Without the capability the words are ordinary text, as before.
+      const old = setup({ [ID]: task(['assignee: sam-example'], '# Quote\n') }, ['scope']);
+      expect(await codeOf(go(old, edit(ID, heading)))).toBeNull();
+    });
+
+    it("refuses an update or note with a code block line, in the app's own words, before the script", async () => {
+      const s = setup(filed());
+      const actions: (TodoAction | { kind: 'tick'; id: string; scope: 'tds'; note: string })[] = [
+        { kind: 'update', id: ID, text: 'Look:\n  ```\ncode' },
+        { kind: 'update', id: ID, text: '~~~' },
+        { kind: 'update', id: ID, text: 'One\r\n\t```js' },
+        { kind: 'update', id: ID, text: 'One\u2028```' },
+        { kind: 'assignee', id: ID, assignee: 'jo-owner', note: '```' },
+        { kind: 'tick', id: ID, scope: 'tds', note: 'Done.\n~~~~' },
+      ];
+      for (const action of actions) {
+        const refused = await go(s, action).catch((e: TodoChangeError) => e);
+        expect(refused, JSON.stringify(action)).toBeInstanceOf(TodoChangeError);
+        expect((refused as TodoChangeError).code).toBe('bad-request');
+        expect((refused as TodoChangeError).message).toBe("An update can't hold a code block.");
+      }
+      expect(s.run).not.toHaveBeenCalled();
+      // Backticks that don't start a line are ordinary text.
+      expect(await codeOf(go(s, { kind: 'update', id: ID, text: 'Run `npm test` or ``` here' }))).toBeNull();
     });
 
     describe('a task this person passed on (Asked)', () => {

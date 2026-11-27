@@ -46,7 +46,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
 import { TodoChatButton } from './TodoChatButton.tsx';
-import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
+import { buildEditActions, detailsText, type EditDraft, useTypedDrafts } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { todoOpener } from './todo-opener.ts';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
@@ -433,6 +433,7 @@ export function TodosDrawer() {
     openSettings,
     view,
     heldTodos,
+    failedHeld,
     holdTodo,
     undoHeld,
     pauseHeld,
@@ -675,6 +676,28 @@ export function TodosDrawer() {
     return () => clearTimeout(giveUp);
   }, [waitingKey, shellDispatch]);
 
+  // Text typed in a task's panel and not sent. It outlives the panel while a change to the task is held, so Undo
+  // brings it back; it goes once that change is really sent, or when the panel closes without one. A change that
+  // was refused or failed keeps it: the person is asked to try again, and finds their words when they open the task.
+  const typedDrafts = useTypedDrafts();
+  const typedRef = useRef(typedDrafts);
+  typedRef.current = typedDrafts;
+  const keepTyped = useRef(new Set<string>());
+  const panelKeyNow = panel?.key ?? null;
+  const lastPanelKey = useRef<string | null>(null);
+  useEffect(() => {
+    const was = lastPanelKey.current;
+    lastPanelKey.current = panelKeyNow;
+    if (was !== null && was !== panelKeyNow && !keepTyped.current.has(was)) typedRef.current.drop(was);
+  }, [panelKeyNow]);
+  useEffect(() => {
+    for (const key of [...keepTyped.current]) {
+      if (heldTodos.some((h) => h.todoId === key)) continue;
+      keepTyped.current.delete(key);
+      if (!(failedHeld ?? []).includes(key)) typedRef.current.drop(key);
+    }
+  }, [heldTodos, failedHeld]);
+
   if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
@@ -821,6 +844,7 @@ export function TodosDrawer() {
   const hold = (held: HeldTodo) => {
     const keyboard = pressedByKeyboard();
     const id = held.todoId;
+    keepTyped.current.add(id);
     const shownOrder = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
       .map((t) => t.key)
       .filter((k) => k === id || !heldById.has(k));
@@ -837,6 +861,8 @@ export function TodosDrawer() {
     setUndoMessageFor(id);
   };
   const undo = (held: HeldTodo) => {
+    // Undone: its typed text stays as the task's draft, for when it is opened again.
+    keepTyped.current.delete(held.todoId);
     undoHeld(held.todoId);
     afterHold.current = null;
     setFocusUndo(null);
@@ -1523,6 +1549,7 @@ export function TodosDrawer() {
           onUpdate={addUpdate}
           onAskedUpdate={addAskedUpdate}
           onHandBack={handBack}
+          typedDrafts={typedDrafts}
           onStatus={setMessage}
           startPersonal={tab === 'mine' && active.scope === 'personal'}
           startProject={project ?? ''}

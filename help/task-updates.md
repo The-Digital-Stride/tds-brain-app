@@ -24,9 +24,9 @@ Every task has an **Updates** list. It shows what happened to the task, newest f
 ## How to use it
 
 1. Open a task. **Updates** is under its files.
-2. Type in **Add an update**, then press **Add update**. A web address in your update becomes a link.
-3. When the job is finished, press **Add update and mark as done**. Your update is saved and the task is ticked off.
-4. To return a task to the person who gave it to you, press **Hand back**. Add a note if you like, then press **Hand back** again.
+2. Type in the box under **Updates**, then press **Add an update**. A web address in your update becomes a link.
+3. When the job is finished, press **Add an update and mark as done**. Your update is saved and the task is ticked off.
+4. To return a task to the person who gave it to you, press **Hand back to** and their name. Add a note if you like, then press **Hand back**.
 5. To pass a task to someone else, press **Edit** and change **Assigned to**. You can add a note for them.
 6. On a task you passed on, open it from the **Asked** tab and add an update there.
 
@@ -36,11 +36,12 @@ Every task has an **Updates** list. It shows what happened to the task, newest f
 
 - Cortex adds a line by itself when the due date, the details, a file or a link changes.
 - An update can't be changed or removed once it is saved.
+- Words you have typed in the box are not lost. They go with **Mark as done**, and into the note when you hand back.
 - Your teammate sees an update the next time their Brain syncs. That is not always straight away.
-- A task that was handed back to you has no **Hand back** button. Pass it on from **Edit** as usual.
+- A task that was handed back to you has no **Hand back to** button. Pass it on from **Edit** as usual.
 - Personal tasks have updates too. Only you see them, unless you move the task to TDS.
 - This needs the newest version of the brain's `todo` skill. Until then the list shows, but the boxes don't.
 
 ## Try this
 
-Open a task a teammate gave you, write one line about where it stands and press **Add update**.
+Open a task a teammate gave you, write one line about where it stands and press **Add an update**.

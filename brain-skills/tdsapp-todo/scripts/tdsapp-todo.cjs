@@ -117,9 +117,14 @@
 //   - link {file, url, name?, …} adds `- [name](url)` (`<url>` when it holds a bracket) to "## Files":
 //     http(s) only; the name defaults to the host. An URL already linked is a no-op; a 21st link →
 //     400. unlink {file, url, …} removes every line linking that exact URL (the section once empty).
-//   - edit never changes "## Updates": with one on disk, a section in `body` is dropped and the one on
-//     disk kept (the 8,000 limit counts the body without it); with none on disk, a body holding that
-//     heading → 400, as on add.
+//   - edit never changes "## Updates" or (review round 1) "## Handover history": with one on disk, a
+//     section in `body` must say the same (compared tolerantly, see recordWords; else 400, nothing
+//     written) and the one on disk is kept (the 8,000 limit counts the body without it); with none on
+//     disk, a body holding that heading → 400, as on add. Only assignee adds to the handover history.
+//   - A body whose last code fence never closes gets its closing line before any section is added or
+//     appended after it (and before the done and deleted notes). U+2028 and U+2029 in an update's text
+//     are line breaks.
+
 //   - Built for the brain's `todo/*.md merge=union`: readers read every "## Updates" and "## Files"
 //     section and take the last copy of a frontmatter key; every write first folds later sections
 //     into the first (exact duplicate entries dropped) and removes every copy of a key it sets.
@@ -736,6 +741,29 @@ function linesOutsideFences(lines) {
   return out;
 }
 
+// v0.7 (review round 1): the fence still open after the last of `lines` (its ``` or ~~~ run, which
+// is also the line that closes it), or null. A section added or appended after such a fence would be
+// read as code, so the writers below close it first (contract, "fences").
+function openFence(lines) {
+  let fence = null;
+  for (const line of lines) {
+    const m = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (m) fence = m[1];
+  }
+  return fence;
+}
+
+// `lines` (changed in place) with the open fence closed at their end, if there is one.
+function closeFence(lines) {
+  const fence = openFence(lines);
+  if (fence) lines.push(fence);
+  return lines;
+}
+
 function firstHeading(lines) {
   for (const i of linesOutsideFences(lines)) {
     const m = lines[i].match(/^#\s+(.+?)\s*$/);
@@ -750,13 +778,14 @@ function normalTitle(value) {
 }
 
 // Adds `entry` at the end of the "## <name>" section (Title history, Handover history), making the
-// section at the end of the body if needed.
+// section at the end of the body if needed. v0.7: an open code fence before it is closed first.
 function addToSection(lines, name, entry) {
   const outside = linesOutsideFences(lines);
   const heading = new RegExp(`^##\\s+${name}\\s*$`, 'i');
   const at = outside.find(i => heading.test(lines[i]));
   if (at === undefined) {
     while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+    closeFence(lines);
     lines.push('', `## ${name}`, '', entry, '');
     return;
   }
@@ -767,7 +796,10 @@ function addToSection(lines, name, entry) {
   let last = end - 1;
   while (last > at && lines[last].trim() === '') last--;
   if (last === at) lines.splice(at + 1, 0, '', entry);
-  else lines.splice(last + 1, 0, entry);
+  else {
+    const fence = openFence(lines.slice(0, last + 1));
+    lines.splice(last + 1, 0, ...(fence ? [fence] : []), entry);
+  }
 }
 
 // The body lines after a title change, following todo/AGENTS.md "Keeping the title accurate".
@@ -802,6 +834,9 @@ const FILE_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/'];
 const UPDATES_ANCHOR = /^##[ \t]+(?:title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
 // Where a new "## Files" section goes: the same, and before "## Updates" too (v0.7).
 const FILES_ANCHOR = /^##[ \t]+(?:updates|title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
+// v0.7 review round 1: no line is one, so placeSection puts the section at the end.
+const NO_ANCHOR = /(?!)/;
+
 
 // A link target as a brain path, or null: every leading `../` dropped, then it must start with
 // clients/, templates/ or personal/ and have no empty, `.` or `..` segment, backslash, colon or `%`.
@@ -904,7 +939,8 @@ function refuseFilesHeading(text) {
 // `lines` (a body, no frontmatter) with a section added: after the details, before the first
 // updates, history, done or deleted heading outside a code fence (else at the end), one blank line
 // either side. `afterHead`: a frontmatter block comes first, so a section at the top still gets its
-// blank line. v0.7: `anchor` and `from` (the first line an anchor may be on) for "## Updates".
+// blank line. v0.7: `anchor` and `from` (the first line an anchor may be on) for "## Updates", and
+// an open code fence before it is closed first (with one open, no anchor after it is found).
 function placeSection(lines, section, afterHead, anchor = FILES_ANCHOR, from = 0) {
   let at = lines.length;
   for (const i of linesOutsideFences(lines)) {
@@ -912,6 +948,7 @@ function placeSection(lines, section, afterHead, anchor = FILES_ANCHOR, from = 0
   }
   const before = lines.slice(0, at);
   while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
+  closeFence(before);
   const lead = before.length > 0 || afterHead ? [''] : [];
   return [...before, ...lead, ...section, '', ...lines.slice(at)];
 }
@@ -1077,15 +1114,28 @@ function parseHandovers(body) {
 
 // Both, oldest first; equal minutes keep file order, "## Updates" first (sort is stable).
 function timeline(body) {
-  const { entries, extras } = parseUpdates(body);
+  const parsed = parseUpdates(body);
+  const entries = parsed.entries;
+  // Text someone typed under "## Handover history" is no entry: it reads with the other hand-edited lines.
+  const extras = parsed.extras.slice();
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  for (const [start, end] of sectionRanges(lines, HANDOVER_HEADING)) {
+    for (let i = start + 1; i < end; i++) {
+      const line = lines[i].trim();
+      if (line === '') continue;
+      const stamp = entryStampOf(line);
+      if (!stamp || !HANDOVER_WHAT.test(stamp.rest)) extras.push(line);
+    }
+  }
   const updates = [...entries, ...parseHandovers(body)].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return { updates, extras };
 }
 
-// The body without its "## Files" and "## Updates" sections, and those sections as written.
+// The body without its "## Files", "## Updates" and (review round 1) "## Handover history" sections,
+// and those sections as written (the app's splitTodoSections).
 function splitSections(body) {
-  const { details, sections } = cutSections(body, [FILES_HEADING, UPDATES_HEADING]);
-  return { details, files: sections[0], updates: sections[1] };
+  const { details, sections } = cutSections(body, [FILES_HEADING, UPDATES_HEADING, HANDOVER_HEADING]);
+  return { details, handover: sections[2], files: sections[0], updates: sections[1] };
 }
 
 // A web link's URL: http(s) with `//` and a host, at most LINK_URL_MAX characters, and no
@@ -1150,12 +1200,14 @@ function sectionBlocks(lines, range) {
 }
 
 // `lines` with `added` after the section's last line that isn't blank (after a blank line when the
-// section is only a heading), and a blank line kept before a heading that follows.
+// section is only a heading), and a blank line kept before a heading that follows. v0.7: a code fence
+// opened in the section and never closed is closed first.
 function appendToSection(lines, range, added) {
   const out = lines.slice();
   let last = range[1] - 1;
   while (last > range[0] && out[last].trim() === '') last--;
-  const insert = last === range[0] ? ['', ...added] : added;
+  const fence = openFence(out.slice(0, last + 1));
+  const insert = last === range[0] ? ['', ...added] : [...(fence ? [fence] : []), ...added];
   out.splice(last + 1, 0, ...insert);
   const next = last + 1 + insert.length;
   if (next < out.length && FILES_NEXT_HEADING.test(out[next])) out.splice(next, 0, '');
@@ -1256,10 +1308,12 @@ function shortDate(value) {
 }
 
 // An update's text (`text` on update, `note` on assignee and tick), normalised: CR and CRLF become
-// LF, tabs spaces; each line loses its trailing spaces, blank lines go, and the whole is trimmed.
+// LF (v0.7 review round 1: so do U+2028 and U+2029), tabs spaces; each line loses its trailing
+// spaces, blank lines go, and the whole is trimmed.
 function updateTextOf(value, name) {
   if (typeof value !== 'string') throw new Refusal(400, `${name} must be text`);
-  const text = value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ')
+  const text = value.replace(/\r\n?|[\u2028\u2029]/g, '\n').replace(/\t/g, ' ')
+
     .split('\n').map(l => l.trimEnd()).filter(l => l !== '').join('\n').trim();
   if (!text) throw new Refusal(400, `${name} is required`);
   if (text.length > UPDATE_MAX) throw new Refusal(400, `${name} is too long (over ${UPDATE_MAX} characters)`);
@@ -1273,12 +1327,38 @@ function noteOf(body) {
   return body.note === undefined || body.note === null ? null : updateTextOf(body.note, 'note');
 }
 
-// Details sent by a caller may not hold the log: only this script writes it.
-function hasUpdatesHeading(text) {
+// Details sent by a caller may not hold the log (or, review round 1, the handover history): only this
+// script writes them. A heading inside a code fence is not one.
+function hasHeading(text, heading) {
   const lines = text.split('\n');
-  return linesOutsideFences(lines).some(i => UPDATES_HEADING.test(lines[i]));
+  return linesOutsideFences(lines).some(i => heading.test(lines[i]));
 }
 const UPDATES_IN_DETAILS = 'details can\'t hold an "## Updates" section: updates are added with update';
+const HANDOVER_IN_DETAILS = 'details can\'t hold a "## Handover history" section: it is written when a to-do is passed on';
+
+// The two records edit never changes (review round 1), with what it says when a body would.
+const RECORDS = [
+  {
+    heading: UPDATES_HEADING,
+    inDetails: UPDATES_IN_DETAILS,
+    changed: 'the "## Updates" section can\'t be changed with edit: put new details above the "## Updates" heading (updates are added with update)',
+  },
+  {
+    heading: HANDOVER_HEADING,
+    inDetails: HANDOVER_IN_DETAILS,
+    changed: 'the "## Handover history" section can\'t be changed with edit: put new details above the "## Updates" and "## Handover history" headings',
+  },
+];
+
+// A record's sections as the words they say, so one sent back by an older app compares equal to the one
+// on disk: each line trimmed, runs of spaces as one, a `*` list marker read as `-`; blank lines and the
+// headings themselves left out.
+function recordWords(section, heading) {
+  return section.split('\n')
+    .map(l => l.trim().replace(/\s+/g, ' ').replace(/^\* /, '- '))
+    .filter(l => l !== '' && !heading.test(l))
+    .join('\n');
+}
 
 // The library's rules (the app's server/brain/library-rules.ts), as tdsapp-files has them.
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
@@ -1551,8 +1631,8 @@ function add(body, res) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
   refuseFilesHeading(details);
-  // v0.7: only this script writes the log.
-  if (hasUpdatesHeading(details)) throw new Refusal(400, UPDATES_IN_DETAILS);
+  // v0.7: only this script writes the log and (review round 1) the handover history.
+  for (const record of RECORDS) if (hasHeading(details, record.heading)) throw new Refusal(400, record.inDetails);
   const scope = scopeValue(body.scope, 'scope');
   const open = body.open === true;
   const adder = adderOf(body);
@@ -1693,16 +1773,19 @@ function assignee(body, res) {
 // v0.7: the "## Updates" section on disk is always kept (an incoming one is dropped; with none on
 // disk, a body holding that heading is refused), the last `title:` copy is the one read and every
 // other copy goes, and a real change is logged.
+// v0.7 review round 1: "## Handover history" is kept the same way, and an incoming record must say
+// what the one on disk says (see recordWords), else the edit is refused rather than losing the text.
 function edit(body, res) {
   const file = fileOf(body);
   const title = titleOf(body);
   // Optional: the long description. Omit the field to leave the body alone.
   const hasBody = typeof body.body === 'string';
   const sent = hasBody ? body.body.replace(/\r\n/g, '\n').trim() : null;
-  // An "## Updates" section sent back (an older app shows it in the details) never reaches the file,
-  // so the limit counts the body without it.
-  const sentLog = hasBody && hasUpdatesHeading(sent);
-  const newBody = sentLog ? cutSections(sent, [UPDATES_HEADING]).details : sent;
+  // The records sent back (an older app shows them in the details) never reach the file, so the
+  // limit counts the body without them.
+  const headings = RECORDS.map(r => r.heading);
+  const sentRecords = hasBody ? cutSections(sent, headings) : null;
+  const newBody = hasBody ? sentRecords.details : sent;
   if (hasBody && newBody.length > DETAILS_MAX) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
@@ -1738,19 +1821,34 @@ function edit(body, res) {
     newBodyLines = hasBody ? [...newBody.split('\n'), ''] : null;
   }
   const oldText = oldBody.join('\n');
-  const log = cutSections(oldText, [UPDATES_HEADING]).sections[0];
-  // Told rather than losing text: with no log on disk, the heading can only be the person's own.
-  if (sentLog && !log) throw new Refusal(400, UPDATES_IN_DETAILS);
+  const [log, handover] = cutSections(oldText, headings).sections;
+  // The records as read, before folding: an older app sends back what it was shown.
+  const unfolded = cutSections(todo.text, headings).sections;
+  RECORDS.forEach((record, k) => {
+    if (!hasBody || !hasHeading(sent, record.heading)) return;
+    // Told rather than losing text: with no record on disk, the heading can only be the person's own.
+    const onDisk = [log, handover][k];
+    if (!onDisk) throw new Refusal(400, record.inDetails);
+    const words = recordWords(sentRecords.sections[k], record.heading);
+    if (words !== recordWords(onDisk, record.heading) && words !== recordWords(unfolded[k], record.heading)) {
+      throw new Refusal(400, record.changed);
+    }
+  });
   if (!oldTitle) {
     const heading = firstHeading(oldBody);
     oldTitle = heading ? heading.text : '';
   }
-  let bodyLines = retitleBody(hasBody ? newBodyLines : oldBody, oldTitle, title);
+  let bodyLines = hasBody ? newBodyLines : oldBody;
+  // The handover history goes where a new one would (at the end, before a title history this edit
+  // starts), the files and the log by their own rules.
+  if (hasBody && handover) bodyLines = placeSection(bodyLines, handover.split('\n'), headLines !== null, NO_ANCHOR);
+  bodyLines = retitleBody(bodyLines, oldTitle, title);
   const kept = keepFiles ? splitFiles(oldText).files : '';
   if (kept) bodyLines = placeSection(bodyLines, kept.split('\n'), headLines !== null);
   if (hasBody && log) bodyLines = placeUpdates(bodyLines, log.split('\n'), headLines !== null);
+
   const titleChanged = oldTitle !== title;
-  const oldDetails = (keepFiles ? splitSections(oldText) : cutSections(oldText, [UPDATES_HEADING])).details;
+  const oldDetails = (keepFiles ? splitSections(oldText) : cutSections(oldText, headings)).details;
   const detailsChanged = hasBody && newBody !== oldDetails;
   let words = 'changed the details';
   if (titleChanged) words = detailsChanged ? 'changed the title and the details' : 'changed the title';
@@ -1828,8 +1926,10 @@ function stampRecord(text, keyLine, record, footer) {
     }
   }
   let out;
+  let bodyStart;
   if (close === -1) {
     out = ['---', ...record, '---', ...lines];
+    bodyStart = record.length + 2;
   } else {
     const head = [];
     let dropping = false;
@@ -1841,8 +1941,12 @@ function stampRecord(text, keyLine, record, footer) {
       head.push(line);
     }
     out = ['---', ...head, ...record, '---', ...lines.slice(close + 1)];
+    bodyStart = head.length + record.length + 2;
   }
   while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+  // v0.7 (review round 1): a code fence the body never closed would swallow the record.
+  const fence = openFence(out.slice(bodyStart));
+  if (fence) out.push(fence);
   out.push('', ...footer, '');
   return bom + out.join(eol);
 }

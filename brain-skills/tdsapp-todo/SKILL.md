@@ -31,7 +31,7 @@ echo '{"title":"Renew the Acme contract","due":"2026-12-01"}' \
 | Command | Fields | What it does |
 |---|---|---|
 | `add` | `title`; optional `due`, `assignee`, `open`, `via`, `by`, `scope`, `body`, `client`, `project`, `stage` | Writes `todo/YYYYMMDD-<slug>.md` dated today, with `created_at` (the UK time), with a name not already used in `todo/`, `personal/todo/` or the `done/` and `deleted/` folders of either. No assignee means the person in `git config user.name`; `open: true` leaves it open to anyone instead. `via` names the tool, written as `source: added from <via>` (`added with the todo skill` when not sent). Records `created_by` (`by`, else the git user). A to-do for someone else is stamped as passed on (see below). `scope: "personal"` writes it to `personal/todo/` instead, always for the person adding it. `body` becomes its details, for anyone it's for. `client`, `project` and `stage` put it straight into a project, with the same checks as `project`. |
-| `edit` | `file`, `title`; optional `body`, `expect`, `keep_files`, `by`, `by_name`, `via` | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. When the title really changes, the old one goes under `## Title history` (see below). With `keep_files: true`, `body` is the details without the `## Files` section, and the section already in the file is kept (see below). It never changes the `## Updates` log (see below). If neither the title nor the details really change, nothing is written. |
+| `edit` | `file`, `title`; optional `body`, `expect`, `keep_files`, `by`, `by_name`, `via` | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. When the title really changes, the old one goes under `## Title history` (see below). With `keep_files: true`, `body` is the details without the `## Files` section, and the section already in the file is kept (see below). It never changes the `## Updates` log or the `## Handover history` (see below). If neither the title nor the details really change, nothing is written. |
 | `due` | `file`, `due`; optional `expect`, `by`, `by_name`, `via` | Sets the due date (`YYYY-MM-DD`, a real date), or clears it when empty or null. If it's already that, nothing is written. |
 | `assignee` | `file`, `assignee`; optional `expect`, `by`, `by_name`, `via`, `note`, `back` | Passes it on (a team member's name slug such as `ben-mcadam`), or makes it open to anyone when empty or null. Records who passed it on (see below). If the assignee is already that, nothing is written (and a `note` is refused, as nothing was passed on). `note` adds an update in the same write. `back: true` makes it a hand back to the person who asked (see below). Not for personal to-dos: move it to TDS first. |
 | `delete` | `file`; optional `via`, `by`, `by_name`, `expect` | Moves it to `todo/deleted/`, adding `status: deleted`, `deleted` (date), `deleted_at` (UK time), `deleted_by` (`by`, else the person in `git config user.name`) and `deleted_via` (`via`, such as `TDS Brain App`; `todo skill` when not sent), and a "Deleted by … at …" line at the end. An earlier deleted to-do of the same name is kept: the new one gets a number added. |
@@ -70,7 +70,8 @@ When `assignee` really changes who has it, the script records it in the frontmat
 any earlier ones; `open` stands for nobody) and adds a line for people under `## Handover history` at
 the end, such as `- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Brain App).`
 Who did it is `by` and `by_name`, else the person in `git config user.name`. Adding a to-do for
-someone else records the same frontmatter, without `assigned_from`.
+someone else records the same frontmatter, without `assigned_from`. Only `assignee` writes that
+section: `edit` keeps it as it is, just like the `## Updates` log (see below).
 
 **Handing it back.** When someone has finished their part of a to-do they were given, `assignee`
 with `back: true` passes it back to the person who asked. The record also gets `assigned_back: true`
@@ -134,10 +135,16 @@ this script writes and only ever adds to:
   is named if it later moves to the team.
 - The section goes after the details and `## Files`, before `## Title history`, `## Handover history`
   or the done or deleted note.
-- `edit` never changes it. If the details you send hold an `## Updates` section (an older app shows it
-  in the details), the one already in the file is kept instead, and the 8,000-character limit counts
-  the details without it. If the file has no log yet, details holding that heading are refused, so
-  nothing you typed is lost.
+- `edit` never changes it, or the `## Handover history`. Send the details without them: the ones in
+  the file are kept. If the details you send do hold one (an older app shows them in the details), it
+  must say the same as the one in the file (spaces, blank lines and a `*` or `-` list mark don't
+  matter), and the 8,000-character limit counts the details without it. If it says something else,
+  such as a paragraph typed below the log, the edit is refused and nothing is written, rather than
+  losing what was typed: put new details above the `## Updates` heading. If the file has no such
+  section yet, details holding that heading are refused too.
+- If the details end inside a code block that is never closed (a line of three backticks or tildes
+  with no closing one), the script closes it before it adds a section after it, so the log, the files,
+  the title history, the handover history and the done or deleted note are never read as code.
 
 Web links sit in the `## Files` section beside files, one per line, such as
 `- [Quote on Drive](https://drive.google.com/file/d/abc/view)`. An address with a round bracket is
@@ -146,7 +153,9 @@ written in `<…>`. Only `http://` and `https://` addresses are taken, with no s
 The brain merges two people's changes to one to-do line by line (`todo/*.md merge=union` in its
 `.gitattributes`), so both people's lines are kept. A merge can leave two `## Updates` or `## Files`
 sections, or a frontmatter line twice: readers read every section and take the last copy of a line,
-and the next change through this script folds them back into one.
+and the next change through this script folds them back into one. One known limit: when two people
+add updates of more than one line at about the same time and both end with the very same line, the
+merge keeps that line once, so one of the two updates loses its last line.
 
 `expect` is the `version` that `list` gave for that to-do (a fingerprint of the file). Send it when
 you've shown someone a to-do and are about to change it: if the file has changed since, nothing is
@@ -165,8 +174,9 @@ It says no, with a clear message, rather than quietly changing what you sent:
 
 - a title over 200 characters, details over 8,000 characters, or an assignee over 40 characters;
 - details with a `## Files` heading on `add`, or on `edit` with `keep_files` (use `attach`);
-- details with an `## Updates` heading on `add`, or on `edit` when the file has no log yet (use
-  `update`);
+- details with an `## Updates` or `## Handover history` heading on `add`, or on `edit` when the file
+  has no such section yet (use `update`, or `assignee` to pass it on); on `edit`, such a section that
+  doesn't say the same as the one in the file;
 - an update or note that is empty, over 2,000 characters, holds a control character or a code block;
   a note on `assignee` when nothing is passed on; `back` that isn't `true`, or a hand back to nobody;
 - for `link`: an address that isn't `http://` or `https://`, has no site, holds a space, `<`, `>` or a
@@ -233,7 +243,8 @@ Everything added in 0.7 is optional too, but from 0.7 the results are no longer 
 0.6: every real change made by an older caller also adds a line under `## Updates`, and `add` also
 writes `created_at`. Everything added is plain markdown, so the Workbench and the Reminders sync read
 the same title, due date, assignee and details, with a few extra lines. `edit`'s reply leaves the log
-out of `body`. An older app counts the log inside its 8,000-character details limit, so it may refuse
+out of `body`. `edit` now also keeps the `## Handover history` when the body sent leaves it out, and
+refuses a body whose log or handover history says something different from the file's. An older app counts the log inside its 8,000-character details limit, so it may refuse
 to save the details of a to-do with a long log until it is updated. An older script answers `update`,
 `link` and `unlink` with `unknown command` and ignores `note` and `back`, so a caller checks
 `capabilities` for `updates-v1` and `links-v1` first.
@@ -247,4 +258,6 @@ When you edit a to-do yourself rather than through the script, the rules in `tod
 apply: keep the file name, update the `#` heading with the title, keep the old title under
 `## Title history`, and name new files by the date they should surface. Link files with `attach`
 and web pages with `link` rather than by hand, so the path is checked and written the way every
-reader expects. Never edit the `## Updates` log by hand: add to it with `update`.
+reader expects. Never edit the `## Updates` log or the `## Handover history` by hand: add to them with
+`update` and `assignee`.
+

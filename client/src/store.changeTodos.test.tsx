@@ -388,6 +388,17 @@ describe('store.holdTodo (undo)', () => {
     });
     expect(store?.actionError).toBe('That task could not be found.');
     expect(store?.heldTodos).toEqual([]);
+    // The panel keeps what was typed for a task whose change failed, until that task is held again.
+    expect(store?.failedHeld).toEqual(['a.md']);
+    api.completeTodo.mockResolvedValue(list('A'));
+    act(() =>
+      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Marked as done', action: null }),
+    );
+    expect(store?.failedHeld).toEqual([]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);
+    });
+    expect(store?.failedHeld).toEqual([]);
   });
 
   it('tells the person how to carry on when a held change is refused as changed', async () => {

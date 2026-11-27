@@ -173,4 +173,34 @@ No file appears in two rows.
 
 ## Review outcomes
 
-(Filled at the end.)
+Release 1, review round 1 (2026-11-27). Each finding was checked in code or reproduced before it was fixed.
+
+**Script correctness (Opus).** Confirmed 4, dropped 0.
+- `edit` dropped text an older app's user typed below the log. Fixed: the sent-back record must say the same as the one on disk, else 400.
+  Plain: a line added at the bottom of a task on an older copy of the app no longer disappears on Save; the person is told instead.
+- A task whose details end in an unclosed code block hid every update. Fixed: the script closes the block first.
+- U+2028/U+2029 in an update now count as line breaks.
+- Two multi-line notes ending in the same line, added in the same sync window, lose one copy of that line under the union merge. Accepted and documented (contract, "Known limit"), pinned by a test.
+- Four changes had no test that failed without them (unclosed frontmatter on tick/delete, every `## Files` section on the move-to-TDS privacy check, the fold before stamping). Tests added.
+
+**Server and client correctness (Opus).** Confirmed 2, dropped 0.
+- BLOCKING: ticking a checklist box could delete a task's `## Files` section when the list arrived without the attach capability. Fixed: someone who can edit sees, ticks and sends exactly the edit text.
+  Plain: ticking a box can no longer wipe a task's files and links.
+- The asker's "Add an update" could send twice on a double press. Fixed with an in-flight guard for every caller.
+
+**Security (Opus).** Confirmed 2, dropped 0.
+- Typed details could fake a "handed it back" line in the timeline. Fixed: `## Handover history` is script-owned like `## Updates` (script, server and reader), and no longer part of the editable details.
+  Plain: nobody can make it look as if a colleague handed a task back.
+- A hand-edited line of a million brackets could freeze the tab. Fixed: over-long matches stay text.
+
+**UI and accessibility (Sonnet).** Confirmed 2 (help wording for the Hand back button), dropped 0.
+
+**UX/UI gate (Opus expert).** First pass NOT YET: typed text was thrown away by Mark as done, Hand back and Delete. Fixed, with six smaller points (Undo keeps the text, box above the list, " · " before the time, the note survives Cancel, "Today, 14:05" dates, one name for the button). Second pass: SIGN-OFF.
+- Left open, not blocking: after "Discard" the Delete press is dropped (as the chat button's is); at 414px the foot wraps to three rows.
+
+**Lead's browser check.** Found and fixed: a hand back note kept from an earlier try went out in place of what was typed last. The update box and the hand back note are now one text per task. Also fixed: `## Handover history` showed twice in read views; a code block in an update now gets the app's own message; a typed `## Updates` heading on a task with a log gets the app's own message; the handover line no longer names the same person twice.
+
+**Departures from the plan worth knowing.**
+- The details the editor shows and saves no longer include `## Handover history` (when the brain script is 0.7).
+- An update box's text is sent as the note when Mark as done is pressed.
+

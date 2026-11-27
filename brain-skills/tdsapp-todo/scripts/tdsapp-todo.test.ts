@@ -2612,14 +2612,15 @@ describe('v0.5: edit with keep_files', () => {
     );
   });
 
+  // v0.7 (review round 1): apart from the handover history, which edit never changes.
   it('without keep_files, still replaces the whole body, a ## Files heading included', () => {
     put('a.md', ON_DISK);
     run('edit', { file: 'a.md', title: 'T', body: 'New details.' });
-    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nNew details.\n');
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\nNew details.\n\n${HANDOVER}\n`);
     run('edit', { file: 'a.md', title: 'T', body: `Two.\n\n## Files\n\n${LOGO_LINE}` });
     expect(linked(read('a.md'))).toEqual([LOGO]);
     run('edit', { file: 'a.md', title: 'T', body: 'Three.', keep_files: false });
-    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nThree.\n');
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\nThree.\n\n${HANDOVER}\n`);
   });
 });
 

@@ -419,6 +419,31 @@
       "body": "Just details.",
       "updates": [],
       "extras": []
+    },
+    {
+      "name": "text typed under Handover history is kept as an extra line, after the Updates extras",
+      "body": "Details.\n\n## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hello.\nHand note.\n\n## Handover history\n\n- 1 Dec 2026, 09:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).\n\nClient wants the 2025 rates. Call Jo before Friday.\n",
+      "updates": [
+        {
+          "kind": "handover",
+          "at": "2026-12-01T09:00:00+00:00",
+          "by": null,
+          "byName": "Ben McAdam",
+          "text": "passed it from ben-mcadam to sam-example",
+          "via": "TDS Cortex",
+          "action": "assignee"
+        },
+        {
+          "kind": "note",
+          "at": "2026-12-01T10:00:00+00:00",
+          "by": "sam-example",
+          "byName": "Sam Example",
+          "text": "Hello.",
+          "via": null,
+          "action": "update"
+        }
+      ],
+      "extras": ["Hand note.", "Client wants the 2025 rates. Call Jo before Friday."]
     }
   ],
   "split": [
@@ -426,13 +451,15 @@
       "name": "no sections",
       "body": "Ring the client.\n",
       "details": "Ring the client.",
+      "handover": "",
       "files": "",
       "updates": ""
     },
     {
       "name": "details, Files, Updates and Handover history",
       "body": "Details.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hi.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n",
-      "details": "Details.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).",
+      "details": "Details.",
+      "handover": "## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).",
       "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)",
       "updates": "## Updates\n\n- 1 Dec 2026, 10:00 UK: Sam Example (sam-example) wrote: Hi."
     },
@@ -440,13 +467,31 @@
       "name": "two of each (a union merge): every copy is taken out, joined by a blank line",
       "body": "Intro.\n\n## Updates\n\n- A\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Title history\n\n- 2026-11-01: was \"Old\"\n\n## Updates\n\n- B\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n",
       "details": "Intro.\n\n## Title history\n\n- 2026-11-01: was \"Old\"",
+      "handover": "",
       "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)",
       "updates": "## Updates\n\n- A\n\n## Updates\n\n- B"
+    },
+    {
+      "name": "two Handover history sections (a union merge) and a Title history between them",
+      "body": "Intro.\n\n## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n\n## Title history\n\n- 2026-11-01: was \"Old\"\n\n## handover history\n\n- 2 Dec 2026, 09:00 UK: Ben McAdam handed it back to sam-example (TDS Cortex).\n",
+      "details": "Intro.\n\n## Title history\n\n- 2026-11-01: was \"Old\"",
+      "handover": "## Handover history\n\n- 1 Dec 2026, 10:30 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Cortex).\n\n## handover history\n\n- 2 Dec 2026, 09:00 UK: Ben McAdam handed it back to sam-example (TDS Cortex).",
+      "files": "",
+      "updates": ""
     },
     {
       "name": "a fenced Updates heading stays in the details",
       "body": "Notes.\n\n```\n## Updates\n```",
       "details": "Notes.\n\n```\n## Updates\n```",
+      "handover": "",
+      "files": "",
+      "updates": ""
+    },
+    {
+      "name": "a fenced Handover history heading stays in the details",
+      "body": "Notes.\n\n~~~\n## Handover history\n~~~\n",
+      "details": "Notes.\n\n~~~\n## Handover history\n~~~",
+      "handover": "",
       "files": "",
       "updates": ""
     },
@@ -454,6 +499,7 @@
       "name": "CRLF line endings are kept",
       "body": "Details.\r\n\r\n## Updates\r\n\r\n- A\r\n\r\n## Title history\r\n\r\n- 2026-11-01: was \"Old\"\r\n",
       "details": "Details.\r\n\r\n## Title history\r\n\r\n- 2026-11-01: was \"Old\"",
+      "handover": "",
       "files": "",
       "updates": "## Updates\r\n\r\n- A"
     }

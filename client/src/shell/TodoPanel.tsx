@@ -51,8 +51,10 @@ import {
   PASS_ON_NOTE,
   PERSONAL_WARNING,
   ProjectFields,
+  type TypedDrafts,
   todoProjectValue,
   useAssignGate,
+  useTypedDrafts,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
 import { type TodoUpdateCompose, TodoUpdates } from './TodoUpdates.tsx';
@@ -106,6 +108,11 @@ export interface TodoPanelProps {
   onUpdate?: (todo: TodoItem, text: string, markDone: boolean) => Promise<boolean>;
   /** Adds an update to a task you passed on, while it waits. True when it went. */
   onAskedUpdate?: (asked: AskedTodo, text: string) => Promise<boolean>;
+  /**
+   * What was typed in the read view and not sent, kept by task. The drawer passes its own so the text outlives the
+   * panel (a held change can be undone); absent = the panel keeps it itself.
+   */
+  typedDrafts?: TypedDrafts;
   /** Hands the task back to the person who passed it on, with an optional note (held, with Undo). */
   onHandBack?: (todo: TodoItem, target: { slug: string; name: string }, note: string) => void;
   /** Says a line in the panel's status region (the drawer's status line, shown while the panel is open). */
@@ -167,21 +174,22 @@ export default function TodoPanel(props: TodoPanelProps) {
     todo !== null && mode === 'edit'
       ? buildEditActions(todo, draft, detailsEditable, props.canAttach, canProject, canUpdate)
       : [];
-  // Typed but not sent: an update, or a hand back note. Kept here (by task) so editing doesn't lose it.
+  // Typed but not sent. One text per task: the update box and the hand back note show the same words, so a note
+  // kept from an earlier try can never go out in place of what the person typed last (browser check: it did).
+  // Kept by task so editing (or a held change) doesn't lose it.
   const key = todo?.key ?? asked?.key ?? done?.key ?? teamTodo?.key ?? '';
-  const [typed, setTyped] = useState<{ key: string; update: string; back: string | null }>({
-    key: '',
-    update: '',
-    back: null,
-  });
-  const here = typed.key === key ? typed : { key, update: '', back: null };
+  const ownDrafts = useTypedDrafts();
+  const typedStore = props.typedDrafts ?? ownDrafts;
+  const here = typedStore.get(key);
   const drafts: DraftProps = {
     updateText: here.update,
-    setUpdateText: (update) => setTyped({ ...here, update }),
-    backNote: here.back,
-    setBackNote: (back) => setTyped({ ...here, back }),
+    setUpdateText: (update) => typedStore.set(key, { update }),
+    backNote: here.update,
+    setBackNote: (update) => typedStore.set(key, { update }),
+    backOpen: here.backOpen,
+    setBackOpen: (backOpen) => typedStore.set(key, { backOpen }),
   };
-  const readDirty = mode === 'read' && (here.update.trim() !== '' || (here.back ?? '').trim() !== '');
+  const readDirty = mode === 'read' && here.update.trim() !== '';
   const dirty = mode === 'add' ? addDirty : mode === 'edit' ? actions.length > 0 : readDirty;
   const overLimit = mode === 'edit' && detailsEditable && draft.details.length > TODO_DETAILS_MAX;
 
@@ -369,8 +377,12 @@ export default function TodoPanel(props: TodoPanelProps) {
 interface DraftProps {
   updateText: string;
   setUpdateText: (text: string) => void;
-  backNote: string | null;
-  setBackNote: (text: string | null) => void;
+  /** The hand back note: the same text as the update box, which the form stands in for while it is open. */
+  backNote: string;
+  setBackNote: (text: string) => void;
+  /** The hand back form is showing. */
+  backOpen: boolean;
+  setBackOpen: (open: boolean) => void;
 }
 
 function Status({ message, isError }: { message: string; isError: boolean }) {
@@ -506,16 +518,16 @@ function ReadView({
   const handBackButton = useRef<HTMLButtonElement>(null);
   const links = todo.links ?? [];
   const canChangeLinks = p.canEdit && p.canLink === true;
-  // The Files block shows whenever files can be added, and read only to anyone who can't edit here (a
-  // teammate on the team role, or with changes switched off), so linked files can still be opened. Only a
-  // person who edits without the attach capability sees the whole body, section included (overseer).
-  const filesBlock =
-    p.canAttach ||
-    canChangeLinks ||
-    links.length > 0 ||
-    (!p.canEdit && splitTodoFiles(todo.details).files !== '');
-  // Someone who can't edit never sends the details back, so the Updates block can always take its section out.
-  const shown = detailsText(todo, filesBlock, p.canUpdate === true || !p.canEdit);
+  // Someone who can edit sees, ticks and sends exactly the edit text, and the Files block only with the attach
+  // capability, so a tick never sends the details back without the `## Files` section (review finding). Someone who
+  // can't edit sends nothing back, so the Files block shows read only (linked files can still be opened) and the
+  // sections can always come out of the text.
+  const filesBlock = p.canEdit
+    ? p.canAttach
+    : p.canAttach || links.length > 0 || splitTodoFiles(todo.details).files !== '';
+  const shown = p.canEdit
+    ? detailsText(todo, p.canAttach, p.canUpdate === true)
+    : detailsText(todo, filesBlock, true);
   const canUpdate = p.canEdit && p.canUpdate === true && p.onUpdate !== undefined;
   const compose: TodoUpdateCompose | null = canUpdate
     ? {
@@ -528,7 +540,9 @@ function ReadView({
     : null;
   const target = canUpdate && p.onHandBack ? handBackTarget(todo, p.me, p.team) : null;
   const targetFirst = target ? firstName(target.name) : '';
-  const backNote = target ? drafts.backNote : null;
+  const backOpen = target !== null && drafts.backOpen;
+  const { dispatch: shellDispatch } = useShell();
+  const typedUpdate = drafts.updateText.trim();
   const canTickDetails = p.canEdit && faithful && !tooLong;
   const note = tooLong ? LONG_NOTE : faithful ? null : UNFAITHFUL_NOTE;
   // A tick shows at once, while it saves, and only while the details it was made on are still the ones shown.
@@ -587,22 +601,23 @@ function ReadView({
             more={todo.updatesMore}
             extras={todo.updateExtras}
             team={p.team}
-            compose={compose}
+            compose={backOpen ? null : compose}
             onStatus={p.onStatus}
           />
           {todo.scope !== 'personal' ? <TodoHistory key={todo.key} todoKey={todo.key} team={p.team} /> : null}
         </div>
         <Facts todo={todo} me={p.me} team={p.team} canUsePersonal={p.canUsePersonal} />
       </div>
-      {target && backNote !== null ? (
+      {target && backOpen ? (
         <HandBackForm
           first={targetFirst}
-          note={backNote}
+          note={drafts.backNote}
           busy={p.busy}
           setNote={drafts.setBackNote}
-          onSend={() => p.onHandBack?.(todo, target, backNote.trim())}
+          onSend={() => p.onHandBack?.(todo, target, typedUpdate)}
           onCancel={() => {
-            drafts.setBackNote(null);
+            // The note stays as the task's draft: it shows in the update box, and in the form when it opens again.
+            drafts.setBackOpen(false);
             requestAnimationFrame(() => handBackButton.current?.focus({ preventScroll: true }));
           }}
         />
@@ -618,7 +633,13 @@ function ReadView({
               className="btn"
               aria-disabled={p.busy || undefined}
               onClick={() => {
-                if (!p.busy) p.onDone(todo);
+                if (p.busy) return;
+                // Text in the update box goes with the tick, as "Add an update and mark as done" does.
+                if (compose?.canDone && typedUpdate !== '') {
+                  void compose.onAdd(typedUpdate, true);
+                  return;
+                }
+                p.onDone(todo);
               }}
             >
               Mark as done
@@ -629,11 +650,13 @@ function ReadView({
               type="button"
               className="btn"
               ref={handBackButton}
-              aria-expanded={backNote !== null}
+              aria-expanded={backOpen}
               aria-disabled={p.busy || undefined}
               onClick={() => {
                 if (p.busy) return;
-                drafts.setBackNote(backNote === null ? '' : null);
+                if (backOpen) return drafts.setBackOpen(false);
+                // Opens holding what was typed in the update box, to edit; the box gives way to the form.
+                drafts.setBackOpen(true);
               }}
             >
               Hand back to {targetFirst}
@@ -646,7 +669,10 @@ function ReadView({
               className="btn"
               aria-disabled={p.busy || undefined}
               onClick={() => {
-                if (!p.busy) p.onDelete(todo);
+                if (p.busy) return;
+                // Typed text would be lost: the panel asks "Discard your changes?" first.
+                if (typedUpdate !== '') return shellDispatch({ type: 'close-todo' });
+                p.onDelete(todo);
               }}
             >
               Delete

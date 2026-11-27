@@ -112,9 +112,19 @@ export function cutTodoSections(body: string, headings: RegExp[]): { details: st
   };
 }
 
+/** `## Handover history` leaves `details` too: the script owns it, like `## Updates` (review round 1). */
 export const splitTodoSections: SplitTodoSections = (body) => {
-  const { details, sections } = cutTodoSections(body, [TODO_FILES_HEADING, TODO_UPDATES_HEADING]);
-  return { details, files: sections[0] as string, updates: sections[1] as string };
+  const { details, sections } = cutTodoSections(body, [
+    TODO_FILES_HEADING,
+    TODO_UPDATES_HEADING,
+    HANDOVER_HEADING,
+  ]);
+  return {
+    details,
+    handover: sections[2] as string,
+    files: sections[0] as string,
+    updates: sections[1] as string,
+  };
 };
 
 // ─── Time ────────────────────────────────────────────────────────────────────────────────────────
@@ -254,8 +264,29 @@ export const parseTodoHandovers: ParseTodoHandovers = (body) => {
   return out;
 };
 
+/**
+ * Lines in a `## Handover history` section that are not handover entries: text someone typed under the heading.
+ * The section is out of the details now, so they show with the other hand-edited lines instead of vanishing
+ * (review round 2).
+ */
+function handoverExtras(body: string): string[] {
+  const lines = String(body ?? '').split(/\r?\n/);
+  const out: string[] = [];
+  for (const [start, end] of todoSectionRanges(lines, HANDOVER_HEADING)) {
+    for (let i = start + 1; i < end; i++) {
+      const line = (lines[i] as string).trim();
+      if (line === '') continue;
+      const stamp = stampOf(line);
+      if (!stamp || !HANDOVER_WHAT.test(stamp.rest)) out.push(line);
+    }
+  }
+  return out;
+}
+
 export const todoTimeline: TodoTimeline = (body) => {
-  const { entries, extras } = parseTodoUpdates(body);
+  const parsed = parseTodoUpdates(body);
+  const entries = parsed.entries;
+  const extras = [...parsed.extras, ...handoverExtras(body)];
   // Array.prototype.sort is stable: equal minutes keep file order, `## Updates` first.
   const updates = [...entries, ...parseTodoHandovers(body)].sort(
     (a, b) => Date.parse(a.at) - Date.parse(b.at),

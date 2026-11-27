@@ -16,6 +16,7 @@ import {
 } from '../../../shared/todo-files.ts';
 import {
   isTodoLinkUrl,
+  linesOutsideFences,
   parseTodoHandovers,
   parseTodoUpdates,
   splitTodoSections,
@@ -47,7 +48,7 @@ const lib = require('../scripts/tdsapp-todo.cjs') as {
   parseUpdates(body: string): { entries: TodoUpdate[]; extras: string[] };
   parseHandovers(body: string): TodoUpdate[];
   timeline(body: string): { updates: TodoUpdate[]; extras: string[] };
-  splitSections(body: string): { details: string; files: string; updates: string };
+  splitSections(body: string): { details: string; handover: string; files: string; updates: string };
   isLinkUrl(url: string): boolean;
   ukWallToIso(date: string, time: string): string | null;
   parseLinks(body: string): { url: string; name: string }[];
@@ -61,7 +62,7 @@ const UPDATES = fixture('../../../shared/todo-updates.fixtures.json') as {
   updates: { name: string; body: string; entries: TodoUpdate[]; extras: string[] }[];
   handovers: { name: string; body: string; entries: TodoUpdate[] }[];
   timeline: { name: string; body: string; updates: TodoUpdate[]; extras: string[] }[];
-  split: { name: string; body: string; details: string; files: string; updates: string }[];
+  split: { name: string; body: string; details: string; handover: string; files: string; updates: string }[];
   linkUrl: { url: string; ok: boolean }[];
   ukWall: { date: string; time: string; iso: string | null }[];
 };
@@ -116,7 +117,7 @@ describe('v0.7: both readers agree (shared/todo-updates.fixtures.json, shared/to
     expect(todoTimeline(c.body)).toEqual({ updates: c.updates, extras: c.extras });
   });
   it.each(UPDATES.split.map((c) => [c.name, c] as const))('split: %s', (_, c) => {
-    const want = { details: c.details, files: c.files, updates: c.updates };
+    const want = { details: c.details, handover: c.handover, files: c.files, updates: c.updates };
     expect(lib.splitSections(c.body)).toEqual(want);
     expect(splitTodoSections(c.body)).toEqual(want);
   });
@@ -548,11 +549,11 @@ describe('v0.7: edit never changes ## Updates', () => {
 
   it.each([
     ['a body without the section', `New details.\n\n${HISTORY}`],
-    [
-      'a body holding another ## Updates section',
-      `New details.\n\n## Updates\n\n- forged line\n\n${HISTORY}`,
-    ],
     ['the section sent back as the details showed it', `New details.\n\n## Updates\n\n${KEEP}\n\n${HISTORY}`],
+    [
+      'the section sent back with spacing, list marker and heading case changed',
+      `New details.\n\n## updates  \n\n\n*   ${KEEP.slice(2).replace(': ', ':   ')}   \n\n${HISTORY}`,
+    ],
   ])('keeps the section on disk for %s, with and without keep_files', (_, body) => {
     for (const keep of [false, true]) {
       b.put('todo/a.md', LOGGED);
@@ -569,9 +570,47 @@ describe('v0.7: edit never changes ## Updates', () => {
     }
   });
 
+  const CHANGED =
+    'the "## Updates" section can\'t be changed with edit: put new details above the "## Updates" heading (updates are added with update)';
+
+  it.each([
+    [
+      'text typed below the log (an older app sends the whole body)',
+      `New details.\n\n## Updates\n\n${KEEP}\n\nA paragraph typed after the log.\n\n${HISTORY}`,
+    ],
+    [
+      'a changed entry',
+      `New details.\n\n## Updates\n\n${KEEP.replace('Keep me.', 'Keep me!')}\n\n${HISTORY}`,
+    ],
+    ['a forged entry', `New details.\n\n## Updates\n\n${KEEP}\n- forged line\n\n${HISTORY}`],
+    ['an entry taken out', `New details.\n\n## Updates\n\n${HISTORY}`],
+  ])('refuses %s (400), writing nothing, with and without keep_files', (_, body) => {
+    for (const keep of [false, true]) {
+      b.put('todo/a.md', LOGGED);
+      expect(run('edit', { file: 'a.md', title: 'Send the quote', body, keep_files: keep }).json).toEqual({
+        error: CHANGED,
+        status: 400,
+      });
+      expect(raw()).toBe(LOGGED);
+    }
+  });
+
+  it('accepts both copies an older app read before a union merge was folded', () => {
+    const log = `## Updates\n\n${KEEP}\n\n## Updates\n\n${KEEP}\n- 1 Dec 2026, 10:01 UK: ${SAM} wrote: Two.\n`;
+    b.put('todo/a.md', `${TASK}\n${log}`);
+    expect(run('edit', { file: 'a.md', title: 'Send the quote', body: `New details.\n\n${log}` }).code).toBe(
+      0,
+    );
+    expect(parseTodoUpdates(raw()).entries.map((e) => e.text)).toEqual([
+      'Keep me.',
+      'Two.',
+      'changed the details',
+    ]);
+  });
+
   it('counts the details limit without the section sent back', () => {
     b.put('todo/a.md', LOGGED);
-    const body = `${'d'.repeat(8000)}\n\n## Updates\n\n- ${'x'.repeat(200)}`;
+    const body = `${'d'.repeat(8000)}\n\n## Updates\n\n${KEEP}`;
     expect(run('edit', { file: 'a.md', title: 'Send the quote', body }).code).toBe(0);
   });
 
@@ -814,6 +853,36 @@ describe('v0.7: two clones of a git brain merged under todo/*.md merge=union', (
         .slice(-3),
     ).toEqual(['From A.', 'From B.', 'set the due date to 9 Dec 2026']);
   });
+
+  // Contract, "Known limit" (accepted, review round 1): pinned so a change in it is noticed. The merge
+  // keeps the shared last line once, so one of the two notes (here the second, B's) loses it.
+  const KNOWN_LIMIT_TEXTS = ['From A.\nSee you.', 'From B.'];
+  it('known limit: two multi-line notes ending in the same line keep that line once', () => {
+    const { a, b: other } = clones(TASK);
+    script(
+      a,
+      'update',
+      { file: 't.md', text: 'From A.\nSee you.', by: 'sam-example', by_name: 'Sam Example' },
+      '2026-12-01T10:00:00Z',
+    );
+    git(a, 'commit', '-am', 'a');
+    git(a, 'push', 'origin', 'HEAD:main');
+    script(
+      other,
+      'update',
+      { file: 't.md', text: 'From B.\nSee you.', by: 'ben-mcadam', by_name: 'Ben McAdam' },
+      '2026-12-01T10:01:00Z',
+    );
+    git(other, 'commit', '-am', 'b');
+    git(other, 'pull', '--no-rebase', '--no-edit', 'origin', 'main');
+    const merged = readFileSync(join(other, 'todo', 't.md'), 'utf8');
+    expect(merged.match(/^ {2}See you\.$/gm)).toHaveLength(1);
+    expect(
+      parseTodoUpdates(merged)
+        .entries.map((e) => e.text)
+        .sort(),
+    ).toEqual(KNOWN_LIMIT_TEXTS);
+  });
 });
 
 describe('v0.7: 0.6 callers still succeed', () => {
@@ -890,7 +959,182 @@ describe('v0.7: the Workbench and the Reminders sync still read the same', () =>
     // The body: the details, then only lines the script added (files, log, handover history).
     const body = wb.body.replace(/\r\n/g, '\n');
     expect(body.startsWith('Ring the client.\n\n## Files\n')).toBe(true);
-    expect(splitTodoSections(body).details).toMatch(/^Ring the client\.\n\n## Handover history\n/);
+    expect(splitTodoSections(body).details).toBe('Ring the client.');
+    expect(splitTodoSections(body).handover).toMatch(/^## Handover history\n\n- .* passed it from /);
     expect(withoutLog(text)).not.toContain('## Updates');
+  });
+});
+
+// ---- review round 1 (contract: "edit never changes…", "fences", "text", "Known limit") ----------
+
+describe('v0.7 (review round 1): edit never changes ## Handover history either', () => {
+  const KEEP = `- 1 Dec 2026, 10:00 UK: ${BEN} wrote: Keep me.`;
+  const HANDED = '- 26 Nov 2026, 09:00 UK: Ben McAdam passed it from ben-mcadam to sam-example (TDS Cortex).';
+  const WITH = `${TASK}\n## Updates\n\n${KEEP}\n\n## Handover history\n\n${HANDED}\n`;
+  const BACK = '- 27 Nov 2026, 10:00 UK: Ben McAdam handed it back to sam-example (TDS Cortex).';
+  const CHANGED =
+    'the "## Handover history" section can\'t be changed with edit: put new details above the "## Updates" and "## Handover history" headings';
+  const IN_DETAILS =
+    'details can\'t hold a "## Handover history" section: it is written when a to-do is passed on';
+
+  it('carries the section on disk over when the body leaves it out, with and without keep_files', () => {
+    for (const keep of [false, true]) {
+      b.put('todo/a.md', WITH);
+      const r = run('edit', {
+        file: 'a.md',
+        title: 'Send the quote',
+        body: 'New details.',
+        keep_files: keep,
+      });
+      expect(r.code).toBe(0);
+      const text = raw();
+      expect(text.match(/^## Handover history$/gm)).toHaveLength(1);
+      expect(parseTodoHandovers(text).map((e) => e.text)).toEqual([
+        'passed it from ben-mcadam to sam-example',
+      ]);
+      expect(splitTodoSections(text.split('---\n')[2] as string)).toMatchObject({
+        details: 'New details.',
+        handover: `## Handover history\n\n${HANDED}`,
+      });
+      expect(text.indexOf('## Updates')).toBeLessThan(text.indexOf('## Handover history'));
+    }
+  });
+
+  it('accepts it sent back as an older app showed it, compared tolerantly', () => {
+    b.put('todo/a.md', WITH);
+    const body = `New details.\n\n## Updates\n\n${KEEP}\n\n## handover history\n\n*  ${HANDED.slice(2)}  \n`;
+    expect(run('edit', { file: 'a.md', title: 'Send the quote', body }).code).toBe(0);
+    expect(raw().match(/^## Handover history$/gm)).toHaveLength(1);
+    expect(raw()).toContain(`\n${HANDED}\n`);
+  });
+
+  it.each([
+    ['a typed "handed it back" line', `New details.\n\n## Handover history\n\n${HANDED}\n${BACK}`],
+    ['text typed below it', `New details.\n\n## Handover history\n\n${HANDED}\n\nMore notes.`],
+    ['a changed line', `New details.\n\n## Handover history\n\n${HANDED.replace('ben-mcadam to', 'jo to')}`],
+  ])('refuses %s (400), writing nothing', (_, body) => {
+    for (const keep of [false, true]) {
+      b.put('todo/a.md', WITH);
+      expect(run('edit', { file: 'a.md', title: 'Send the quote', body, keep_files: keep }).json).toEqual({
+        error: CHANGED,
+        status: 400,
+      });
+      expect(raw()).toBe(WITH);
+    }
+  });
+
+  it('refuses the heading when there is none on disk, on edit and on add, but not inside a code fence', () => {
+    b.put('todo/a.md', TASK);
+    const body = `x\n\n## Handover history\n\n${BACK}`;
+    expect(run('edit', { file: 'a.md', title: 'Send the quote', body }).json).toEqual({
+      error: IN_DETAILS,
+      status: 400,
+    });
+    expect(raw()).toBe(TASK);
+    expect(run('add', { title: 'x', body }).json).toEqual({ error: IN_DETAILS, status: 400 });
+    expect(
+      run('edit', { file: 'a.md', title: 'Send the quote', body: 'x\n\n```\n## Handover history\n```' }).code,
+    ).toBe(0);
+    expect(run('add', { title: 'y', body: '~~~\n## Handover history\n~~~' }).code).toBe(0);
+  });
+
+  it('assignee still appends to the section an edit carried over', () => {
+    b.put('todo/a.md', WITH);
+    run('edit', { file: 'a.md', title: 'Send the quote', body: 'New details.' });
+    run('assignee', { file: 'a.md', assignee: 'ben-mcadam', ...APP });
+    const text = raw();
+    expect(text.match(/^## Handover history$/gm)).toHaveLength(1);
+    expect(parseTodoHandovers(text).map((e) => e.text)).toEqual([
+      'passed it from ben-mcadam to sam-example',
+      'passed it from sam-example to ben-mcadam',
+    ]);
+  });
+});
+
+describe('v0.7 (review round 1): an unclosed code fence never swallows a section', () => {
+  const open = (fence = '```') => TASK.replace('Ring the client.\n', `Run this:\n\n${fence}\nnpm test\n`);
+  /** The level-2 headings outside code fences, in order. */
+  const headings = (text: string) => {
+    const lines = text.split('\n');
+    return linesOutsideFences(lines)
+      .map((i) => lines[i] as string)
+      .filter((l) => l.startsWith('## '));
+  };
+
+  it('two updates: the fence is closed once, before one ## Updates section both entries are in', () => {
+    b.put('todo/a.md', open());
+    run('update', { file: 'a.md', text: 'One', ...APP });
+    run('update', { file: 'a.md', text: 'Two', ...APP });
+    expect(raw()).toBe(
+      `${open()}\`\`\`\n\n## Updates\n\n- ${NOW}: ${SAM} wrote: One\n- ${NOW}: ${SAM} wrote: Two\n`,
+    );
+    expect(entries().map((e) => e.text)).toEqual(['One', 'Two']);
+  });
+
+  it.each([
+    ['link (## Files)', 'link', { url: 'https://example.com/a' }, ['## Files', '## Updates']],
+    ['attach (## Files)', 'attach', { path: 'clients/acme/files/q.pdf' }, ['## Files', '## Updates']],
+    ['a new title (## Title history)', 'edit', { title: 'Send it' }, ['## Updates', '## Title history']],
+    ['a pass-on (## Handover history)', 'assignee', { assignee: 'ben-mcadam' }, ['## Handover history']],
+  ])('%s closes it first, with a longer tilde fence too', (_, command, input, want) => {
+    b.put('clients/acme/files/q.pdf', 'x');
+    for (const fence of ['```', '~~~~']) {
+      b.put('todo/a.md', open(fence));
+      expect(run(command, { file: 'a.md', ...input }).code, `${command} ${fence}`).toBe(0);
+      expect(headings(raw()), fence).toEqual(want);
+      expect(raw()).toContain(`\nnpm test\n${fence}\n\n## `);
+    }
+  });
+
+  it('tick with a note and delete close it before their own records', () => {
+    b.put('todo/a.md', open());
+    expect(run('tick', { file: 'a.md', note: 'Done.' }).code).toBe(0);
+    expect(headings(raw('todo/done/a.md'))).toEqual(['## Updates', '## Done 2026-11-27']);
+    b.put('todo/b.md', open('~~~'));
+    expect(run('delete', { file: 'b.md' }).code).toBe(0);
+    expect(headings(raw('todo/deleted/b.md'))).toEqual(['## Deleted 2026-11-27']);
+  });
+
+  it('a closed fence is left as it is', () => {
+    const closed = TASK.replace('Ring the client.\n', 'Run this:\n\n```\nnpm test\n```\n');
+    b.put('todo/a.md', closed);
+    run('update', { file: 'a.md', text: 'One', ...APP });
+    expect(raw()).toBe(`${closed}\n## Updates\n\n- ${NOW}: ${SAM} wrote: One\n`);
+  });
+});
+
+describe('v0.7 (review round 1): line and paragraph separators in an update', () => {
+  it('U+2028 and U+2029 count as line breaks, so the entry reads back as a note', () => {
+    b.put('todo/a.md', TASK);
+    expect(run('update', { file: 'a.md', text: 'One\u2028Two\u2029\u2029Three', ...APP }).code).toBe(0);
+    expect(entries()).toMatchObject([{ kind: 'note', text: 'One\nTwo\nThree' }]);
+    expect(raw()).not.toMatch(/[\u2028\u2029]/);
+  });
+});
+
+describe('v0.7 (review round 1): tick and delete', () => {
+  it('still take a file whose frontmatter never closes, with or without a note', () => {
+    const broken = '---\ntitle: Broken\nRing the client.\n';
+    b.put('todo/a.md', broken);
+    expect(run('tick', { file: 'a.md', note: 'Done.' }).code).toBe(0);
+    expect(raw('todo/done/a.md')).toContain('## Done 2026-11-27');
+    expect(parseTodoUpdates(raw('todo/done/a.md')).entries.map((e) => e.text)).toEqual(['Done.']);
+    b.put('todo/b.md', broken);
+    expect(run('delete', { file: 'b.md' }).code).toBe(0);
+    expect(raw('todo/deleted/b.md')).toContain('## Deleted 2026-11-27');
+  });
+
+  it('fold what a union merge doubled before stamping', () => {
+    const doubled = `${TASK}\n## Updates\n\n- 1 Dec 2026, 10:00 UK: ${SAM} wrote: A.\n\n## Updates\n\n- 1 Dec 2026, 10:00 UK: ${SAM} wrote: A.\n- 1 Dec 2026, 10:01 UK: ${BEN} wrote: B.\n`;
+    for (const [command, folder] of [
+      ['tick', 'done'],
+      ['delete', 'deleted'],
+    ] as const) {
+      b.put('todo/a.md', doubled);
+      expect(run(command, { file: 'a.md' }).code).toBe(0);
+      const text = raw(`todo/${folder}/a.md`);
+      expect(text.match(/^## Updates$/gm), command).toHaveLength(1);
+      expect(parseTodoUpdates(text).entries.map((e) => e.text)).toEqual(['A.', 'B.']);
+    }
   });
 });

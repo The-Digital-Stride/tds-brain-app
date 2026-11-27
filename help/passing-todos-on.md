@@ -38,7 +38,7 @@ You can give a task to a teammate, or make it **Open to anyone** so the first fr
 - Passing a personal task on makes it a TDS task, so your teammate can see it.
 - To follow a task after you've passed it on, open the **Asked** tab. See Asked of others.
 - To take an open job yourself, open it and choose **Me** in **Assigned to**.
-- To return a task to the person who gave it to you, press **Hand back**. See Updates and handing back.
+- To return a task to the person who gave it to you, press **Hand back to** and their name. See Updates and handing back.
 
 ## Try this
 

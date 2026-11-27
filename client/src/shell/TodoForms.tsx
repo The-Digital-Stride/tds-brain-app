@@ -1,4 +1,4 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   type TeamMember,
   TODO_DETAILS_MAX,
@@ -540,4 +540,36 @@ export function conflictNote(
   if (theirs.details !== draft.details) parts.push('with different details');
   const theirsText = parts.length > 0 ? ` Their version: ${parts.join(', ')}.` : '';
   return `Someone else changed this task while you were editing.${theirsText} Press Save to replace it with yours, or Cancel to keep theirs.`;
+}
+
+/** What one task has typed and not sent. */
+export interface TypedDraft {
+  /** The update box's text, and the hand back note while that form is open: one text, never two. */
+  update: string;
+  backOpen: boolean;
+}
+const NO_TYPED: TypedDraft = { update: '', backOpen: false };
+
+/** Typed-but-unsent text by task key. Held outside the panel by the drawer, so Undo can bring the text back. */
+export interface TypedDrafts {
+  get: (key: string) => TypedDraft;
+  set: (key: string, patch: Partial<TypedDraft>) => void;
+  drop: (key: string) => void;
+}
+
+export function useTypedDrafts(): TypedDrafts {
+  const [all, setAll] = useState<Record<string, TypedDraft>>({});
+  return useMemo(
+    () => ({
+      get: (key) => all[key] ?? NO_TYPED,
+      set: (key, patch) => setAll((m) => ({ ...m, [key]: { ...(m[key] ?? NO_TYPED), ...patch } })),
+      drop: (key) =>
+        setAll((m) => {
+          if (!(key in m)) return m;
+          const { [key]: _gone, ...rest } = m;
+          return rest;
+        }),
+    }),
+    [all],
+  );
 }

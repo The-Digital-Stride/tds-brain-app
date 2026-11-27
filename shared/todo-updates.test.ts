@@ -16,7 +16,7 @@ interface Fixtures {
   updates: { name: string; body: string; entries: TodoUpdate[]; extras: string[] }[];
   handovers: { name: string; body: string; entries: TodoUpdate[] }[];
   timeline: { name: string; body: string; updates: TodoUpdate[]; extras: string[] }[];
-  split: { name: string; body: string; details: string; files: string; updates: string }[];
+  split: { name: string; body: string; details: string; handover: string; files: string; updates: string }[];
   linkUrl: { url: string; ok: boolean }[];
   ukWall: { date: string; time: string; iso: string | null }[];
 }
@@ -38,7 +38,12 @@ describe('task ## Updates log (shared fixtures)', () => {
   }
   for (const c of fixtures.split) {
     it(`split: ${c.name}`, () =>
-      expect(splitTodoSections(c.body)).toEqual({ details: c.details, files: c.files, updates: c.updates }));
+      expect(splitTodoSections(c.body)).toEqual({
+        details: c.details,
+        handover: c.handover,
+        files: c.files,
+        updates: c.updates,
+      }));
   }
   for (const c of fixtures.linkUrl) {
     it(`link URL ${JSON.stringify(c.url)} is ${c.ok ? 'accepted' : 'refused'}`, () =>

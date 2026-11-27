@@ -331,10 +331,8 @@ export function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? name;
 }
 
-/** "27 Nov 2026, 14:05" in UK time, from an update's ISO time; '' when it can't be read. */
-export function updateWhen(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return '';
+/** The day and time parts of an instant in UK time. */
+function londonParts(at: Date) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Europe/London',
     year: 'numeric',
@@ -344,7 +342,37 @@ export function updateWhen(iso: string): string {
     minute: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(at);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  const month = MONTHS[Number(get('month')) - 1] ?? '';
-  return `${Number(get('day'))} ${month} ${get('year')}, ${get('hour')}:${get('minute')}`;
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    time: `${String(get('hour')).padStart(2, '0')}:${String(get('minute')).padStart(2, '0')}`,
+  };
+}
+
+/** The full date and time, "27 Nov 2026, 14:05", in UK time; '' when it can't be read. For a tooltip. */
+export function updateWhenFull(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const p = londonParts(at);
+  return `${p.day} ${MONTHS[p.month - 1] ?? ''} ${p.year}, ${p.time}`;
+}
+
+/**
+ * An update's time as the rest of the app writes times: "Today, 14:05", "Yesterday, 09:05", "3 Nov, 14:20", or
+ * "30 Dec 2025, 08:00" when it isn't this year. In UK time; '' when it can't be read.
+ */
+export function updateWhen(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const p = londonParts(at);
+  const n = londonParts(now);
+  const days = Math.round(
+    (Date.UTC(n.year, n.month - 1, n.day) - Date.UTC(p.year, p.month - 1, p.day)) / 86400000,
+  );
+  if (days === 0) return `Today, ${p.time}`;
+  if (days === 1) return `Yesterday, ${p.time}`;
+  const date = `${p.day} ${MONTHS[p.month - 1] ?? ''}`;
+  return p.year === n.year ? `${date}, ${p.time}` : `${date} ${p.year}, ${p.time}`;
 }

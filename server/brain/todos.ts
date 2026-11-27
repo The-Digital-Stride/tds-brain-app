@@ -639,6 +639,12 @@ const NOT_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const okUpdateText = (v: unknown) =>
   typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= TODO_UPDATE_MAX && !NOT_TEXT.test(v);
 const okNote = (v: unknown) => v === undefined || okUpdateText(v);
+/**
+ * A line of an update's text that starts (after spaces) with ``` or ~~~: the script refuses it, so the
+ * route does first, in the app's own words (review round 1). Lines split as the script splits them.
+ */
+const holdsCodeBlock = (v: unknown) =>
+  typeof v === 'string' && v.split(/\r\n?|\n|[\u2028\u2029]/).some((l) => /^\s*(?:```|~~~)/.test(l));
 const okLinkUrl = (v: unknown) => typeof v === 'string' && v.length <= TODO_LINK_URL_MAX && isTodoLinkUrl(v);
 const okLinkName = (v: unknown) =>
   v === undefined ||
@@ -860,6 +866,13 @@ export async function changeTodo(
   if ((action.kind === 'link' || action.kind === 'unlink') && !list.canLink)
     throw todoChangeError('not-allowed');
   if (!validAction(action, list.canAddOpen)) throw todoChangeError('bad-request');
+  const updateText =
+    action.kind === 'update'
+      ? action.text
+      : action.kind === 'assignee' || action.kind === 'tick'
+        ? action.note
+        : undefined;
+  if (holdsCodeBlock(updateText)) throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.codeBlock);
   // `note` and `back` are for a script that writes the log (updates-v1); an older one would ignore them.
   if ((action.kind === 'assignee' || action.kind === 'tick') && action.note !== undefined && !list.canUpdate)
     throw todoChangeError('bad-request');
@@ -875,10 +888,14 @@ export async function changeTodo(
     if (splitTodoFiles(action.details).files !== '')
       throw new TodoChangeError('bad-request', FILES_HEADING_REFUSED);
   }
-  // A new file has no `## Updates` section to keep, so a typed heading would be lost or double up.
+  // A new file has no `## Updates` or `## Handover history` section to keep, so a typed heading would be
+  // lost or double up.
   if (action.kind === 'add' && list.canUpdate && action.details !== undefined) {
-    if (splitTodoSections(action.details).updates !== '')
+    const typed = splitTodoSections(action.details);
+    if (typed.updates !== '')
       throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.headingInDetails);
+    if (typed.handover !== '')
+      throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.handoverInDetails);
   }
   const personal = action.kind === 'move' || action.scope === 'personal';
   if (personal && !list.canUsePersonal) throw todoChangeError('not-allowed');
@@ -921,12 +938,15 @@ export async function changeTodo(
         throw todoChangeError('bad-request');
     }
     if (action.kind === 'edit' && list.canUpdate && action.details !== undefined) {
-      // Without a section on disk a typed heading would be lost; with one the script keeps its own.
-      if (
-        splitTodoSections(action.details).updates !== '' &&
-        splitTodoSections(onDisk.details).updates === ''
-      )
+      // Without a section on disk a typed heading would be lost (review round 1: `## Handover history` too).
+      const typed = splitTodoSections(action.details);
+      const filed = splitTodoSections(onDisk.details);
+      // A section sent back exactly as filed goes on to the script, which keeps its own. One that differs is
+      // text the person typed (the script would refuse it without words they can act on).
+      if (typed.updates !== '' && typed.updates.trim() !== filed.updates.trim())
         throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.headingInDetails);
+      if (typed.handover !== '' && typed.handover.trim() !== filed.handover.trim())
+        throw new TodoChangeError('bad-request', TODO_UPDATES_MESSAGES.handoverInDetails);
     }
     if (action.kind === 'attach') await checkAttach(root, listed, action.path, index);
     // An older script (no canProject) moves the bytes as they are, so a private project's name would
@@ -983,6 +1003,9 @@ const FILES_HEADING_REFUSED = TODO_FILES_MESSAGES.headingInDetails;
 export const TODO_UPDATES_MESSAGES = {
   headingInDetails:
     'The details can\'t have their own "Updates" heading, because the updates are listed under it. Rename that heading and try again.',
+  handoverInDetails:
+    'The details can\'t have their own "Handover history" heading, because the task\'s handovers are listed under it. Rename that heading and try again.',
+  codeBlock: "An update can't hold a code block.",
 } as const;
 
 /** This person's waiting Asked task with that id, or null (also when the list can't be read). */

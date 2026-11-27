@@ -65,6 +65,10 @@ export const TODO_UPDATES_SHOWN_MAX = 200;
  * after `created:`, ISO with the UK offset like `assigned_at`; tick and delete keep their own records). A
  * `note` on `assignee` or `tick` is written as a NOTE entry in the same file write.
  *
+ * Known limit (accepted, review round 1): when two people add multi-line notes in the same sync window and
+ * both notes end with the very same line, the union merge keeps that line once, so one note loses its last
+ * line. Single-line notes and notes with different endings are unaffected.
+ *
  * Under the union rule a merge can leave lines out of time order, two `## Updates` (or `## Files`) sections,
  * or two copies of a frontmatter key. So:
  * - Readers read EVERY `## Updates` section in the body and sort entries by time (stable: equal minutes keep
@@ -216,12 +220,14 @@ export interface TodoListUpdateFields {
  *   is written in the same file write. Both need canUpdate (sent without it: `bad-request`). `assignee` with
  *   a note to the person who already has the task is `bad-request` (the script refuses: nothing was passed on).
  * Every other action is unchanged, and still refused (`not-found`) on an Asked task.
- * - `edit`: when canUpdate, the client sends the details without the `## Updates` section too
- *   (`splitTodoSections`). A `details` holding an `## Updates` heading is `bad-request` with the app's words
+ * - `edit`: when canUpdate, the client sends the details without the `## Updates` and `## Handover history`
+ *   sections too (`splitTodoSections`), so neither shows twice or can be retyped. A `details` holding an
+ *   `## Updates` or `## Handover history` heading is `bad-request` with the app's words
  *   (the pattern of TODO_FILES_MESSAGES.headingInDetails) when the task has no such section on disk; when it
  *   has one, the script drops the incoming section and keeps its own (an older app sends it back unchanged).
  * Route checks: `text` / `note` is a string of 1–TODO_UPDATE_MAX characters after trimming with no control
- * character other than \n, \r and \t; `url` passes `isTodoLinkUrl`; `name` (optional) is 1–TODO_LINK_NAME_MAX
+ * character other than \n, \r and \t, and no line starting (after spaces) with ``` or ~~~ (refused with the
+ * app's own words, so the person is told why); `url` passes `isTodoLinkUrl`; `name` (optional) is 1–TODO_LINK_NAME_MAX
  * characters after trimming, one line, no "[" or "]"; `back` is absent or `true`.
  * A personal task (`scope: 'personal'`) takes update, link and unlink like any other action there (`expect`
  * required).
@@ -247,12 +253,18 @@ export interface TodoBackField {
  *   link     {file, url, name?, scope?, expect?, by?, by_name?, via?}  → {ok, file, url, name}  (no-op when linked)
  *   unlink   {file, url, scope?, expect?, by?, by_name?, via?}         → {ok, file, url}        (no-op when not linked)
  *   assignee … plus optional `note` and `back: true`     tick … plus optional `note`
- *   edit     never changes `## Updates`. With a section on disk, an `## Updates` section in the incoming `body`
- *            is dropped and the one on disk carried over (placed by the rule above), with or without
- *            `keep_files`; the details limit counts the body without it. So an older app, which shows the
- *            section inside the details, can't rewrite the record by saving. With NO section on disk, a body
- *            holding an `## Updates` heading (outside code fences) is refused (400), as `add` with such a
- *            `body` is: the person is told rather than losing text.
+ *   edit     never changes `## Updates` or `## Handover history` (the two script-owned records; review round 1).
+ *            For each: with a section on disk, the same section in the incoming `body` is taken out and the
+ *            one on disk carried over (placed by the rules above), with or without `keep_files`, and the
+ *            details limit counts the body without it. The incoming section must say the same as the one on
+ *            disk, compared tolerantly (entries and other lines, trimmed, runs of spaces as one, list marker
+ *            `-` or `*`): an older app, which shows the sections inside the details, sends them back unchanged
+ *            and succeeds. If it differs (someone typed below the log, or changed a line) the edit is refused
+ *            (400, nothing written) rather than dropping their text. With NO section on disk, a body holding
+ *            that heading (outside code fences) is refused (400), as `add` with such a `body` is.
+ *   fences   a body whose last code fence never closes: before a section is added or appended after it, the
+ *            script adds the matching closing fence line, so the section is never swallowed by the code block.
+ *   text     U+2028 and U+2029 in an update's text count as line breaks.
  *   attach, detach, due, edit, project: append their auto entry; they now also read optional `by`, `by_name`
  *            and `via` where they didn't before (else the git user and "todo skill").
  *   capabilities → version "0.7", features add "updates-v1" and "links-v1".
@@ -271,10 +283,12 @@ export interface TodoBackField {
 
 // ─── Shared reading code (shared/todo-updates.ts; the script mirrors it, both run the same fixtures) ─────
 
-/** The `## Updates` section's range and the section-free details, like `splitTodoFiles`. */
+/** The script-owned sections and the section-free details, like `splitTodoFiles`. */
 export type SplitTodoSections = (body: string) => {
-  /** The body without its `## Files` and `## Updates` sections, trimmed. */
+  /** The body without its `## Files`, `## Updates` and `## Handover history` sections, trimmed. */
   details: string;
+  /** The `## Handover history` section as written ('' when none). Every such section, joined, when doubled. */
+  handover: string;
   /** The `## Files` section as written ('' when none). */
   files: string;
   /** The `## Updates` section as written ('' when none). */

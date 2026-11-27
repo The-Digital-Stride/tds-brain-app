@@ -230,6 +230,13 @@
     "alt": "A task open for editing in the panel beside the drawer, with the Assigned to field."
   },
   {
+    "id": "todo-updates",
+    "scene": "todo-updates",
+    "crop": ".todo-panel",
+    "pad": 10,
+    "alt": "A task open in the panel, with its Updates list and the box to add an update."
+  },
+  {
     "id": "settings-todos-switch",
     "scene": "settings-todos-switch",
     "crop": ".setting:has(#set-direct)",

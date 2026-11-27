@@ -443,6 +443,12 @@ export interface Store {
   /** To-do changes waiting out their undo time, oldest first. */
   heldTodos: HeldTodo[];
   /**
+   * Ids of to-dos whose last held change was refused or failed (until the next hold of that to-do). The panel
+   * keeps what the person typed for them, since `actionError` asks them to try again. Optional, so a screen's
+   * test double need not carry it.
+   */
+  failedHeld?: readonly string[];
+  /**
    * Holds a change for UNDO_MS, then sends it (a failure shows in `actionError`). Closing the page
    * sends every held change at once, so nothing is lost.
    */
@@ -1730,6 +1736,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
+  const [failedHeld, setFailedHeld] = useState<readonly string[]>([]);
 
   /** Starts the request for a held change. The queue has already taken it out of its entries. */
   const sendHeld = useCallback(async (held: HeldTodo, opts?: { keepalive: true }) => {
@@ -1751,6 +1758,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       // A 'changed' refusal shows like any other held failure. On pagehide (keepalive) nothing can be
       // shown: it fails safe, the change is refused and nothing is written.
+      setFailedHeld((ids) => (ids.includes(held.todoId) ? ids : [...ids, held.todoId]));
       setActionError(
         err instanceof ApiFailure && err.code === 'changed'
           ? `${err.message} Open it to see the latest, then try again.`
@@ -1768,6 +1776,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (held: HeldTodo) => {
       // A change still waiting is replaced; one already on its way can't be.
       if (!todoQueue.hold(held.todoId, held, { replace: true })) return;
+      setFailedHeld((ids) => (ids.includes(held.todoId) ? ids.filter((id) => id !== held.todoId) : ids));
       setHeldTodos((list) => [...list.filter((h) => h.todoId !== held.todoId), held]);
     },
     [todoQueue],
@@ -1984,6 +1993,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       changeTodos,
       uploadTodoFile,
       heldTodos,
+      failedHeld,
       holdTodo,
       undoHeld,
       pauseHeld,
@@ -2082,6 +2092,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       changeTodos,
       uploadTodoFile,
       heldTodos,
+      failedHeld,
       holdTodo,
       undoHeld,
       pauseHeld,

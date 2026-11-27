@@ -32,7 +32,7 @@ The Tasks drawer shows your tasks and the team's open ones. They live in the Bra
 5. Press a task's title to read it in a wide panel. Press **Mark as done** when it's finished.
 6. To add one, press the **+** button (1), type it and press Enter.
 7. To hand a task over, open it, press **Edit** and change who it's assigned to.
-8. To say what you did, type in **Add an update**.
+8. To say what you did, type under **Updates**.
 9. Press **Done** to see finished tasks, newest first. You can search them and read them, but not change them.
 
 ![The Tasks drawer with the Mine tab open.](images/todos-drawer.webp)

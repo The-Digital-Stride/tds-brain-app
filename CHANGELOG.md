@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.96.0 — 2026-11-27
+
+- **feat**: updates log, hand back, web links and a time on every action
+- **fix**: review round for updates and hand back
+
 ## v0.95.2 — 2026-11-27
 
 - **fix**: include the table fix's What's new note in an update

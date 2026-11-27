@@ -18,8 +18,9 @@
  *   the person's role with it, and when the Reminders sync rewrites the file with nobody else involved
  *   (overseer pre-review, blocking 1).
  *
- * Known miss: a task you asked for that its holder passes to a third person leaves your Asked list (it is no
- * longer the task you asked that person to do), so you get no notice of the pass-on.
+ * A task you asked for that its holder passes on to someone else stays an Asked task of yours (the server's
+ * `followedAsk`, change notices follow-ups): `asked` is still your own ask, so the pass-on and whatever the
+ * new holder does are news like any other entry.
  */
 import type { AskedTodo, TodoItem } from './contract.ts';
 import type { TodoUpdate } from './todo-updates-contract.ts';

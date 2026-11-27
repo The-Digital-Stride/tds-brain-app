@@ -3,7 +3,7 @@ id: asked-of-others
 title: Asked of others
 area: todos
 order: 4
-summary: See the tasks you passed on, who has them, and when they were finished.
+summary: See the tasks you passed on, who has them now, and when they were finished.
 benefit: You don't lose track of a job once it's someone else's.
 roles: all
 related: [todos, files-on-todos, passing-todos-on, personal-todos, task-updates, task-notices]
@@ -32,7 +32,7 @@ The **Asked** tab in the Tasks drawer lists the tasks you passed on to a teammat
 
 ## Good to know
 
-- If you passed a task to Ben and he passed it on, only the latest hand-over counts, so it leaves your list.
+- If you passed a task to Ben and he passes it to someone else, it stays here. It shows who has it now and since when, and the pass-on counts as an update.
 - A task you handed back stays here, marked **Handed back to** and the name.
 - Some names come from git history (the Brain's sync record) rather than from the task itself. They are whoever's Mac synced the change, which may not be who made it. These are marked with a star in History, and as "(git history)" elsewhere.
 - If the git history can't be read, the tab says so and lists only tasks passed on in the app or by Claude.

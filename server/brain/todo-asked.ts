@@ -14,6 +14,8 @@ import {
   type TeamMember,
   type TodoActor,
 } from '../../shared/contract.ts';
+import { parseTodoHandovers } from '../../shared/todo-updates.ts';
+import type { TodoUpdate } from '../../shared/todo-updates-contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
 import type { ProjectsIndex } from './projects.ts';
@@ -34,6 +36,7 @@ import {
   timelineFields,
   todoTitle,
   usableIndex,
+  workbenchSlug,
 } from './todos.ts';
 import { readBytes } from './util.ts';
 
@@ -240,6 +243,96 @@ function whoAsked(
   return null;
 }
 
+const SLUG = '[a-z0-9]+(?:-[a-z0-9]+)*';
+/** The slug at the end of a handover line: "passed it from a to b", "handed it back to b". */
+const HANDOVER_TO = new RegExp(` to (${SLUG})$`);
+/** Who had it before: "passed it from a to b" (never "the open list"), "made it open to anyone; it was with a". */
+const HANDOVER_FROM = new RegExp(`^passed it from (${SLUG}) to `);
+const WAS_WITH = new RegExp(`; it was with (${SLUG})$`);
+
+/**
+ * A slug a line names, as a person: `open` is the open list (a file whose `assignee:` is the word "open" makes
+ * the script write "passed it from open to b"), so it is nobody.
+ */
+const person = (slug: string | undefined): string | null => (slug && slug !== 'open' ? slug : null);
+
+/** Who a handover line left the task with: a slug, or null for the open list or a line that doesn't say. */
+function wentTo(entry: TodoUpdate, actor: string | null): string | null {
+  if (/^made it open\b/.test(entry.text)) return null;
+  if (/^picked it up\b/.test(entry.text)) return actor;
+  return person(HANDOVER_TO.exec(entry.text)?.[1]);
+}
+
+/** Who had the task before a handover line: a slug, or null for the open list or a line that doesn't say. */
+function cameFrom(entry: TodoUpdate, actor: string | null): string | null {
+  // Only the holder hands a task back.
+  if (entry.action === 'handback') return actor;
+  return person(HANDOVER_FROM.exec(entry.text)?.[1] ?? WAS_WITH.exec(entry.text)?.[1]);
+}
+
+/**
+ * Change notices follow-ups: the ask this person still has in a task that someone else has since passed on.
+ * Read from the script's `## Handover history` lines, oldest first:
+ * - a line of theirs that passes it to someone else is an ask (a hand back or a move to the open list is not);
+ * - a line that brings it back to them, or says it was with them, ends whatever they asked before;
+ * - adding a task for someone writes no line, so `created_by` is their first ask when the oldest line shows
+ *   it was with someone else from the start.
+ * A line carries a name, not a slug: it is theirs when the name's slug is their own. Null when they have no
+ * such ask (and for a task with no history lines: the stamp, git and `created_by` already cover that).
+ * With the ask comes `reached`: when the task got to `holder`, when the newest line is the one that left it with them.
+ */
+export function followedAsk(
+  file: Pick<TodoFile, 'id' | 'data' | 'body' | 'mtime'>,
+  identity: Identity,
+  team: readonly TeamMember[],
+  /** Who has it now. */
+  holder: string,
+): { ask: TodoActor; reached: string | null } | null {
+  const me = identity.slug;
+  const mine = (at: string): TodoActor => ({
+    slug: me,
+    name: team.find((m) => m.slug === me)?.name ?? identity.name,
+    at,
+    source: 'stamp',
+  });
+  // Stable sort: lines in the same minute keep the file's order. A merge can leave them out of order.
+  const lines = parseTodoHandovers(file.body)
+    .map((entry) => {
+      const actor = workbenchSlug(entry.byName) || null;
+      return {
+        entry,
+        actor,
+        to: wentTo(entry, actor),
+        from: cameFrom(entry, actor),
+        at: Date.parse(entry.at),
+      };
+    })
+    .filter((l) => !Number.isNaN(l.at))
+    .sort((a, b) => a.at - b.at);
+  const first = lines[0];
+  if (!first) return null;
+  let ask: TodoActor | null = null;
+  if (lower(file.data.created_by) === me && first.from !== null && first.from !== me) {
+    const { data } = file;
+    ask = mine(
+      asString(data.created_at).trim() || asString(data.created).trim() || surfaceDate(file.id) || file.mtime,
+    );
+  }
+  for (const l of lines) {
+    // Back with them: whatever they asked before is over.
+    if (l.to === me) ask = null;
+    else if (l.actor === me && l.entry.action === 'assignee' && l.to !== null) ask = mine(l.entry.at);
+    // It was with them and left another way (the open list, or moved on by someone else).
+    else if (l.from === me) ask = null;
+  }
+  if (!ask) return null;
+  // The file's own record, never a git sync date: only when the newest line is the one that left it with the
+  // holder (an older arrival is not this one).
+  const last = lines[lines.length - 1];
+  const reached = last && last.to === holder ? last.entry.at : null;
+  return { ask, reached };
+}
+
 /** Decision 3: who finished it. */
 function whoFinished(file: TodoFile, facts: LogFacts | null, roster: Roster): TodoActor {
   const { data } = file;
@@ -349,8 +442,10 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
         if (!assignee || assignee === 'open' || assignee === identity.slug) continue;
         const facts = log === 'unread' ? null : (log.get(file.id) ?? null);
         const ask = whoAsked(file, assignee, facts, roster, identity);
-        if (!ask?.self) continue;
-        const asked = ask.actor;
+        // Not the one who gave it to its holder: still theirs if they asked earlier and it was passed on.
+        const earlier = ask?.self ? null : followedAsk(file, identity, team, assignee);
+        if (!ask?.self && !earlier) continue;
+        const asked = earlier?.ask ?? (ask as NonNullable<typeof ask>).actor;
         const finished = file.state === 'done' ? whoFinished(file, facts, roster) : null;
         if (finished) {
           const at = time(finished.at);
@@ -381,6 +476,15 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
           project,
           ...(projectMatch ? { projectMatch } : {}),
           ...timelineFields(file.data, file.body, team),
+          // When it reached whoever has it now: only on a row followed through someone else's pass-on.
+          ...(earlier
+            ? {
+                // The live stamp, else the newest history line; never a git sync date.
+                passedOnAt:
+                  (lower(file.data.assigned_to) === assignee ? asString(file.data.assigned_at).trim() : '') ||
+                  earlier.reached,
+              }
+            : {}),
           // The current stamp is this person's hand back (only a waiting row has a live stamp).
           ...(file.state === 'waiting' &&
           lower(file.data.assigned_to) === assignee &&

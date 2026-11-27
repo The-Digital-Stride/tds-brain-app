@@ -601,3 +601,349 @@ describe('asked of others: the timeline and canUpdate (task updates)', () => {
     expect(list.waiting[0]?.canUpdate).toBe(false);
   });
 });
+
+describe('asked of others: a task the holder passed on (change notices follow-ups)', () => {
+  /** The holder now, from a stamp made by someone other than sam. */
+  const held = (assignee: string, by: string, extra: string[] = []) => [
+    `assignee: ${assignee}`,
+    `assigned_to: ${assignee}`,
+    'assigned_at: 2026-11-12T10:30:00+00:00',
+    `assigned_by: ${by}`,
+    ...extra,
+  ];
+  const line = (day: number, time: string, who: string, what: string) =>
+    `- ${day} Nov 2026, ${time} UK: ${who} ${what} (TDS Cortex).`;
+  const history = (...lines: string[]) => `# Task\n\n## Handover history\n\n${lines.join('\n')}\n`;
+  const SAM_TO_ALEX = line(10, '09:00', 'Sam Example', 'passed it from sam-example to alex-sample');
+  const ALEX_TO_JO = line(12, '10:30', 'Alex Sample', 'passed it from alex-sample to jo-owner');
+  const list = (files: Record<string, string>, canUpdate = false) =>
+    createAskedTodos(fakeGit('').run).list(brainWith(files), sam, NOW, undefined, canUpdate);
+
+  it('stays in the list of the person who first asked, with who has it now and since when', async () => {
+    const got = await list(
+      { 'todo/20261110-chain.md': fm(held('jo-owner', 'alex-sample'), history(SAM_TO_ALEX, ALEX_TO_JO)) },
+      true,
+    );
+    expect(got.waiting).toHaveLength(1);
+    expect(got.waiting[0]).toMatchObject({
+      id: '20261110-chain.md',
+      assignee: 'jo-owner',
+      assigneeName: 'Jo Owner',
+      asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-10T09:00:00+00:00', source: 'stamp' },
+      passedOnAt: '2026-11-12T10:30:00+00:00',
+      canUpdate: true,
+    });
+    expect(got.waiting[0]).not.toHaveProperty('handedBack');
+  });
+
+  it('shows in their Done list when the new holder finishes it', async () => {
+    const got = await list({
+      'todo/done/20261110-chain.md': fm(
+        [
+          ...held('jo-owner', 'alex-sample'),
+          'completed_by: jo-owner',
+          'completed_at: 2026-11-15T09:00:00+00:00',
+        ],
+        history(SAM_TO_ALEX, ALEX_TO_JO),
+      ),
+    });
+    expect(got.done).toHaveLength(1);
+    expect(got.done[0]).toMatchObject({ assignee: 'jo-owner', done: { slug: 'jo-owner' } });
+    expect(got.done[0]?.asked.slug).toBe('sam-example');
+  });
+
+  it('a task sam asked for directly carries no passedOnAt', async () => {
+    const got = await list({
+      'todo/20261110-plain.md': fm(held('alex-sample', 'sam-example'), history(SAM_TO_ALEX)),
+    });
+    expect(got.waiting).toHaveLength(1);
+    expect(got.waiting[0]).not.toHaveProperty('passedOnAt');
+  });
+
+  it('is not theirs without a pass-on of their own in the history', async () => {
+    const got = await list({
+      // No history at all: only the stamp, by someone else.
+      'todo/20261110-none.md': fm(held('jo-owner', 'alex-sample'), '# Task\n'),
+      // Sam only ever made it open; Jo picked it up.
+      'todo/20261110-open.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          line(10, '09:00', 'Sam Example', 'made it open to anyone; it was with sam-example'),
+          line(11, '09:00', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+      // Sam was given it and handed it back: a hand back is not an ask.
+      'todo/20261110-back.md': fm(
+        held('alex-sample', 'jo-owner'),
+        history(
+          line(9, '09:00', 'Jo Owner', 'passed it from jo-owner to sam-example'),
+          line(10, '09:00', 'Sam Example', 'handed it back to jo-owner'),
+          line(12, '10:30', 'Jo Owner', 'passed it from jo-owner to alex-sample'),
+        ),
+      ),
+      // Someone else with a pass-on to the same person.
+      'todo/20261110-other.md': fm(
+        held('jo-owner', 'alex-sample'),
+        history(line(10, '09:00', 'Jo Owner', 'passed it from jo-owner to alex-sample'), ALEX_TO_JO),
+      ),
+    });
+    expect(got.waiting).toEqual([]);
+  });
+
+  it('is no longer theirs once it has come back to them, however it left again', async () => {
+    const got = await list({
+      'todo/20261110-returned.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          SAM_TO_ALEX,
+          line(11, '09:00', 'Alex Sample', 'handed it back to sam-example'),
+          line(11, '10:00', 'Sam Example', 'made it open to anyone; it was with sam-example'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+      'todo/20261110-took-back.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          SAM_TO_ALEX,
+          line(11, '08:00', 'Alex Sample', 'made it open to anyone; it was with alex-sample'),
+          line(11, '09:00', 'Sam Example', 'picked it up from the open list'),
+          line(11, '10:00', 'Sam Example', 'made it open to anyone; it was with sam-example'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+    });
+    expect(got.waiting).toEqual([]);
+  });
+
+  it("counts from sam's newest pass-on, and follows it through the open list", async () => {
+    const got = await list({
+      'todo/20261110-twice.md': fm(
+        held('alex-sample', 'jo-owner'),
+        history(
+          SAM_TO_ALEX,
+          line(10, '15:00', 'Alex Sample', 'handed it back to sam-example'),
+          line(11, '09:00', 'Sam Example', 'passed it from sam-example to jo-owner'),
+          line(12, '10:30', 'Jo Owner', 'passed it from jo-owner to alex-sample'),
+        ),
+      ),
+      'todo/20261111-via-open.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          SAM_TO_ALEX,
+          line(11, '09:00', 'Alex Sample', 'made it open to anyone; it was with alex-sample'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+      // Lines out of order in the file (a merge can do that): the times decide. Read top to bottom, the hand
+      // back would come first and Sam's ask would stand.
+      'todo/20261112-shuffled.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          line(11, '09:00', 'Alex Sample', 'handed it back to sam-example'),
+          line(11, '10:00', 'Sam Example', 'made it open to anyone; it was with sam-example'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+          SAM_TO_ALEX,
+        ),
+      ),
+      'todo/20261112-shuffled-ask.md': fm(
+        held('jo-owner', 'alex-sample'),
+        history(ALEX_TO_JO, SAM_TO_ALEX, line(9, '09:00', 'Alex Sample', 'handed it back to sam-example')),
+      ),
+    });
+    const by = (id: string) => got.waiting.find((r) => r.id === id);
+    expect(by('20261110-twice.md')?.asked.at).toBe('2026-11-11T09:00:00+00:00');
+    expect(by('20261111-via-open.md')).toMatchObject({
+      assignee: 'jo-owner',
+      asked: { slug: 'sam-example' },
+    });
+    expect(by('20261112-shuffled.md')).toBeUndefined();
+    expect(by('20261112-shuffled-ask.md')?.asked.at).toBe('2026-11-10T09:00:00+00:00');
+  });
+
+  it('takes "since when" from the task itself, never from a git sync date', async () => {
+    // No stamp at all: git names Alex as the one who last changed the assignee, a day after the line says.
+    const log = commit(
+      ...ALEX,
+      '2026-11-13T08:00:00Z',
+      'M\ttodo/20261110-line.md',
+      'M\ttodo/20261110-no-line.md',
+    );
+    const root = brainWith({
+      'todo/20261110-line.md': fm(['assignee: jo-owner'], history(SAM_TO_ALEX, ALEX_TO_JO)),
+      // The history never says how it reached Jo.
+      'todo/20261110-no-line.md': fm(['assignee: jo-owner'], history(SAM_TO_ALEX)),
+      // Jo had it, passed it back to Alex, and a hand edit (stamp, no line) gave it to Jo again.
+      'todo/20261110-twice.md': fm(
+        [
+          'assignee: jo-owner',
+          'assigned_to: jo-owner',
+          'assigned_at: 2026-11-14T09:00:00+00:00',
+          'assigned_by: alex-sample',
+        ],
+        history(
+          SAM_TO_ALEX,
+          ALEX_TO_JO,
+          line(13, '09:00', 'Jo Owner', 'passed it from jo-owner to alex-sample'),
+        ),
+      ),
+      // The same without a stamp: the old arrival is not when Jo got it this time.
+      'todo/20261110-stale.md': fm(
+        ['assignee: jo-owner'],
+        history(
+          SAM_TO_ALEX,
+          ALEX_TO_JO,
+          line(13, '09:00', 'Jo Owner', 'passed it from jo-owner to alex-sample'),
+        ),
+      ),
+    });
+    const got = await createAskedTodos(fakeGit(log).run).list(root, sam, NOW);
+    const by = (id: string) => got.waiting.find((r) => r.id === id);
+    expect(by('20261110-line.md')?.passedOnAt).toBe('2026-11-12T10:30:00+00:00');
+    expect(by('20261110-no-line.md')).toMatchObject({ assignee: 'jo-owner', passedOnAt: null });
+    expect(by('20261110-twice.md')?.passedOnAt).toBe('2026-11-14T09:00:00+00:00');
+    expect(by('20261110-stale.md')).toMatchObject({ assignee: 'jo-owner', passedOnAt: null });
+  });
+
+  it('follows a task they added for someone, which has no history line of its own', async () => {
+    const made = ['created_by: sam-example', 'created_at: 2026-11-09T08:15:00+00:00'];
+    const got = await list({
+      // Added for Alex (a stamp only, since replaced), then Alex passed it on.
+      'todo/20261109-added.md': fm(held('jo-owner', 'alex-sample', made), history(ALEX_TO_JO)),
+      // Added for Alex, who put it on the open list; Jo took it.
+      'todo/20261109-released.md': fm(
+        held('jo-owner', 'jo-owner', made),
+        history(
+          line(11, '09:00', 'Alex Sample', 'made it open to anyone; it was with alex-sample'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+      // Only a creation date, no time.
+      'todo/20261109-dated.md': fm(
+        held('jo-owner', 'alex-sample', ['created_by: sam-example', 'created: 2026-11-09']),
+        history(ALEX_TO_JO),
+      ),
+    });
+    const by = (id: string) => got.waiting.find((r) => r.id === id);
+    expect(by('20261109-added.md')).toMatchObject({
+      assignee: 'jo-owner',
+      asked: { slug: 'sam-example', at: '2026-11-09T08:15:00+00:00', source: 'stamp' },
+      passedOnAt: '2026-11-12T10:30:00+00:00',
+    });
+    expect(by('20261109-released.md')?.asked.slug).toBe('sam-example');
+    expect(by('20261109-dated.md')?.asked.at).toBe('2026-11-09');
+  });
+
+  it('adding a task is not an ask when it was open to anyone, their own, or made by someone else', async () => {
+    const got = await list({
+      'todo/20261109-open.md': fm(
+        held('jo-owner', 'alex-sample', ['created_by: sam-example']),
+        history(line(11, '09:00', 'Alex Sample', 'picked it up from the open list'), ALEX_TO_JO),
+      ),
+      'todo/20261109-given-open.md': fm(
+        held('jo-owner', 'alex-sample', ['created_by: sam-example']),
+        history(line(11, '09:00', 'Jo Owner', 'passed it from the open list to alex-sample'), ALEX_TO_JO),
+      ),
+      // An older file says `assignee: open`, so the script writes "from open" when someone takes it.
+      'todo/20261109-open-word.md': fm(
+        held('jo-owner', 'jo-owner', ['created_by: sam-example']),
+        history(line(11, '09:00', 'Jo Owner', 'passed it from open to jo-owner')),
+      ),
+      // It was Sam's own; someone else moved it on.
+      'todo/20261109-own.md': fm(
+        held('alex-sample', 'jo-owner', ['created_by: sam-example']),
+        history(line(11, '09:00', 'Jo Owner', 'passed it from sam-example to alex-sample')),
+      ),
+      'todo/20261109-theirs.md': fm(
+        held('jo-owner', 'alex-sample', ['created_by: jo-owner']),
+        history(ALEX_TO_JO),
+      ),
+      // Added for Alex, who handed it back; then it left Sam by the open list.
+      'todo/20261109-came-back.md': fm(
+        held('jo-owner', 'jo-owner', ['created_by: sam-example']),
+        history(
+          line(10, '09:00', 'Alex Sample', 'handed it back to sam-example'),
+          line(11, '09:00', 'Sam Example', 'made it open to anyone; it was with sam-example'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+    });
+    expect(got.waiting).toEqual([]);
+  });
+
+  it('a line saying the task was with them ends their ask, even when how it came back cannot be read', async () => {
+    const got = await list({
+      // The pick-up is under a name nobody has, so it names no one; the next line says it was with Sam.
+      'todo/20261110-unnamed.md': fm(
+        held('jo-owner', 'jo-owner'),
+        history(
+          SAM_TO_ALEX,
+          line(10, '15:00', 'Alex Sample', 'made it open to anyone; it was with alex-sample'),
+          line(11, '09:00', 'S. Example', 'picked it up from the open list'),
+          line(11, '10:00', 'S. Example', 'made it open to anyone; it was with sam-example'),
+          line(12, '10:30', 'Jo Owner', 'picked it up from the open list'),
+        ),
+      ),
+      'todo/20261110-moved.md': fm(
+        held('jo-owner', 'alex-sample'),
+        history(SAM_TO_ALEX, line(12, '10:30', 'Alex Sample', 'passed it from sam-example to jo-owner')),
+      ),
+    });
+    expect(got.waiting).toEqual([]);
+  });
+
+  it("matches a line to them by the name's slug, whatever its capitals", async () => {
+    const got = await list({
+      'todo/20261110-case.md': fm(
+        held('jo-owner', 'alex-sample'),
+        history(line(10, '09:00', 'sam example', 'passed it from sam-example to alex-sample'), ALEX_TO_JO),
+      ),
+    });
+    expect(got.waiting.map((r) => r.id)).toEqual(['20261110-case.md']);
+  });
+
+  it('never follows a task that is open to anyone, back with them, or passed on under a name that is not theirs', async () => {
+    const got = await list({
+      'todo/20261110-open-now.md': fm(
+        ['assignee: open'],
+        history(
+          SAM_TO_ALEX,
+          line(11, '09:00', 'Alex Sample', 'made it open to anyone; it was with alex-sample'),
+        ),
+      ),
+      'todo/20261110-mine.md': fm(
+        held('sam-example', 'alex-sample'),
+        history(SAM_TO_ALEX, line(11, '09:00', 'Alex Sample', 'passed it from alex-sample to sam-example')),
+      ),
+      // A name that is nobody on the team and not sam's.
+      'todo/20261110-stranger.md': fm(
+        held('jo-owner', 'alex-sample'),
+        history(line(10, '09:00', 'Sam Other', 'passed it from sam-other to alex-sample'), ALEX_TO_JO),
+      ),
+    });
+    expect(got.waiting).toEqual([]);
+  });
+
+  it('masks a followed task in a project hidden from them, like any task they asked for', async () => {
+    const SECRET = 'acme-heating/secret';
+    const index: ProjectsIndex = {
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+      hiddenPath: () => false,
+      hiddenKey: (key) => key === SECRET,
+      hiddenCount: 1,
+    };
+    const root = brainWith({
+      'todo/20261110-hidden.md': fm(
+        held('jo-owner', 'alex-sample', [`project: ${SECRET}`, 'client: acme-heating']),
+        history(SAM_TO_ALEX, ALEX_TO_JO),
+      ),
+    });
+    const got = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => index, true);
+    expect(got.waiting).toHaveLength(1);
+    expect(got.waiting[0]?.canUpdate).toBe(false);
+    expect(got.waiting[0]?.project).toBeNull();
+    expect(JSON.stringify(got.waiting[0])).not.toContain('secret');
+  });
+});

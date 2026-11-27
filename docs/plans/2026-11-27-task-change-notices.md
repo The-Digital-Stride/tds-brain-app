@@ -110,3 +110,16 @@ Known limit added by the overseer: a marker keeps the newest 80 entry keys, so a
 Sign-offs (2026-11-27):
 - UX/UI expert: SIGN-OFF after re-checking all seven fixes in the code.
 - Overseer: SIGN-OFF. It re-ran its three pre-review failures against the built rule (own hand back, a late-synced entry, two entries in one minute) and overturned none of the lead's decisions: the red count beside the navy one, the Home rows without a "With" prefix, rows that stay in Updated for the visit, and the foot at 414px.
+
+## Follow-ups (2026-11-27, after v0.97.0)
+
+Ian read the known limits and asked for the ones that could be fixed. Size M: the lead built it, with an overseer ruling, a correctness review and the UX/UI expert gate.
+
+F1. **A task you asked for stays in your Asked list when its holder passes it on.** This replaces the v0.43.0 rule that only the latest hand-over counts (asked-of-others plan, decision 2, for the first asker only: the latest asker's row is unchanged). `followedAsk` in `server/brain/todo-asked.ts` reads the script's `## Handover history` lines oldest first. A line of yours that passes the task to someone else is an ask; a line that brings it back to you, or says it was with you, ends it; a task you added for someone (which writes no line) counts from `created_by` when the oldest line shows it was with someone else. The row's `asked` is your own ask, so the notice rule counts the pass-on and everything the new holder does. `AskedTodo.passedOnAt` is when it reached whoever has it now, so the row says "With Jo since 20 Nov".
+   Plain: if you asked for a job, you keep seeing it, and hearing about it, until it is done or back with you, however many people it passes through.
+
+F2. **Left as they are**, by the overseer's ruling: the first run after the update shows the last week's entries by teammates as updated once (they are real and almost certainly unread, since the updates log only shipped in v0.96.0); the panel foot wraps to three rows at 414px.
+
+Known limits of F1: a task with no `## Handover history` (older than the script's history lines) follows the old rule; while a task sits on the open list it is in nobody's Asked list, so the move to open gives no notice until someone picks it up; everyone along a chain who asked keeps the row.
+
+Also: the repo's `brain-skills/tdsapp-todo/SKILL.md` gained the "Detail and checklists" section that only the brain's copy had, so the two can be brought level without losing it (the brain's copy is still the 0.6 text; copying needs Ian's yes).

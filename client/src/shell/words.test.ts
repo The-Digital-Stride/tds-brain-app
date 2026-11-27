@@ -375,6 +375,32 @@ describe('a task you handed back, on the Asked tab', () => {
   });
 });
 
+describe('a task you asked for that its holder passed on, on the Asked tab', () => {
+  const base: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done' | 'passedOnAt'> = {
+    state: 'waiting',
+    assigneeName: 'Jo Owner',
+    asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-13T12:00:00+00:00', source: 'history' },
+    done: null,
+  };
+
+  it('says since when the present holder has had it, not since when you asked', () => {
+    const on = { ...base, passedOnAt: '2026-11-20T12:00:00+00:00' };
+    expect(askedStatusLine(on)).toBe('With Jo Owner since 20 Nov');
+    expect(askedMeta(on)).toBe('With Jo since 20 Nov');
+  });
+
+  it('leaves the date out when nobody can say when it reached them', () => {
+    const on = { ...base, passedOnAt: null };
+    expect(askedStatusLine(on)).toBe('With Jo Owner');
+    expect(askedMeta(on)).toBe('With Jo');
+  });
+
+  it('keeps the date you asked on every other task', () => {
+    expect(askedStatusLine(base)).toBe('With Jo Owner since 13 Nov (git history)');
+    expect(askedMeta(base)).toBe('With Jo since 13 Nov');
+  });
+});
+
 describe('todosRailLabel', () => {
   it('says "new or updated" for the count, which holds both', () => {
     expect(todosRailLabel(5, 3)).toBe('Tasks, 5 of yours, 3 new or updated');

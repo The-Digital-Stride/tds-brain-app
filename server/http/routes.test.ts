@@ -20,6 +20,7 @@ import {
   sessionCookieName,
   type TeamTodo,
   TODO_SCRIPT,
+  TodoChangeError,
   type TodoHistoryResponse,
   type TodoList,
   type TodoUploadResponse,
@@ -36,6 +37,7 @@ import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/ins
 import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import { LINK_SCRIPT_TAG } from '../../shared/page-links.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
+import { outsideProjectNote } from '../../shared/project-visibility.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { SkillLevelError } from '../brain/skill-levels.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
@@ -371,6 +373,22 @@ process.stdin.on('end', () => {
     expect(list.changes).toBe('on');
     expect(list.team.map((m) => m.slug)).toEqual(['sam-example', 'alex-sample', 'jo-owner']);
     expect(logs).toEqual(['Changed a task (delete).']);
+  });
+
+  it('passes the assign block refusal on with its note unchanged (restricted projects)', async () => {
+    const { brain } = makeBrain();
+    const note = outsideProjectNote('Alex Sample');
+    const refusing = {
+      ...brain,
+      changeTodo: async () => {
+        throw new TodoChangeError('not-allowed', note);
+      },
+    } as RouteContext['brain'];
+    const { status, json } = await send(refusing, {
+      body: { kind: 'assignee', id: MINE, assignee: 'alex-sample' },
+    });
+    expect(status).toBe(403);
+    expect(json.error).toMatchObject({ code: 'not-allowed', message: note });
   });
 
   describe('personal tasks', () => {

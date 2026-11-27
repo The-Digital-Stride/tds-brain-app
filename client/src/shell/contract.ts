@@ -666,6 +666,8 @@ export interface SearchHit {
   /** Second line or trailing note (client name, "My personal files", due date). */
   hint: string | null;
   icon: IconName;
+  /** A restricted project (decision 10): the row shows the Restricted badge beside the label. */
+  restricted?: boolean;
   /**
    * More than the row can hold, for a tooltip on hover or when the row is highlighted from the keyboard
    * (`client/src/shell/PaletteTip.tsx`). Given: the tooltip always shows, with the label, these lines and the

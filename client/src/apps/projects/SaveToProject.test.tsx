@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { composeChatSummary } from '../../../../shared/chat-summary.ts';
 import type { ChatSummaryDraft } from '../../../../shared/chat-summary-contract.ts';
@@ -247,6 +247,52 @@ describe('SaveToProject', () => {
       await screen.findByRole('heading', { name: 'Saved' });
       return onClose;
     };
+
+    it('shows the Restricted badge, and an outsider unavailable with the note, on a restricted project', async () => {
+      const SECRET = card({
+        slug: 'site',
+        title: 'Sky site',
+        owner: 'me',
+        team: ['jo'],
+        version: 'v1',
+        visibility: 'restricted',
+      });
+      const after = projectList([SECRET], { seesAll: [] });
+      api.projects.mockResolvedValue(after);
+      api.changeProject.mockResolvedValue(after);
+      projectsStore.apply(after);
+      show();
+      await screen.findByLabelText('Objective');
+      expect(screen.getByText('Restricted: only the project team can see it')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
+      await screen.findByRole('heading', { name: 'Saved' });
+      const who = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+      const sam = within(who).getByRole('option', { name: /Sam Roe/ }) as HTMLOptionElement;
+      expect(sam.disabled).toBe(true);
+      expect(sam.title).toBe(
+        "Sam Roe isn't on this restricted project. Add them to the project team first, then give them the task.",
+      );
+      expect((within(who).getByRole('option', { name: 'Jo Lee' }) as HTMLOptionElement).disabled).toBe(false);
+    });
+
+    it('blocks nobody on a restricted project when the server sent no seesAll', async () => {
+      const SECRET = card({
+        slug: 'site',
+        title: 'Sky site',
+        owner: 'me',
+        team: ['jo'],
+        version: 'v1',
+        visibility: 'restricted',
+      });
+      const after = projectList([SECRET]);
+      api.projects.mockResolvedValue(after);
+      api.changeProject.mockResolvedValue(after);
+      projectsStore.apply(after);
+      await saved();
+      const who = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+      for (const o of within(who).getAllByRole('option'))
+        expect((o as HTMLOptionElement).disabled).toBe(false);
+    });
 
     it('adds only the ticked steps, one at a time, with who and the details line', async () => {
       await saved();

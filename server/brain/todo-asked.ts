@@ -22,12 +22,17 @@ import {
   authorSlug,
   createAttachmentReader,
   dueOf,
+  hiddenPathOf,
   isSelf,
   lower,
+  maskTask,
+  readTaskIndex,
   readTeam,
   SAFE_ID,
   surfaceDate,
+  taskRule,
   todoTitle,
+  usableIndex,
 } from './todos.ts';
 import { readBytes } from './util.ts';
 
@@ -260,7 +265,10 @@ function byDoneNewest(a: AskedTodo, b: AskedTodo): number {
 }
 
 export interface AskedTodos {
-  /** `projects` (projects R1) fills each row's `projectMatch`; without it, or if it fails, none is set. */
+  /**
+   * `projects` (projects R1) fills each row's `projectMatch`; without it, or if it fails, none is set. A row
+   * in a project hidden from this person is still theirs (they asked), so it is masked, never left out.
+   */
   list(
     root: string,
     identity: Identity,
@@ -330,15 +338,9 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
       const cutoff = now.getTime() - ASKED_DONE_DAYS * DAY_MS;
       const waiting: AskedTodo[] = [];
       const done: AskedTodo[] = [];
-      const attachments = createAttachmentReader(root, identity.slug);
-      let index: ProjectsIndex | null = null;
-      if (projects) {
-        try {
-          index = await projects();
-        } catch {
-          index = null;
-        }
-      }
+      const read = await readTaskIndex(projects);
+      const index = usableIndex(read);
+      const attachments = createAttachmentReader(root, identity.slug, hiddenPathOf(read));
       for (const file of files) {
         const assignee = lower(file.data.assignee);
         if (!assignee || assignee === 'open' || assignee === identity.slug) continue;
@@ -352,6 +354,12 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
           if (Number.isNaN(at) || at < cutoff) continue;
         }
         const path = file.state === 'done' ? `todo/done/${file.id}` : `todo/${file.id}`;
+        const client = asString(file.data.client).trim() || null;
+        const project = asString(file.data.project).trim() || null;
+        // Everything in `todo/` is TDS: a personal project never matches here.
+        const projectMatch = index ? index.resolve(project, client, 'tds') : undefined;
+        // THE task rule: every row here is one this person asked for, so a hidden project's is masked.
+        const seen = taskRule(read, { project, projectMatch }, true);
         const item: AskedTodo = {
           key: `asked:${path}`,
           id: file.id,
@@ -366,20 +374,11 @@ export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog):
           done: finished,
           version: file.version,
           attachments: await attachments(file.body),
-          client: asString(file.data.client).trim() || null,
-          project: asString(file.data.project).trim() || null,
-          // Everything in `todo/` is TDS: a personal project never matches here.
-          ...(index
-            ? {
-                projectMatch: index.resolve(
-                  asString(file.data.project).trim() || null,
-                  asString(file.data.client).trim() || null,
-                  'tds',
-                ),
-              }
-            : {}),
+          client,
+          project,
+          ...(projectMatch ? { projectMatch } : {}),
         };
-        (file.state === 'done' ? done : waiting).push(item);
+        (file.state === 'done' ? done : waiting).push(seen === 'mask' ? maskTask(item) : item);
       }
       waiting.sort(byAskedOldest);
       done.sort(byDoneNewest);

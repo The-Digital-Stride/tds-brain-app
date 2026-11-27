@@ -16,6 +16,7 @@ import { PROJECTS_CHAT_SUMMARY_CAPABILITY } from '../../shared/chat-summary-cont
 import type { ClientInfo, Identity, TodoItem } from '../../shared/contract.ts';
 import { TodoChangeError } from '../../shared/contract.ts';
 import { PROJECTS_REFS_CAPABILITY } from '../../shared/project-refs-contract.ts';
+import { PROJECTS_VISIBILITY_CAPABILITY } from '../../shared/project-visibility.ts';
 import {
   INTERNAL_CLIENT,
   PROJECTS_ARCHIVE_CAPABILITY,
@@ -111,6 +112,8 @@ function service(
     mayChange?: ProjectsOptions['mayChange'];
     todoList?: ProjectsOptions['todoList'];
     doneTodos?: ProjectsOptions['doneTodos'];
+    viewer?: ProjectsOptions['viewer'];
+    members?: ProjectsOptions['members'];
   } = {},
 ) {
   fakes = {
@@ -247,6 +250,8 @@ function service(
     ...(extra.mayChange ? { mayChange: extra.mayChange } : {}),
     ...(extra.todoList ? { todoList: extra.todoList } : {}),
     ...(extra.doneTodos ? { doneTodos: extra.doneTodos } : {}),
+    ...(extra.viewer ? { viewer: extra.viewer } : {}),
+    ...(extra.members ? { members: extra.members } : {}),
     onMoved: (from, to) => fakes.moved.push([from, to]),
     now: () => NOW,
     git: async (args) => {
@@ -1784,5 +1789,360 @@ describe('archive, unarchive and delete', () => {
       'not-allowed',
     );
     expect(fakes.skillRuns).toEqual([]);
+  });
+});
+
+describe('restricted projects (plan 2026-11-27)', () => {
+  const person = (name: string, slug: string, role: Identity['role'], knownMember = true): Identity => ({
+    name,
+    slug,
+    email: null,
+    role,
+    knownMember,
+  });
+  const OUTSIDER = person('Carol Team', 'carol-team', 'team');
+  const ON_TEAM = person('Bob Team', 'bob-team', 'team');
+  const ACCOUNT_OWNER = person('Alice Owner', 'alice-owner', 'team');
+  const SCOUT = person('Sam Scout', 'sam-scout', 'scout');
+  const MEMBERS = [
+    { name: 'Ian Hancock', slug: 'ian-hancock', role: 'owner' },
+    { name: "Dan O'Brien", slug: 'dan-obrien', role: 'head-scout' },
+    { name: 'Carol Team', slug: 'carol-team', role: 'team' },
+    { name: 'Bob Team', slug: 'bob-team', role: 'team' },
+    { name: 'Sam Scout', slug: 'sam-scout', role: 'scout' },
+  ];
+  const SECRET = 'clients/acme/projects/secret';
+  const restricted = (extra = '') =>
+    card(
+      'Secret pitch',
+      `owner: alice-owner\nteam:\n  - "bob-team"\nvisibility: restricted\nmoved_from:\n  - "harvey-nash/secret-old"\n${extra}`,
+    );
+
+  /** One hidden project with a duplicate, a leftover at its old key, and an open look-alike beside it. */
+  function brain() {
+    put(`${SECRET}/project.md`, restricted('ref: ACM4K7\n'));
+    put(`${SECRET}/plan.md`, 'the plan');
+    // A second card for the same key in the archive: shadowed by the live one, so a duplicate.
+    put('clients/acme/projects-archive/secret/project.md', card('Old secret'));
+    // The folder it moved from, left on this Mac with only a file and no card: a leftover.
+    put('clients/harvey-nash/projects/secret-old/notes.md', 'old notes');
+    put('clients/acme/projects/secret-2/project.md', card('Secret two', 'ref: ACM5M3\n'));
+    put(
+      'clients/acme/projects/website/project.md',
+      `${card('Website')}\n## Linked files\n\n- [plan](${SECRET}/plan.md)\n- [audit](clients/acme/reports/audit.md)\n`,
+    );
+  }
+  const as = (viewer: Identity | null, extra: Parameters<typeof service>[0] = {}) =>
+    service({
+      viewer: viewer === null ? undefined : async () => viewer,
+      members: async () => MEMBERS,
+      ...extra,
+    });
+
+  it('reads visibility onto every card, failing closed on odd lines (decisions 1 and 4)', async () => {
+    put('clients/acme/projects/open/project.md', card('Open'));
+    put('clients/acme/projects/marked/project.md', card('Marked', 'visibility: restricted\n'));
+    put('clients/acme/projects/everyone/project.md', card('Everyone', 'visibility: Everyone\n'));
+    put('clients/acme/projects/capital/project.md', card('Capital', 'Visibility: restricted\n'));
+    put(
+      'clients/acme/projects/doubled/project.md',
+      card('Doubled', 'visibility: restricted\nvisibility: everyone\n'),
+    );
+    put('clients/acme/projects/typo/project.md', card('Typo', 'visibility: secret\n'));
+    put(
+      'clients/acme/projects/broken/project.md',
+      '---\n<<<<<<< HEAD\nvisibility: restricted\n=======\nteam:\n  - "carol-team"\n>>>>>>> x\n---\n',
+    );
+    put('personal/projects/mine/project.md', card('Mine', 'visibility: restricted\n'));
+    const { cards } = await as(SCOUT).index();
+    expect(Object.fromEntries(cards.map((c) => [c.key, c.visibility]))).toEqual({
+      'acme/open': 'everyone',
+      'acme/marked': 'restricted',
+      'acme/everyone': 'everyone',
+      'acme/capital': 'restricted',
+      'acme/doubled': 'restricted',
+      'acme/typo': 'restricted',
+      'acme/broken': 'restricted',
+      'personal/mine': 'everyone',
+    });
+    expect(byKey(cards, 'acme/broken')).toMatchObject({ card: 'unreadable', owner: null, team: [] });
+    const seen = (await as(ON_TEAM).index()).cards.map((c) => c.key);
+    expect(seen).toEqual(['acme/everyone', 'acme/open', 'personal/mine']);
+  });
+
+  it('a hidden project is nowhere in the index an outsider gets', async () => {
+    brain();
+    const index = await as(OUTSIDER).index();
+    expect(index.cards.map((c) => c.key)).toEqual(['acme/secret-2', 'acme/website']);
+    expect(index.byKey('acme/secret')).toBeNull();
+    expect(index.byKey('harvey-nash/secret-old')).toBeNull();
+    expect(index.keysForPath(`${SECRET}/plan.md`)).toEqual([]);
+    expect(index.refs?.resolve('ACM4K7')).toBeNull();
+    expect(index.refs?.resolve('ACM5M3')).toBe('acme/secret-2');
+    expect(index.refs?.near('ACM4K8')).toEqual([]);
+    expect(index.hiddenCount).toBe(1);
+    // A visible card's links into the hidden folder are stripped; the rest stay.
+    expect(index.byKey('acme/website')?.links).toEqual(['clients/acme/reports/audit.md']);
+  });
+
+  it('resolve answers restricted for a hidden label, never loose, client or missing', async () => {
+    brain();
+    put('clients/harvey-nash/projects/secret/project.md', card('Their secret'));
+    const index = await as(OUTSIDER).index();
+    const r = (v: string, client: string | null = null) => index.resolve(v, client, 'tds');
+    expect(r('acme/secret')).toEqual({ how: 'restricted' });
+    expect(r('secret', 'acme')).toEqual({ how: 'restricted' });
+    expect(r('harvey-nash/secret-old')).toEqual({ how: 'restricted' });
+    // Two projects share the slug and one is hidden: still no tidy-up row for the outsider.
+    expect(r('secret')).toEqual({ how: 'restricted' });
+    expect(r('secret', 'harvey-nash')).toEqual({ how: 'legacy', key: 'harvey-nash/secret' });
+    expect(r('acme/secret-2')).toEqual({ how: 'key', key: 'acme/secret-2' });
+    // The same labels read the same for someone who can see it (resolved from every card first).
+    const scout = await as(SCOUT).index();
+    expect(scout.resolve('acme/secret', null, 'tds')).toEqual({ how: 'key', key: 'acme/secret' });
+    expect(scout.resolve('secret', null, 'tds')).toEqual({ how: 'loose', label: 'secret' });
+  });
+
+  it('hiddenPath covers the live, archived, duplicate, leftover and moved-from folders only', async () => {
+    brain();
+    const index = await as(OUTSIDER).index();
+    const hidden = (p: string) => index.hiddenPath?.(p);
+    expect(hidden(SECRET)).toBe(true);
+    expect(hidden(`${SECRET}/`)).toBe(true);
+    expect(hidden(`${SECRET}/plan.md`)).toBe(true);
+    expect(hidden('clients/acme/projects/Secret/plan.md')).toBe(true);
+    expect(hidden('clients/acme/projects-archive/secret/project.md')).toBe(true);
+    expect(hidden('clients/harvey-nash/projects/secret-old/notes.md')).toBe(true);
+    expect(hidden('clients/acme/projects/secret-2/project.md')).toBe(false);
+    expect(hidden('clients/acme/projects/secretly/x.md')).toBe(false);
+    expect(hidden('clients/acme/projects')).toBe(false);
+    expect(hidden('clients/acme/reports/audit.md')).toBe(false);
+    expect(index.hiddenKey?.('acme/secret')).toBe(true);
+    expect(index.hiddenKey?.('harvey-nash/secret-old')).toBe(true);
+    expect(index.hiddenKey?.('acme/secret-2')).toBe(false);
+    expect(index.hiddenKey?.('acme/nothing')).toBe(false);
+    const open = await as(SCOUT).index();
+    expect(open.hiddenCount).toBe(0);
+    expect(open.hiddenPath?.(`${SECRET}/plan.md`)).toBe(false);
+    expect(open.hiddenKey?.('acme/secret')).toBe(false);
+  });
+
+  it('hides a restricted duplicate folder even when the card the key reads is open', async () => {
+    put('clients/acme/projects/twin/project.md', card('Twin'));
+    put('clients/acme/projects-archive/twin/project.md', card('Twin', 'visibility: restricted\n'));
+    const index = await as(OUTSIDER).index();
+    expect(index.byKey('acme/twin')?.folder).toBe('clients/acme/projects/twin');
+    expect(index.hiddenPath?.('clients/acme/projects-archive/twin/a.md')).toBe(true);
+    expect(index.hiddenPath?.('clients/acme/projects/twin/a.md')).toBe(false);
+    expect(index.hiddenCount).toBe(1);
+    expect((await as(OUTSIDER).list(OUTSIDER)).duplicates).toEqual([]);
+  });
+
+  it.each([
+    ['the Account Owner', ACCOUNT_OWNER, true],
+    ['a team member', ON_TEAM, true],
+    ['an owner', ME, true],
+    ['a scout', SCOUT, true],
+    ['another team member', OUTSIDER, false],
+    ['someone the roster does not know, even on the team', { ...ON_TEAM, knownMember: false }, false],
+  ] as const)('%s sees it: %s', async (_who, viewer, sees) => {
+    brain();
+    const index = await as(viewer).index();
+    expect(index.byKey('acme/secret') !== null).toBe(sees);
+    expect(index.hiddenCount).toBe(sees ? 0 : 1);
+  });
+
+  it('a team member listed in either slug form sees it', async () => {
+    const dan = person("Dan O'Brien", 'dan-obrien', 'team');
+    put(
+      'clients/acme/projects/a/project.md',
+      card('A', 'team:\n  - "dan-o-brien"\nvisibility: restricted\n'),
+    );
+    put('clients/acme/projects/b/project.md', card('B', 'team:\n  - "dan-obrien"\nvisibility: restricted\n'));
+    expect((await as(dan).index()).cards.map((c) => c.key)).toEqual(['acme/a', 'acme/b']);
+  });
+
+  it('no viewer, or one that fails, is an unknown viewer: no restricted project', async () => {
+    brain();
+    expect((await as(null).index()).byKey('acme/secret')).toBeNull();
+    const failing = service({
+      viewer: () => Promise.reject(new Error('no whoami')),
+      members: async () => MEMBERS,
+    });
+    expect((await failing.index()).byKey('acme/secret')).toBeNull();
+    // Old cards with no line behave exactly as before.
+    expect((await failing.index()).byKey('acme/website')).not.toBeNull();
+  });
+
+  it('list leaves the hidden project out of projects, duplicates, leftovers, counts and the team', async () => {
+    brain();
+    put(
+      'todo/20261120-a.md',
+      todoText({ title: 'Pitch deck', project: 'acme/secret', assignee: 'zed-person' }),
+    );
+    put(
+      'todo/20261120-b.md',
+      todoText({ title: 'Old label', client: 'acme', project: 'secret', assignee: 'zed-person' }),
+    );
+    put(
+      'todo/20261120-c.md',
+      todoText({ title: 'Site copy', project: 'acme/website', assignee: 'carol-team' }),
+    );
+    const outsider = await as(OUTSIDER).list(OUTSIDER);
+    expect(outsider.projects.map((p) => p.key)).toEqual(['acme/secret-2', 'acme/website']);
+    expect(outsider.duplicates).toEqual([]);
+    expect(outsider.leftovers).toEqual([]);
+    expect(outsider.looseLabels).toBe(0);
+    expect(JSON.stringify(outsider)).not.toContain('zed-person');
+    expect(JSON.stringify(outsider)).not.toContain('secret-old');
+    expect(byKey(outsider.projects, 'acme/website')?.openTodos).toBe(1);
+    const scout = await as(SCOUT).list(SCOUT);
+    expect(byKey(scout.projects, 'acme/secret')).toMatchObject({ openTodos: 2, visibility: 'restricted' });
+    expect(scout.duplicates).toEqual(['clients/acme/projects-archive/secret']);
+    expect(scout.leftovers).toEqual(['clients/harvey-nash/projects/secret-old']);
+    // A legacy label of a project they can see is a tidy-up row as before.
+    expect(scout.looseLabels).toBe(1);
+  });
+
+  it('change, move and remove on a hidden key are not found, before the script runs', async () => {
+    brain();
+    const s = as(OUTSIDER);
+    fakes.caps = [
+      PROJECTS_CAPABILITY,
+      PROJECTS_MOVE_CAPABILITY,
+      PROJECTS_ARCHIVE_CAPABILITY,
+      PROJECTS_REFS_CAPABILITY,
+    ];
+    const notFound = {
+      code: 'not-found',
+      message: 'That project could not be found. It may have been moved, archived or not synced here yet.',
+    };
+    for (const key of ['acme/secret', 'harvey-nash/secret-old']) {
+      await expect(
+        s.change({ kind: 'card', key, fields: { title: 'Mine now' } }, OUTSIDER),
+      ).rejects.toMatchObject(notFound);
+      await expect(
+        s.change(
+          { kind: 'link', key, path: 'clients/acme/reports/audit.md', expect: 'v'.repeat(64) },
+          OUTSIDER,
+        ),
+      ).rejects.toMatchObject(notFound);
+      await expect(s.change({ kind: 'ref', key, expect: 'v'.repeat(64) }, OUTSIDER)).rejects.toMatchObject(
+        notFound,
+      );
+      await expect(
+        s.move({ key, client: 'harvey-nash', expect: 'v'.repeat(64) }, OUTSIDER),
+      ).rejects.toMatchObject(notFound);
+      await expect(
+        s.move({ key, client: 'harvey-nash', expect: 'v'.repeat(64), check: true }, OUTSIDER),
+      ).rejects.toMatchObject(notFound);
+      for (const action of ['archive', 'unarchive', 'delete'] as const) {
+        await expect(s.remove({ action, key }, OUTSIDER)).rejects.toMatchObject(notFound);
+        await expect(s.remove({ action, key, check: true }, OUTSIDER)).rejects.toMatchObject(notFound);
+      }
+      await expect(s.projectTodos(key, OUTSIDER)).rejects.toMatchObject({ code: 'not-found' });
+    }
+    expect(fakes.skillRuns).toEqual([]);
+    // Someone on the team still reaches the script.
+    const team = as(ON_TEAM);
+    await team.change({ kind: 'card', key: 'acme/secret', fields: { title: 'Ours' } }, ON_TEAM);
+    expect(fakes.skillRuns).toHaveLength(1);
+  });
+
+  it('canRestrict needs the script feature and leave to change; seesAll lists owners and scouts', async () => {
+    brain();
+    const s = as(ON_TEAM);
+    expect((await s.list(ON_TEAM)).canRestrict).toBe(false);
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_VISIBILITY_CAPABILITY];
+    s.changed();
+    const listed = await s.list(ON_TEAM);
+    expect(listed.canRestrict).toBe(true);
+    expect([...(listed.seesAll ?? [])].sort()).toEqual([
+      'dan-o-brien',
+      'dan-obrien',
+      'ian-hancock',
+      'sam-scout',
+    ]);
+    const refused = as(ON_TEAM, { mayChange: async () => false });
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_VISIBILITY_CAPABILITY];
+    expect((await refused.list(ON_TEAM)).canRestrict).toBe(false);
+    // No roster reader: seesAll is left out, so the client blocks nobody (the server still does).
+    const bare = service({ viewer: async () => ON_TEAM });
+    expect(await bare.list(ON_TEAM)).not.toHaveProperty('seesAll');
+  });
+
+  it('assignCheck answers from every card, whoever is asking', async () => {
+    brain();
+    // The outsider can't see the project, yet gets the same answers as anyone.
+    const s = as(OUTSIDER);
+    const tds = (project: string | null, client: string | null = null) => ({
+      project,
+      client,
+      scope: 'tds' as const,
+    });
+    expect(await s.assignCheck(tds('acme/secret'), null)).toEqual({ ok: true });
+    expect(await s.assignCheck(tds(null), 'carol-team')).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/website'), 'carol-team')).toEqual({ ok: true });
+    expect(
+      await s.assignCheck({ project: 'acme/secret', client: null, scope: 'personal' }, 'carol-team'),
+    ).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/secret'), 'bob-team')).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/secret'), 'alice-owner')).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/secret'), 'ian-hancock')).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/secret'), 'dan-o-brien')).toEqual({ ok: true });
+    expect(await s.assignCheck(tds('acme/secret'), 'carol-team')).toEqual({
+      ok: false,
+      why: 'outside',
+      name: 'Carol Team',
+    });
+    expect(await s.assignCheck(tds('secret', 'acme'), 'carol-team')).toEqual({
+      ok: false,
+      why: 'outside',
+      name: 'Carol Team',
+    });
+    expect(await s.assignCheck(tds('harvey-nash/secret-old'), 'carol-team')).toMatchObject({ ok: false });
+    expect(await s.assignCheck(tds('acme/secret'), 'new-starter')).toEqual({
+      ok: false,
+      why: 'outside',
+      name: 'new-starter',
+    });
+  });
+
+  it('a code shared by a hidden and a visible project resolves the same for everyone', async () => {
+    put(`${SECRET}/project.md`, restricted('ref: ACM4K7\n'));
+    put('clients/acme/projects/website/project.md', card('Website', 'ref: ACM4K7\n'));
+    const outsider = await as(OUTSIDER).index();
+    const scout = await as(SCOUT).index();
+    expect(outsider.refs?.resolve('ACM4K7')).toBeNull();
+    expect(scout.refs?.resolve('ACM4K7')).toBeNull();
+    const site = outsider.byKey('acme/website') as ProjectCard;
+    expect(site.refState).toBe('duplicate');
+    expect(site).not.toHaveProperty('refDuplicateOf');
+    expect(scout.byKey('acme/website')?.refDuplicateOf).toEqual(['acme/secret']);
+  });
+
+  it('the tidy-up never offers a row for a hidden label, nor links into it', async () => {
+    brain();
+    put('todo/20261120-b.md', todoText({ title: 'Old label', client: 'acme', project: 'secret' }));
+    const s = as(OUTSIDER);
+    expect((await s.tidy(OUTSIDER)).rows).toEqual([]);
+    await expect(
+      s.applyTidy(
+        { label: 'secret', do: 'approve', suggestion: { do: 'link', key: 'acme/secret', why: 'same-slug' } },
+        OUTSIDER,
+      ),
+    ).resolves.toMatchObject({ rows: [] });
+    expect(fakes.todoRuns).toEqual([]);
+  });
+
+  it('caches the masked index for 30 seconds; changed() drops it', async () => {
+    brain();
+    let viewer: Identity = OUTSIDER;
+    const s = service({ viewer: async () => viewer, members: async () => MEMBERS });
+    expect((await s.index()).byKey('acme/secret')).toBeNull();
+    viewer = SCOUT;
+    expect((await s.index()).byKey('acme/secret')).toBeNull();
+    s.changed();
+    expect((await s.index()).byKey('acme/secret')).not.toBeNull();
   });
 });

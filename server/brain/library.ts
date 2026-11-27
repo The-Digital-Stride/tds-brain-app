@@ -44,12 +44,13 @@ import {
   type FileClass,
   groupFor,
   isHiddenInTemplates,
+  isInSharedProjectFolder,
   isNeverListed,
   orderGroups,
   tidyFileName,
 } from './library-rules.ts';
 import type { MyChanges } from './my-changes.ts';
-import type { ProjectsIndex } from './projects.ts';
+import { isHiddenKey, isHiddenPath, type ProjectsIndex } from './projects.ts';
 
 export const LIMITS = { depth: 8, listed: 5000, visited: 50_000 } as const;
 export const THUMB_MAX_BYTES = 50 * 1024 * 1024;
@@ -104,6 +105,8 @@ export interface LibraryOptions {
    * The projects index (projects R1, decision 7). Each item served gets `projects` from it, worked out
    * at serve time and never cached with the listing: a card edit changes items cached in another scope.
    * Missing, or failing: items carry no `projects`.
+   * Restricted projects (plan 2026-11-27, decision 5): also leaves a hidden project's files out of every
+   * answer, at serve time. Failing: every project folder's files are left out (decision 4).
    */
   projects?: () => Promise<ProjectsIndex>;
 }
@@ -255,6 +258,12 @@ interface Found {
   cls: FileClass;
   bytes: number;
   mtimeMs: number;
+}
+
+/** What serving reads from the projects index now (see `serveView`). */
+interface ServeView {
+  keys: ((rel: string) => ProjectKey[]) | null;
+  hidden: (rel: string) => boolean;
 }
 
 const PERSONAL_NAME = 'My personal files';
@@ -874,8 +883,15 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     }
   }
 
-  /** Re-checks the file on disk: a real file, inside the brain and the scope, that the rules allow. */
-  async function check(scope: ScopeDef, item: LibraryItem): Promise<LibraryFile | null> {
+  /**
+   * Re-checks the file on disk: a real file, inside the brain and the scope, that the rules allow, and
+   * (`hidden`) not a hidden project's where it really is.
+   */
+  async function check(
+    scope: ScopeDef,
+    item: LibraryItem,
+    hidden: (rel: string) => boolean = () => false,
+  ): Promise<LibraryFile | null> {
     const rel = item.path;
     const prefix = `${scope.folder}/`.toLowerCase();
     if (isNeverListed(rel) || !rel.toLowerCase().startsWith(prefix)) return null;
@@ -891,6 +907,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       const relReal = relative(base, real).split(sep).join('/');
       if (isNeverListed(relReal) || !relReal.toLowerCase().startsWith(prefix)) return null;
       if (scope.kind === 'shared' && isHiddenInTemplates(relReal)) return null;
+      if (hidden(rel) || hidden(relReal)) return null;
       const ext = extOf(basename(real));
       const cls = classify(ext);
       if (!cls || ext !== item.ext) return null;
@@ -978,26 +995,42 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     return ok?.has(item.id) ? { ...item, canDelete: true } : item;
   }
 
-  /** `keysForPath` of the projects index now, or null when there is none (or it can't be read). */
-  async function projectKeysFor(): Promise<((rel: string) => ProjectKey[]) | null> {
-    if (!opts.projects) return null;
+  /**
+   * What serving needs from the projects index now, read once per answer and never cached with a listing:
+   * each path's project stamp (`keys`, null without a readable index) and whether a path is a hidden
+   * project's (restricted projects, decision 5). No index given: nothing hidden. An index that can't be
+   * read: every project folder hidden, since nobody can say which are restricted (decision 4).
+   */
+  async function serveView(): Promise<ServeView> {
+    if (!opts.projects) return { keys: null, hidden: () => false };
     try {
       const index = await opts.projects();
-      return (rel) => index.keysForPath(rel);
+      return {
+        // A hidden project never stamps a file, even one linked from outside its folder.
+        keys: (rel) => index.keysForPath(rel).filter((k) => !isHiddenKey(index, k)),
+        hidden: (rel) => isHiddenPath(index, rel),
+      };
     } catch {
-      return null;
+      return { keys: null, hidden: isInSharedProjectFolder };
     }
   }
 
   /** `item` with the projects it belongs to, as of now. The cached item is never changed. */
-  async function withProjects(item: LibraryItem): Promise<LibraryItem> {
-    const keys = await projectKeysFor();
-    return keys ? { ...item, projects: keys(item.path) } : item;
+  function withProjects(item: LibraryItem, view: ServeView): LibraryItem {
+    return view.keys ? { ...item, projects: view.keys(item.path) } : item;
   }
 
-  async function withProjectsAll(items: LibraryItem[]): Promise<LibraryItem[]> {
-    const keys = await projectKeysFor();
-    return keys ? items.map((i) => ({ ...i, projects: keys(i.path) })) : items;
+  /** The items to serve: a hidden project's left out, the rest stamped. */
+  function servedItems(items: LibraryItem[], view: ServeView): LibraryItem[] {
+    return items.filter((i) => !view.hidden(i.path)).map((i) => withProjects(i, view));
+  }
+
+  /** A listing without a hidden project's files, or its groups (a group can be named after its folder). */
+  function withoutHidden(listing: LibraryListing, view: ServeView): LibraryListing {
+    const items = listing.items.filter((i) => !view.hidden(i.path));
+    if (items.length === listing.items.length) return listing;
+    const left = new Set(items.map((i) => i.group));
+    return { ...listing, items, groups: listing.groups.filter((g) => left.has(g)) };
   }
 
   let defsInFlight: Promise<ScopeDef[]> | null = null;
@@ -1036,22 +1069,26 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     scope: ScopeDef,
     entry: Entry,
     lower: string,
+    hidden: (rel: string) => boolean,
   ): Promise<{ item: LibraryItem; file: LibraryFile | null } | null> {
     const item = entry.byPath.get(lower);
-    return item ? { item, file: await check(scope, item) } : null;
+    return item ? { item, file: await check(scope, item, hidden) } : null;
   }
 
   async function itemForPath(
     rel: string,
+    hidden: (rel: string) => boolean,
   ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null> {
     if (typeof rel !== 'string' || isNeverListed(rel)) return null;
+    // A hidden project's path is not found, there or not: nothing confirms the folder.
+    if (hidden(rel)) return null;
     const lower = rel.toLowerCase();
     const scope = (await sharedScopeDefs()).find((s) => lower.startsWith(`${s.folder.toLowerCase()}/`));
     if (!scope || !classify(extOf(basename(rel)))) return null;
     const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
     const before = cache.get(scope.id);
     const entry = await entryFor(scope);
-    const first = await lookup(scope, entry, lower);
+    const first = await lookup(scope, entry, lower, hidden);
     if (first?.file) return { key: first.item.id, scope: info, item: first.file.item };
     const key = first?.item.id ?? idFor(scope.id, rel);
     try {
@@ -1065,7 +1102,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     // There but not in the listing: made since it was walked, so walk that scope once more, unless
     // the listing was walked just now for this lookup.
     const latest = entry === before ? await relist(scope) : entry;
-    const second = latest === entry ? first : await lookup(scope, latest, lower);
+    const second = latest === entry ? first : await lookup(scope, latest, lower, hidden);
     if (second?.file) return { key: second.item.id, scope: info, item: second.file.item };
     const seen = unlistedIn.get(latest) ?? new Set<string>();
     seen.add(lower);
@@ -1154,12 +1191,13 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const qWords = words(query);
     if (qWords.length === 0) return { hits: [], total: 0, partial: false };
     const { listings, partial } = await gatherListings();
+    const view = await serveView();
 
     const found: { hit: LibrarySearchHit; tier: number; at: number }[] = [];
     for (const { scope, items } of listings) {
       const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
       for (const item of items) {
-        if (item.kind !== kind) continue;
+        if (item.kind !== kind || view.hidden(item.path)) continue;
         const tier = searchTier(item, scope.name, query, qWords);
         if (tier === null) continue;
         found.push({ hit: { item, scope: info }, tier, at: Date.parse(item.modified) || 0 });
@@ -1172,9 +1210,8 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         a.hit.item.path.localeCompare(b.hit.item.path, 'en', { sensitivity: 'base' }),
     );
     const top = found.slice(0, LIBRARY_SEARCH_MAX).map((f) => f.hit);
-    const keys = await projectKeysFor();
     return {
-      hits: keys ? top.map((h) => ({ ...h, item: { ...h.item, projects: keys(h.item.path) } })) : top,
+      hits: view.keys ? top.map((h) => ({ ...h, item: withProjects(h.item, view) })) : top,
       total: found.length,
       partial,
     };
@@ -1186,7 +1223,8 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     mine?: MyChanges,
   ): Promise<LibraryRecentResponse> {
     if (mine && !mine.readable) return { files: [], partial: true };
-    const keys = await projectKeysFor();
+    const view = await serveView();
+    const keys = view.keys;
     if (project && !keys) return { files: [], partial: false };
     // Personal files are never listed unasked, so their folder is never built for this either.
     const { listings, partial } = await gatherListings((scope) => scope.kind !== 'personal');
@@ -1194,7 +1232,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     for (const { scope, items } of listings) {
       const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
       for (const item of items) {
-        if (item.kind !== kind) continue;
+        if (item.kind !== kind || view.hidden(item.path)) continue;
         const projects = keys ? keys(item.path) : undefined;
         if (project && !projects?.includes(project)) continue;
         let at = Date.parse(item.modified) || 0;
@@ -1217,10 +1255,11 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     rel: string,
   ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null> {
     try {
-      const hit = await itemForPath(rel);
+      const view = await serveView();
+      const hit = await itemForPath(rel, view.hidden);
       if (!hit?.item) return hit;
       const scope = await findScope(hit.scope.id);
-      return scope ? { ...hit, item: await withProjects(await deletableItem(scope, hit.item)) } : hit;
+      return scope ? { ...hit, item: withProjects(await deletableItem(scope, hit.item), view) } : hit;
     } catch {
       return null;
     }
@@ -1256,8 +1295,9 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         const scope = await findScope(scopeId);
         if (!scope) return null;
         const entry = await entryFor(scope);
-        const listing = await withDeletable(scope, entry);
-        const keys = await projectKeysFor();
+        const view = await serveView();
+        const listing = withoutHidden(await withDeletable(scope, entry), view);
+        const keys = view.keys;
         return keys
           ? { ...listing, items: listing.items.map((i) => ({ ...i, projects: keys(i.path) })) }
           : listing;
@@ -1277,9 +1317,12 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           // Not known (after a restart, or a new file): list that one scope, then give up.
           item = (await entryFor(scope)).paths.get(id);
         }
+        // A hidden project's file is not found, whoever asks for it by id (a star, a link, a delete).
+        const view = await serveView();
+        if (!item || view.hidden(item.path)) return null;
         // `canDelete` goes on before `check`, never on a copy after: readChecked/openChecked trust only
         // the very object `check` returned.
-        return item ? await check(scope, await withProjects(await deletableItem(scope, item))) : null;
+        return await check(scope, withProjects(await deletableItem(scope, item), view), view.hidden);
       } catch {
         return null;
       }
@@ -1301,8 +1344,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         const scope = (await scopeDefs()).find((s) => folder.startsWith(`${s.folder.toLowerCase()}/`));
         if (scope && !isNeverListed(card.folder)) {
           const entry = await entryFor(scope);
-          for (const item of await withProjectsAll(
+          const view = await serveView();
+          for (const item of servedItems(
             (await withDeletable(scope, entry)).items.filter((i) => i.path.toLowerCase().startsWith(folder)),
+            view,
           ))
             add(item);
         }

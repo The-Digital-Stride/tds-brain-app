@@ -26,13 +26,29 @@ import {
   rosterName,
   stampActor,
 } from './todo-asked.ts';
-import { createAttachmentReader, dueOf, isRealDir, lower, readTeam, SAFE_ID, todoTitle } from './todos.ts';
+import {
+  createAttachmentReader,
+  dueOf,
+  hiddenPathOf,
+  isRealDir,
+  lower,
+  maskTask,
+  readTaskIndex,
+  readTeam,
+  SAFE_ID,
+  taskRule,
+  todoTitle,
+  usableIndex,
+} from './todos.ts';
 import { readBytes } from './util.ts';
 
 export interface DoneTodoDeps {
   /** The shared `todo/` git log reader (one `git log` per HEAD). */
   log: AskedLog;
-  /** Fills each row's `projectMatch`; without it, or if it fails, none is set. */
+  /**
+   * Fills each row's `projectMatch`; without it, or if it fails, none is set. Also THE task rule: someone
+   * else's task in a hidden project is left out (and, when it fails, any project-labelled one).
+   */
   projects?: () => Promise<ProjectsIndex>;
 }
 
@@ -129,15 +145,9 @@ export async function listDoneTodos(
     needsLog ? deps.log.read(root) : Promise.resolve<LogResult>(new Map()),
   ]);
   const roster: Roster = { team: team as TeamMember[], members };
-  let index: ProjectsIndex | null = null;
-  if (deps.projects) {
-    try {
-      index = await deps.projects();
-    } catch {
-      index = null;
-    }
-  }
-  const attachments = createAttachmentReader(root, me);
+  const read = await readTaskIndex(deps.projects);
+  const index = usableIndex(read);
+  const attachments = createAttachmentReader(root, me, hiddenPathOf(read));
   const items: DoneTodo[] = [];
   for (const file of files) {
     const facts = log === 'unread' ? null : (log.get(file.id) ?? null);
@@ -146,7 +156,11 @@ export async function listDoneTodos(
     const folder = file.scope === 'personal' ? 'personal/todo/done' : 'todo/done';
     const project = asString(file.data.project).trim() || null;
     const client = asString(file.data.client).trim() || null;
-    items.push({
+    const projectMatch = index ? index.resolve(project, client, file.scope) : undefined;
+    // THE task rule: someone else's finished task in a hidden project is left out; one's own is masked.
+    const seen = taskRule(read, { project, projectMatch }, assignee !== null && assignee === me);
+    if (seen === 'hide') continue;
+    const item: DoneTodo = {
       key: `done:${folder}/${file.id}`,
       id: file.id,
       scope: file.scope,
@@ -162,8 +176,9 @@ export async function listDoneTodos(
       client,
       project,
       stage: asString(file.data.stage).trim() || null,
-      ...(index ? { projectMatch: index.resolve(project, client, file.scope) } : {}),
-    });
+      ...(projectMatch ? { projectMatch } : {}),
+    };
+    items.push(seen === 'mask' ? maskTask(item) : item);
   }
   items.sort(byDoneNewest);
   return { items, historyRead: !needsLog || log !== 'unread' };

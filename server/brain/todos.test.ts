@@ -1270,3 +1270,324 @@ describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Restricted projects (plan 2026-11-27-restricted-projects, decisions 6 and 7)
+// ---------------------------------------------------------------------------
+
+describe('restricted projects: the task rule and the assign block', () => {
+  /** A project hidden from sam (resolve answers 'restricted'). */
+  const SECRET = 'acme-heating/secret';
+  /** A restricted project sam can see (resolve answers a key); the assign block decides who may take its tasks. */
+  const TEAM_ONLY = 'acme-heating/launch';
+  const MINE = '20261120-secret-mine.md';
+  const ALEX = '20261121-secret-alex.md';
+  const OPEN = '20261122-secret-open.md';
+  const TEAM_MINE = '20261123-launch-mine.md';
+
+  /** A stand-in for S1's index: SECRET is hidden, TEAM_ONLY is visible, anything else is loose. */
+  const index: ProjectsIndex = {
+    cards: [],
+    byKey: () => null,
+    keysForPath: () => [],
+    resolve: (value) =>
+      value === SECRET
+        ? { how: 'restricted' }
+        : value === TEAM_ONLY
+          ? { how: 'key', key: TEAM_ONLY }
+          : value
+            ? { how: 'loose', label: value }
+            : { how: 'none' },
+    hiddenPath: (rel) => rel.startsWith('clients/acme-heating/projects/secret/'),
+    hiddenKey: (key) => key === SECRET,
+    hiddenCount: 1,
+  };
+  const unreadable = async (): Promise<ProjectsIndex> => {
+    throw new Error('no index');
+  };
+
+  function task(assignee: string | null, project: string): string {
+    return `---\n${assignee ? `assignee: ${assignee}\n` : ''}client: acme-heating\nproject: ${project}\nstage: Build\n---\n# A task\n`;
+  }
+
+  function brainRoot(): string {
+    const root = copyFixture();
+    writeFileSync(join(root, 'todo', MINE), task('sam-example', SECRET));
+    writeFileSync(join(root, 'todo', ALEX), task('alex-sample', SECRET));
+    writeFileSync(join(root, 'todo', OPEN), task(null, SECRET));
+    writeFileSync(join(root, 'todo', TEAM_MINE), task('sam-example', TEAM_ONLY));
+    return root;
+  }
+
+  describe('listTodos', () => {
+    it("leaves out other people's and open tasks of a hidden project, uncounted, and masks sam's own", async () => {
+      const root = brainRoot();
+      const plain = await listTodos(root, sam);
+      const list = await listTodos(root, sam, { projects: async () => index });
+      const ids = [...list.mine, ...list.open].map((t) => t.id);
+      expect(ids).not.toContain(ALEX);
+      expect(ids).not.toContain(OPEN);
+      expect(list.othersCount).toBe(plain.othersCount - 1);
+      const own = list.mine.find((t) => t.id === MINE);
+      expect(own).toMatchObject({ project: null, stage: null, projectMatch: { how: 'restricted' } });
+      // A visible restricted project is shown as it always was.
+      expect(list.mine.find((t) => t.id === TEAM_MINE)).toMatchObject({
+        project: TEAM_ONLY,
+        stage: 'Build',
+        projectMatch: { how: 'key', key: TEAM_ONLY },
+      });
+    });
+
+    it("fails closed when the index can't be read: project-labelled tasks that aren't sam's are left out", async () => {
+      const root = brainRoot();
+      const plain = await listTodos(root, sam);
+      const list = await listTodos(root, sam, { projects: unreadable });
+      const ids = [...list.mine, ...list.open].map((t) => t.id);
+      expect(ids).not.toContain(ALEX);
+      expect(ids).not.toContain(OPEN);
+      // Sam's own, and tasks with no project label, are unaffected.
+      expect(ids).toEqual(expect.arrayContaining([MINE, TEAM_MINE, '20261103-open-task.md']));
+      expect(list.othersCount).toBe(plain.othersCount - 1);
+    });
+
+    it('is unchanged when nothing is hidden', async () => {
+      const root = copyFixture();
+      const visible: ProjectsIndex = { ...index, resolve: () => ({ how: 'none' }), hiddenCount: 0 };
+      const withIndex = await listTodos(root, sam, { projects: async () => visible });
+      const strip = (l: typeof withIndex) =>
+        [...l.mine, ...l.open].map(({ projectMatch: _m, ...rest }) => rest);
+      expect(strip(withIndex)).toEqual(strip(await listTodos(root, sam)));
+      expect(withIndex.othersCount).toBe((await listTodos(root, sam)).othersCount);
+    });
+  });
+
+  describe('completeTodo', () => {
+    it("refuses to tick a hidden project's task that isn't sam's, and ticks sam's own", async () => {
+      const root = brainRoot();
+      const { completeTodo } = await import('./todos.ts');
+      const at = new Date('2026-11-27T10:00:00Z');
+      for (const id of [ALEX, OPEN]) {
+        await expect(completeTodo(root, id, sam, at, { projects: async () => index })).rejects.toThrow(
+          /could not be found/,
+        );
+        expect(existsSync(join(root, 'todo', id))).toBe(true);
+      }
+      await expect(completeTodo(root, ALEX, sam, at, { projects: unreadable })).rejects.toThrow(
+        /could not be found/,
+      );
+      await completeTodo(root, MINE, sam, at, { projects: async () => index });
+      expect(existsSync(join(root, 'todo', 'done', MINE))).toBe(true);
+    });
+  });
+
+  describe('changeTodo', () => {
+    function setup() {
+      const root = brainRoot();
+      addTodoSkill(root);
+      const run = vi.fn(async () => ({ file: null }));
+      const runner = {
+        capabilities: async () => ['scope', TODO_PROJECT_CAPABILITY] as const,
+        run,
+      };
+      const assignCheck = vi.fn(
+        async (
+          place: { project: string | null; client: string | null; scope: 'tds' | 'personal' },
+          assignee: string | null,
+        ) =>
+          place.project === TEAM_ONLY && assignee === 'alex-sample'
+            ? ({ ok: false, why: 'outside', name: 'Alex Sample' } as const)
+            : ({ ok: true } as const),
+      );
+      const deps = { projects: async () => index, assignCheck };
+      return { root, run, runner, assignCheck, deps };
+    }
+    const NOTE =
+      "Alex Sample isn't on this restricted project. Add them to the project team first, then give them the task.";
+
+    async function refusal(p: Promise<unknown>): Promise<{ code: string; message: string } | null> {
+      try {
+        await p;
+        return null;
+      } catch (err) {
+        expect(err).toBeInstanceOf(TodoChangeError);
+        return { code: (err as TodoChangeError).code, message: (err as TodoChangeError).message };
+      }
+    }
+
+    it("answers not-found for every change to a hidden project's task that isn't sam's, before the script", async () => {
+      const { root, run, runner, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      for (const id of [ALEX, OPEN]) {
+        const actions: TodoAction[] = [
+          { kind: 'edit', id, title: 'New' },
+          { kind: 'due', id, due: null },
+          { kind: 'assignee', id, assignee: 'sam-example' },
+          { kind: 'delete', id },
+          { kind: 'project', id, client: null, project: null, stage: null },
+        ];
+        for (const a of actions)
+          expect(await codeOf(changeTodo(root, a, sam, runner, deps)), `${a.kind} ${id}`).toBe('not-found');
+        expect(await codeOf(changeTodo(root, { kind: 'tick', id, scope: 'tds' }, sam, runner, deps))).toBe(
+          'not-found',
+        );
+      }
+      // The same when the index can't be read.
+      expect(
+        await codeOf(
+          changeTodo(root, { kind: 'edit', id: ALEX, title: 'New' }, sam, runner, {
+            ...deps,
+            projects: unreadable,
+          }),
+        ),
+      ).toBe('not-found');
+      expect(run).not.toHaveBeenCalled();
+      // Sam's own task in the hidden project can still be changed.
+      await changeTodo(root, { kind: 'edit', id: MINE, title: 'Mine' }, sam, runner, deps);
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an add that gives a restricted task to someone outside it, with the exact note', async () => {
+      const { root, run, runner, assignCheck, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      const add = {
+        kind: 'add',
+        title: 'Plan the launch',
+        due: null,
+        assignee: 'alex-sample',
+        client: 'acme-heating',
+        project: TEAM_ONLY,
+      } as TodoAction;
+      expect(await refusal(changeTodo(root, add, sam, runner, deps))).toEqual({
+        code: 'not-allowed',
+        message: NOTE,
+      });
+      expect(assignCheck).toHaveBeenCalledWith(
+        { project: TEAM_ONLY, client: 'acme-heating', scope: 'tds' },
+        'alex-sample',
+      );
+      expect(run).not.toHaveBeenCalled();
+      // Allowed when unassigned, and when the check says ok.
+      await changeTodo(root, { ...add, assignee: null } as TodoAction, sam, runner, deps);
+      await changeTodo(root, { ...add, assignee: 'jo-owner' } as TodoAction, sam, runner, deps);
+      expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses passing a restricted task on to someone outside it, the place read from the file', async () => {
+      const { root, run, runner, assignCheck, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      const pass = { kind: 'assignee', id: TEAM_MINE, assignee: 'alex-sample' } as TodoAction;
+      expect(await refusal(changeTodo(root, pass, sam, runner, deps))).toEqual({
+        code: 'not-allowed',
+        message: NOTE,
+      });
+      expect(assignCheck).toHaveBeenLastCalledWith(
+        { project: TEAM_ONLY, client: 'acme-heating', scope: 'tds' },
+        'alex-sample',
+      );
+      // Sam's own hidden-project task: the check gets the real label, never the masked null.
+      await changeTodo(root, { kind: 'assignee', id: MINE, assignee: 'jo-owner' }, sam, runner, deps);
+      expect(assignCheck).toHaveBeenLastCalledWith(
+        { project: SECRET, client: 'acme-heating', scope: 'tds' },
+        'jo-owner',
+      );
+      expect(run).toHaveBeenCalledTimes(1);
+      // Open to anyone is always allowed.
+      await changeTodo(root, { kind: 'assignee', id: TEAM_MINE, assignee: null }, sam, runner, deps);
+      expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it("refuses moving a task into a restricted project its person can't take, the person read from the file", async () => {
+      const { root, run, runner, assignCheck, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      const move = {
+        kind: 'project',
+        id: '20261103-open-task.md',
+        client: 'acme-heating',
+        project: TEAM_ONLY,
+        stage: null,
+      } as TodoAction;
+      // A task open to anyone may go into any project sam can see.
+      await changeTodo(root, move, sam, runner, deps);
+      expect(run).toHaveBeenCalledTimes(1);
+      // Sam's own task into TEAM_ONLY: the person comes from the file.
+      assignCheck.mockResolvedValueOnce({ ok: false, why: 'outside', name: 'Alex Sample' });
+      expect(
+        await refusal(
+          changeTodo(root, { ...move, id: '20261105-send-report.md' } as TodoAction, sam, runner, deps),
+        ),
+      ).toEqual({ code: 'not-allowed', message: NOTE });
+      expect(assignCheck).toHaveBeenLastCalledWith(
+        { project: TEAM_ONLY, client: 'acme-heating', scope: 'tds' },
+        'sam-example',
+      );
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a move to TDS that would leave a restricted task with someone outside it', async () => {
+      const { root, run, runner, assignCheck, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      personalFile(
+        root,
+        '20261126-own.md',
+        `---\nassignee: sam-example\nproject: ${TEAM_ONLY}\nclient: acme-heating\n---\n`,
+      );
+      const expectV = EX(root, 'personal/todo', '20261126-own.md');
+      assignCheck.mockResolvedValueOnce({ ok: false, why: 'outside', name: 'Alex Sample' });
+      const move = {
+        kind: 'move',
+        id: '20261126-own.md',
+        scope: 'personal',
+        to: 'tds',
+        expect: expectV,
+      } as TodoAction;
+      expect(await refusal(changeTodo(root, move, sam, runner, deps))).toEqual({
+        code: 'not-allowed',
+        message: NOTE,
+      });
+      expect(assignCheck).toHaveBeenLastCalledWith(
+        { project: TEAM_ONLY, client: 'acme-heating', scope: 'tds' },
+        'sam-example',
+      );
+      // Dropping the project on the way: nothing to check.
+      assignCheck.mockClear();
+      await changeTodo(root, { ...move, dropProject: true } as TodoAction, sam, runner, deps);
+      expect(assignCheck).not.toHaveBeenCalled();
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses pointing a task at a project sam can't see, as a missing project is refused", async () => {
+      const { root, run, runner, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      const add = {
+        kind: 'add',
+        title: 'Snoop',
+        due: null,
+        assignee: 'sam-example',
+        client: 'acme-heating',
+        project: SECRET,
+      } as TodoAction;
+      expect(await codeOf(changeTodo(root, add, sam, runner, deps))).toBe('bad-request');
+      const point = {
+        kind: 'project',
+        id: '20261105-send-report.md',
+        client: 'acme-heating',
+        project: SECRET,
+        stage: null,
+      } as TodoAction;
+      expect(await codeOf(changeTodo(root, point, sam, runner, deps))).toBe('bad-request');
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('refuses rather than guesses when the assign check fails', async () => {
+      const { root, run, runner, assignCheck, deps } = setup();
+      const { changeTodo } = await import('./todos.ts');
+      assignCheck.mockRejectedValueOnce(new Error('cards unreadable'));
+      expect(
+        await codeOf(
+          changeTodo(root, { kind: 'assignee', id: TEAM_MINE, assignee: 'jo-owner' }, sam, runner, deps),
+        ),
+      ).toBe('internal');
+      expect(run).not.toHaveBeenCalled();
+    });
+  });
+});

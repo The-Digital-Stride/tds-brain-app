@@ -19,6 +19,16 @@ import {
 } from '../../shared/contract.ts';
 import { PROJECTS_REFS_CAPABILITY, type RefIndex } from '../../shared/project-refs-contract.ts';
 import {
+  canSeeProject,
+  canTakeTask,
+  isRestricted,
+  PROJECTS_VISIBILITY_CAPABILITY,
+  type ProjectViewer,
+  parseVisibility,
+  personSlugs,
+  rawTextRestricted,
+} from '../../shared/project-visibility.ts';
+import {
   archivedFolderPath,
   archiveFolderFor,
   folderTitle,
@@ -72,11 +82,11 @@ import {
 } from '../../shared/projects-contract.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
 import { buildRefIndex, cleanRef } from './project-refs.ts';
-import type { ProjectsSkillRunner } from './projects-skill.ts';
+import { PROJECTS_CHANGE_MESSAGES, type ProjectsSkillRunner } from './projects-skill.ts';
 import { buildTidyRows, checkSuggestion, type TidyContext, type TidyTodo, tidyTarget } from './tidy.ts';
 import { defaultGitRunner } from './todo-history.ts';
 import type { TodoSkillRunner } from './todo-skill.ts';
-import { memberSlug } from './util.ts';
+import { mapRole, memberSlug } from './util.ts';
 
 export interface ProjectsIndex {
   /** Every project, personal ones only this Mac's. `openTodos` and `teamFromTodos` are filled by `list`. */
@@ -98,11 +108,11 @@ export interface ProjectsIndex {
 }
 
 /** True when the path is, or is inside, a folder of a project this person can't see. */
-export const isHiddenPath = (index: ProjectsIndex, brainRel: string): boolean =>
+export const isHiddenPath = (index: Pick<ProjectsIndex, 'hiddenPath'>, brainRel: string): boolean =>
   index.hiddenPath ? index.hiddenPath(brainRel) : false;
 
 /** True for the key (or an old moved-from key) of a project this person can't see. */
-export const isHiddenKey = (index: ProjectsIndex, key: ProjectKey): boolean =>
+export const isHiddenKey = (index: Pick<ProjectsIndex, 'hiddenKey'>, key: ProjectKey): boolean =>
   index.hiddenKey ? index.hiddenKey(key) : false;
 
 /** The assign block's answer (contract `AssignAnswer`). */
@@ -180,7 +190,46 @@ export interface ProjectsOptions {
   doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
   /** After a move, archive, unarchive or delete: the old and new folders (brain-relative), so the library drops both from its caches. */
   onMoved?: (from: string, to: string) => void;
+  /**
+   * Restricted projects: the person using this Mac, read once per index load. Missing, or failing, means
+   * an unknown viewer, who sees no restricted project (fail closed).
+   */
+  viewer?: () => Promise<Identity>;
+  /** The roster with roles (`.team-config/roles.json`), for `seesAll` and for naming people in the assign note. */
+  members?: () => Promise<{ name: string; slug: string; role: string }[]>;
 }
+
+/** Who looks when the viewer can't be read: known to nobody, so no restricted project shows. */
+const UNKNOWN_VIEWER: ProjectViewer = { name: '', slug: '', role: 'unknown', knownMember: false };
+
+type Roster = { name: string; slug: string; role: string }[];
+
+/** Every slug form of each owner and scout on the roster: they see every project (ProjectList.seesAll). */
+function seesAllOf(roster: Roster): string[] {
+  const out = new Set<string>();
+  for (const m of roster) {
+    const role = mapRole(m.role);
+    if (role !== 'owner' && role !== 'scout') continue;
+    for (const s of personSlugs({ slug: m.slug, name: m.name })) out.add(s);
+  }
+  return [...out];
+}
+
+/** What one index load holds. `all` is every card, unmasked: it never leaves this file. */
+interface Loaded {
+  index: ProjectsIndex;
+  /** The walk as this viewer sees it: hidden cards, duplicates and leftovers left out. */
+  walk: Walk;
+  clients: string[];
+  all: ProjectCard[];
+  members: Roster | null;
+}
+
+/**
+ * A hidden project's key is refused with the very error a missing one gets from the script, so nothing
+ * tells an outsider it exists (decision 12).
+ */
+const hiddenNotFound = () => new ProjectsError('not-found', PROJECTS_CHANGE_MESSAGES['not-found']);
 
 /** How long a read is reused when no watcher says the brain changed. */
 export const PROJECTS_STALE_MS = 30_000;
@@ -350,6 +399,8 @@ interface Walk {
   duplicates: string[];
   /** Move plan B1: card-less folders whose key a live card's movedFrom lists. Not in `cards`. */
   leftovers: string[];
+  /** The cards read for `duplicates` and `leftovers` folders: their keys and visibility, for hiding them. */
+  shadowed: ProjectCard[];
   skippedFolders: number;
   clients: string[];
 }
@@ -384,12 +435,16 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
   let data: Record<string, FrontmatterValue> = {};
   let body = '';
   let version = '';
+  // Restricted projects, decision 4: the text a `visibility:` line is looked for in. The frontmatter block
+  // of a readable card; the whole file of one that doesn't parse (a merge conflict can sit anywhere).
+  let visibilityText = '';
   if (st) {
     state = 'unreadable';
     if (st.isFile()) {
       try {
         const bytes = await fs.readFile(join(folderAbs, PROJECT_CARD_FILE));
         const src = bytes.toString('utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+        visibilityText = src;
         const lines = src.split('\n');
         const hasBlock = lines[0] === '---' && lines.slice(1).includes('---');
         if (hasBlock && !hasConflict(src)) {
@@ -398,6 +453,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
           data = fm.data;
           body = fm.body;
           version = sha256(bytes);
+          visibilityText = lines.slice(1, lines.indexOf('---', 1)).join('\n');
         }
       } catch {
         /* unreadable */
@@ -413,6 +469,13 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
   ].slice(-PROJECT_MOVED_FROM_MAX);
   const budget = Number(text(data.budget_hours) ?? Number.NaN);
   const billable = text(data.billable);
+  // The raw value, not through text(): a list or an odd value must still read as restricted (fail closed).
+  // A personal project is never restricted: it is this Mac's alone already.
+  const visibility =
+    loc.space !== 'personal' &&
+    (parseVisibility(data.visibility) === 'restricted' || rawTextRestricted(visibilityText))
+      ? 'restricted'
+      : 'everyone';
   return {
     key: loc.key,
     space: loc.space,
@@ -428,6 +491,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
     comms: oneOf(data.comms, LIGHTS),
     owner: text(data.owner),
     team: list(data.team),
+    visibility,
     service: list(data.service),
     start: date(data.start),
     end: date(data.end),
@@ -636,7 +700,14 @@ async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Pro
       }),
     );
   }
-  return { cards, duplicates, leftovers, skippedFolders, clients: [...clientDirs, ...archivedClients] };
+  return {
+    cards,
+    duplicates,
+    leftovers,
+    shadowed: all.filter((c) => !cards.includes(c)),
+    skippedFolders,
+    clients: [...clientDirs, ...archivedClients],
+  };
 }
 
 // ─── To-dos ───────────────────────────────────────────────────────────────────────────────────────
@@ -729,22 +800,138 @@ const ownPersonal = (t: TodoRec, identity: Identity) => !t.assignee || t.assigne
 
 // ─── The service ────────────────────────────────────────────────────────────────────────────────────
 
-function makeIndex(w: Walk, clients: string[], refs: RefIndex): ProjectsIndex {
-  const byKey = new Map(w.cards.map((c) => [c.key, c]));
+/**
+ * Restricted projects (plan 2026-11-27, decision 3): what this viewer can't see. `hidden` holds the keys of
+ * the cards hidden from them; `keys` adds the old keys those cards moved from (where no other card answers
+ * to them); `folders` every folder of theirs on this Mac: live, archive counterpart, shadowed duplicates,
+ * leftovers and moved-from folders. A folder a visible card reads is never in it.
+ */
+interface Mask {
+  hidden: Set<ProjectKey>;
+  keys: Set<ProjectKey>;
+  folders: string[];
+  /** `hidden`, plus restricted duplicate folders whose pick is open: never 0 while `folders` has any. */
+  count: number;
+}
+
+function maskFor(w: Walk, viewer: ProjectViewer): Mask {
+  const hidden = new Set(w.cards.filter((c) => !canSeeProject(c, viewer)).map((c) => c.key));
+  const empty: Mask = { hidden, keys: new Set(), folders: [], count: 0 };
+  // Fail closed for a restricted duplicate too: its folder's files are its own, whatever the pick says.
+  const shadowedHidden = w.shadowed.filter((c) => !canSeeProject(c, viewer));
+  if (hidden.size === 0 && shadowedHidden.length === 0) return empty;
+  const held = new Set(w.cards.map((c) => c.key));
+  const keys = new Set(hidden);
+  for (const c of w.cards) {
+    if (!hidden.has(c.key)) continue;
+    for (const old of c.movedFrom ?? []) {
+      // The same rule as byKey: a live card at the key wins; else the card movedKey picks.
+      const now = held.has(old) ? null : movedKey(old, w.cards);
+      if (now !== null && hidden.has(now)) keys.add(old);
+    }
+  }
+  const visibleFolders = new Set(
+    w.cards.filter((c) => !hidden.has(c.key)).map((c) => c.folder.toLowerCase()),
+  );
+  const folders = new Set<string>();
+  for (const c of w.cards) {
+    if (!hidden.has(c.key)) continue;
+    for (const f of [c.folder, archiveFolderFor(c.folder), liveFolderFor(c.folder)]) if (f) folders.add(f);
+  }
+  for (const c of w.shadowed) if (keys.has(c.key) || shadowedHidden.includes(c)) folders.add(c.folder);
+  for (const old of keys) {
+    const parsed = parseProjectKey(old);
+    // Never a `personal/` one: on another Mac that folder is that person's own private project.
+    if (!parsed || parsed.client === 'personal' || hidden.has(old)) continue;
+    folders.add(`clients/${parsed.client}/projects/${parsed.slug}`);
+  }
+  const notVisible = (f: string) => !visibleFolders.has(f.toLowerCase());
   return {
-    cards: w.cards,
-    // A live project at the key, else the one it moved to (move plan decision 5).
+    hidden,
+    keys,
+    folders: [...folders].map((f) => f.toLowerCase()).filter(notVisible),
+    count: hidden.size + shadowedHidden.filter((c) => !hidden.has(c.key) && notVisible(c.folder)).length,
+  };
+}
+
+/** Is the brain-relative path, or is it inside, one of these folders? Whole folder names only. */
+function inFolders(folders: readonly string[], rel: string): boolean {
+  if (folders.length === 0 || typeof rel !== 'string') return false;
+  // Project and client folder names are lower case, and macOS reads a path in any case as the same file.
+  const p = rel.toLowerCase().replace(/\/+$/, '');
+  return folders.some((f) => p === f || p.startsWith(`${f}/`));
+}
+
+/**
+ * The index a caller gets (overseer S4). Labels and codes resolve against ALL cards, so nothing reads
+ * differently per person, and only then is the answer masked: a hidden card is never listed, found by key,
+ * path or code, or named as a code's duplicate, and a visible card's links into its folders are dropped.
+ */
+function makeIndex(
+  all: ProjectCard[],
+  clients: string[],
+  refs: RefIndex,
+  mask: Mask,
+): { index: ProjectsIndex; cards: ProjectCard[] } {
+  const { hidden, keys, folders } = mask;
+  const hiddenPath = (rel: string) => inFolders(folders, rel);
+  const cards =
+    folders.length === 0 && hidden.size === 0
+      ? all
+      : all
+          .filter((c) => !hidden.has(c.key))
+          .map((c) => {
+            const { refDuplicateOf, ...rest } = c;
+            const dup = refDuplicateOf?.filter((k) => !hidden.has(k)) ?? [];
+            return {
+              ...rest,
+              links: c.links.filter((p) => !hiddenPath(p)),
+              ...(dup.length > 0 ? { refDuplicateOf: dup } : {}),
+            };
+          });
+  const byKey = new Map(cards.map((c) => [c.key, c]));
+  const index: ProjectsIndex = {
+    cards,
+    // A live project at the key, else the one it moved to (move plan decision 5), worked out from every card.
     byKey: (key) => {
       const live = byKey.get(key);
       if (live) return live;
-      const moved = movedKey(key, w.cards);
+      const moved = movedKey(key, all);
       return moved === null ? null : (byKey.get(moved) ?? null);
     },
     keysForPath: (rel) =>
-      w.cards.filter((c) => rel.startsWith(`${c.folder}/`) || c.links.includes(rel)).map((c) => c.key),
-    resolve: (value, client, scope) => resolveTodoProject(value, client, scope, w.cards, clients),
-    refs,
+      cards.filter((c) => rel.startsWith(`${c.folder}/`) || c.links.includes(rel)).map((c) => c.key),
+    resolve: (value, client, scope) => {
+      const m = resolveTodoProject(value, client, scope, all, clients);
+      const key = matchedKey(m);
+      if (key !== null) return hidden.has(key) ? { how: 'restricted' } : m;
+      // A bare slug two projects share, one of them hidden: 'loose' would offer it to the tidy-up.
+      if (m.how === 'loose' && hidden.size > 0 && !(typeof client === 'string' && client.trim() !== '')) {
+        const label = typeof value === 'string' ? value.trim() : '';
+        if (!label.includes('/') && all.some((c) => hidden.has(c.key) && c.slug === label))
+          return { how: 'restricted' };
+      }
+      return m;
+    },
+    refs:
+      hidden.size === 0
+        ? refs
+        : {
+            resolve: (candidate) => {
+              const key = refs.resolve(candidate);
+              return key !== null && hidden.has(key) ? null : key;
+            },
+            near: (candidate) =>
+              refs.near(candidate).filter((r) => {
+                const key = refs.resolve(r);
+                return key === null || !hidden.has(key);
+              }),
+          },
+    hiddenPath,
+    hiddenKey: (key) => keys.has(key),
+    hiddenCount: mask.count,
   };
+  return { index, cards };
 }
 
 export function createProjects(root: string, opts: ProjectsOptions): ProjectsService {
@@ -752,10 +939,28 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
   const git = opts.git ?? ((args: string[], cwd: string) => defaultGitRunner(args, cwd));
   let indexCache: {
     at: number;
-    value: Promise<{ index: ProjectsIndex; walk: Walk; clients: string[] }>;
+    value: Promise<Loaded>;
   } | null = null;
   let todoCache: { at: number; value: Promise<TodoRec[]> } | null = null;
   let memorySkips: string[] = [];
+
+  /** Missing or failing: an unknown viewer (decision 3). Read once per index load. */
+  const readViewer = async (): Promise<ProjectViewer> => {
+    try {
+      return opts.viewer ? await opts.viewer() : UNKNOWN_VIEWER;
+    } catch {
+      return UNKNOWN_VIEWER;
+    }
+  };
+  /** Null when there is no roster reader or it fails: `seesAll` is then left out of the list. */
+  const readRoster = async (): Promise<Roster | null> => {
+    try {
+      const members = opts.members ? await opts.members() : null;
+      return Array.isArray(members) ? members : null;
+    } catch {
+      return null;
+    }
+  };
 
   const fresh = (at: number) => now().getTime() - at < PROJECTS_STALE_MS;
   const mayChange = (identity: Identity) =>
@@ -763,31 +968,40 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
 
   const load = () => {
     if (indexCache && fresh(indexCache.at)) return indexCache.value;
-    const value = (async () => {
-      const [walked, infos] = await Promise.all([
+    const value = (async (): Promise<Loaded> => {
+      const [walked, infos, viewer, members] = await Promise.all([
         walk(root, git),
         opts.clients().catch(() => [] as ClientInfo[]),
+        readViewer(),
+        readRoster(),
       ]);
       const clients = [...new Set([...infos.map((c) => c.slug), ...walked.clients])];
+      // Codes are worked out from every card first (overseer S4), so a code never reads differently per person.
       const refResult = buildRefIndex(
         walked.cards.map((c) => ({ key: c.key, space: c.space, client: c.client, ref: c.ref ?? null })),
         new Map(infos.map((c) => [c.slug, c.code ?? null] as const)),
       );
+      const all = walked.cards.map((c) => {
+        const info = refResult.byKey.get(c.key);
+        return info
+          ? {
+              ...c,
+              ref: info.ref,
+              refState: info.refState,
+              ...(info.refDuplicateOf ? { refDuplicateOf: info.refDuplicateOf } : {}),
+            }
+          : c;
+      });
+      const mask = maskFor({ ...walked, cards: all }, viewer);
+      const { index, cards } = makeIndex(all, clients, refResult.index, mask);
       const w: Walk = {
         ...walked,
-        cards: walked.cards.map((c) => {
-          const info = refResult.byKey.get(c.key);
-          return info
-            ? {
-                ...c,
-                ref: info.ref,
-                refState: info.refState,
-                ...(info.refDuplicateOf ? { refDuplicateOf: info.refDuplicateOf } : {}),
-              }
-            : c;
-        }),
+        cards,
+        duplicates: walked.duplicates.filter((f) => !inFolders(mask.folders, f)),
+        leftovers: walked.leftovers.filter((f) => !inFolders(mask.folders, f)),
+        shadowed: walked.shadowed.filter((c) => !inFolders(mask.folders, c.folder)),
       };
-      return { index: makeIndex(w, clients, refResult.index), walk: w, clients };
+      return { index, walk: w, clients, all, members };
     })();
     indexCache = { at: now().getTime(), value };
     value.catch(() => {
@@ -834,9 +1048,12 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     await fs.rename(tmp, skipsPath);
   };
 
-  const tidyContext = (loaded: { walk: Walk; clients: string[] }): TidyContext => ({
+  // Suggestions name only projects this person can see; labels read through the masked resolve, so a
+  // restricted label is never a row (decision 6).
+  const tidyContext = (loaded: Loaded): TidyContext => ({
     projects: loaded.walk.cards,
     clients: loaded.clients,
+    resolve: loaded.index.resolve,
   });
 
   const tidyTodos = (all: TodoRec[], identity: Identity): TidyTodo[] =>
@@ -925,6 +1142,9 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       canRefAll: canRef && (identity.role === 'owner' || identity.role === 'scout'),
       // Chat summaries: the script's own capability, and the same roles check as any change.
       canSaveChat: canChange && features.includes(PROJECTS_CHAT_SUMMARY_CAPABILITY),
+      // Restricted projects (decision 8): the script's own feature, and the same roles check as any change.
+      canRestrict: canChange && features.includes(PROJECTS_VISIBILITY_CAPABILITY),
+      ...(loaded.members ? { seesAll: seesAllOf(loaded.members) } : {}),
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
       leftovers: w.leftovers,
@@ -957,7 +1177,10 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       }
     }
     if ('key' in action && action.key !== undefined) {
-      const card = (await load()).index.byKey(action.key);
+      const { index } = await load();
+      // Overseer B2: script 0.8.0 knows nothing of visibility, so a hidden key stops here, as a missing one.
+      if (isHiddenKey(index, action.key)) throw hiddenNotFound();
+      const card = index.byKey(action.key);
       if (card?.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
       if (
         card &&
@@ -1008,6 +1231,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     // The to-dos to re-point are chosen from a fresh read, before the move.
     if (req.check !== true) changed();
     const { index } = await load();
+    if (isHiddenKey(index, req.key)) throw hiddenNotFound();
     const card = index.cards.find((c) => c.key === req.key) ?? null;
     if (card?.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
     const newKey = `${req.client}/${from.slug}`;
@@ -1132,6 +1356,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     // The to-dos are chosen from a fresh read, before the folder changes.
     if (req.check !== true) changed();
     const { index } = await load();
+    if (isHiddenKey(index, req.key)) throw hiddenNotFound();
     const card = index.cards.find((c) => c.key === req.key) ?? null;
     const linked = (done: boolean) =>
       card && kind !== 'unarchive'
@@ -1245,6 +1470,11 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       if (!(await mayChange(identity))) {
         throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
       }
+      // A hidden project already holds that folder: say so as the script would, and never fall through to
+      // "made meanwhile: link to it", which would put these to-dos into it.
+      const target = s.client === null ? `personal/${s.slug}` : `${s.client}/${s.slug}`;
+      if (isHiddenKey((await load()).index, target))
+        throw new ProjectsError('exists', PROJECTS_CHANGE_MESSAGES.exists);
       const title = /[A-Z ]/.test(label) && label.length <= PROJECT_TITLE_MAX ? label : folderTitle(s.slug);
       try {
         await opts.skill.run(
@@ -1341,6 +1571,26 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     return response;
   };
 
+  /**
+   * Decision 7: may a task in this place go to this person? Read from every card, and blind to who is
+   * asking, so an outsider passing on their own task gets the same note as anyone.
+   */
+  const assignCheck = async (place: TaskPlace, assignee: string | null): Promise<AssignAnswer> => {
+    if (assignee === null || place.scope === 'personal' || !place.project) return { ok: true };
+    const loaded = await load();
+    const key = matchedKey(
+      resolveTodoProject(place.project, place.client, place.scope, loaded.all, loaded.clients),
+    );
+    const card = key === null ? undefined : loaded.all.find((c) => c.key === key);
+    if (!card || !isRestricted(card)) return { ok: true };
+    const member = (loaded.members ?? []).find((m) =>
+      personSlugs({ slug: m.slug, name: m.name }).includes(assignee),
+    );
+    const person = member ? { slug: assignee, name: member.name } : { slug: assignee };
+    if (canTakeTask(card, person, seesAllOf(loaded.members ?? []))) return { ok: true };
+    return { ok: false, why: 'outside', name: member?.name ?? assignee };
+  };
+
   return {
     index: async () => (await load()).index,
     list,
@@ -1350,8 +1600,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     tidy,
     applyTidy,
     projectTodos,
-    // Restricted projects: Builder S1 replaces this stand-in (contract `ProjectsServiceAdds.assignCheck`).
-    assignCheck: async () => ({ ok: true }),
+    assignCheck,
     changed: () => changed(),
   };
 }

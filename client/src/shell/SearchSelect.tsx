@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon.tsx';
+import { RestrictedBadge } from './RestrictedBadge.tsx';
 import {
   type MatchRange,
   matchCount,
@@ -336,6 +337,7 @@ export function SearchSelect({
                         onClick={() => pick(r.option)}
                       >
                         <span className="ss-opt-label">{marked(r.option.label, r.ranges)}</span>
+                        {r.option.restricted ? <RestrictedBadge /> : null}
                         {current ? (
                           <>
                             <span className="visually-hidden">, chosen</span>

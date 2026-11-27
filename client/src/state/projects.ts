@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import type { TodoItem } from '../../../shared/contract.ts';
+import {
+  canTakeTask,
+  isRestricted,
+  outsideProjectNote,
+  RESTRICTED_LABEL,
+} from '../../../shared/project-visibility.ts';
 import { matchedKey, projectLabel } from '../../../shared/projects.ts';
 import type { ProjectCard, ProjectList, TodoProjectMatch } from '../../../shared/projects-contract.ts';
 import { api } from '../api.ts';
@@ -128,6 +134,7 @@ function projectOption(
   return {
     value: c.key,
     label: c.title || c.slug,
+    ...(isRestricted(c) ? { restricted: true } : {}),
     group: c.space === 'personal' ? 'Mine' : (client?.name ?? c.client ?? 'Other'),
     // Typing the client's name (or an alias) finds its projects too.
     terms: [c.slug, c.title, c.client ?? '', client?.name ?? '', ...(client?.aliases ?? [])].filter(Boolean),
@@ -197,7 +204,23 @@ export function todoPlaceParts(
   cards: readonly ProjectCard[] | undefined,
   clients: readonly { slug: string; name: string }[],
 ): string[] {
+  // A project hidden from this person: the one fixed label, never the folder or a client (decision 6).
+  if (todo.projectMatch?.how === 'restricted') return [RESTRICTED_LABEL];
   const key = matchedKey(todo.projectMatch ?? { how: 'none' });
   const label = key ? labelForKey(key, cards, clients) : null;
   return label ? [label] : todoPlaces(todo, clients);
+}
+
+/**
+ * Who a task in this project can't go to (decision 7): for a restricted project, the note for each person who is
+ * neither on it nor an owner or scout; null for anyone who can take it. Without `seesAll` (an older server) nobody
+ * is blocked here: the server still refuses.
+ */
+export function assignNote(
+  card: Pick<ProjectCard, 'space' | 'visibility' | 'owner' | 'team'> | undefined,
+  person: { slug: string; name: string },
+  seesAll: readonly string[] | undefined,
+): string | null {
+  if (!card || !seesAll || !isRestricted(card)) return null;
+  return canTakeTask(card, person, seesAll) ? null : outsideProjectNote(person.name);
 }

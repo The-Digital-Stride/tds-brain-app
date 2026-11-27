@@ -1472,3 +1472,120 @@ describe('claude artifacts in the library (plan 2026-11-23-claude-artifacts-in-p
     });
   });
 });
+
+describe('restricted projects in the library (plan 2026-11-27, decision 5)', () => {
+  const SECRET = `${ACME}projects/secret`;
+  const LINKED = `${ACME}reports/linked.md`;
+  const web = {
+    key: 'acme-heating/web',
+    space: 'client',
+    client: 'acme-heating',
+    folder: `${ACME}projects/web`,
+    links: [] as string[],
+  } as Partial<ProjectCard> as ProjectCard;
+  const secret = { ...web, key: 'acme-heating/secret', folder: SECRET, links: [LINKED] } as ProjectCard;
+
+  /** A stand-in for S1's index that hides SECRET and the older `projects/hush` folder. */
+  function hidingIndex(): () => Promise<ProjectsIndex> {
+    const hidden = (rel: string) => rel.startsWith(`${SECRET}/`) || rel.startsWith('projects/hush/');
+    return async () => ({
+      cards: [web],
+      byKey: (key) => (key === web.key ? web : null),
+      // It still names the hidden key for the linked file: the library must drop it from the stamp.
+      keysForPath: (rel) => [
+        ...(rel.startsWith(`${web.folder}/`) ? [web.key] : []),
+        ...(hidden(rel) || rel === LINKED ? [secret.key] : []),
+      ],
+      resolve: () => ({ how: 'none' }),
+      hiddenPath: hidden,
+      hiddenKey: (key) => key === secret.key,
+      hiddenCount: 2,
+    });
+  }
+  const unreadable = async (): Promise<ProjectsIndex> => {
+    throw new Error('no index');
+  };
+
+  function restrictedRoot(): string {
+    const root = copyFixture();
+    put(root, `${SECRET}/plan.md`, '# Plan');
+    put(root, `${SECRET}/mock.png`);
+    put(root, `${ACME}projects/web/brief.md`, '# Brief');
+    put(root, LINKED, '# Linked');
+    put(root, 'projects/hush/notes.md', '# Hush');
+    put(root, 'projects/old-site/notes.md', '# Notes');
+    return root;
+  }
+  const paths = (items: LibraryItem[] | undefined) => (items ?? []).map((i) => i.path);
+
+  it("leaves a hidden project's files out of every listing, and its folder out of the groups", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    const client = await l.list('client:acme-heating');
+    expect(paths(client?.items).filter((p) => p.startsWith(SECRET))).toEqual([]);
+    expect(paths(client?.items)).toContain(`${ACME}projects/web/brief.md`);
+    const legacy = await l.list(LEGACY_PROJECTS_SCOPE);
+    expect(paths(legacy?.items)).toEqual(['projects/old-site/notes.md']);
+    expect(legacy?.groups).toEqual(['Old site']);
+  });
+
+  it('keeps a linked file outside the folder, with no stamp for the hidden project', async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    const client = await l.list('client:acme-heating');
+    expect(byPath(client?.items ?? []).get(LINKED)?.projects).toEqual([]);
+    expect((await l.itemForPath(LINKED))?.item?.projects).toEqual([]);
+  });
+
+  it('refuses every by-id and by-path read of a hidden file as not found', async () => {
+    const root = restrictedRoot();
+    const plain = lib(root);
+    const ids = paths((await plain.list('client:acme-heating'))?.items)
+      .filter((p) => p.startsWith(SECRET))
+      .map((p) => idFor('client:acme-heating', p));
+    expect(ids).toHaveLength(2);
+    // Before the index says so, the ids are real files.
+    for (const id of ids) expect(await plain.file(id)).not.toBeNull();
+    const l = lib(root, { projects: hidingIndex() });
+    for (const id of ids) expect(await l.file(id), id).toBeNull();
+    expect(await l.itemForPath(`${SECRET}/plan.md`)).toBeNull();
+    // A file not there yet answers the same: nothing confirms the folder.
+    expect(await l.itemForPath(`${SECRET}/later.md`)).toBeNull();
+    expect(await l.file(idFor(LEGACY_PROJECTS_SCOPE, 'projects/hush/notes.md'))).toBeNull();
+  });
+
+  it("gives a hidden project's folder no files, and never serves a hidden file through a link", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: hidingIndex() });
+    // Its own folder's files are left out; the visible file it links is not the folder's to hide.
+    expect(paths((await l.projectFiles(secret, 'document')).items)).toEqual([LINKED]);
+    const linking = { ...web, links: [`${SECRET}/plan.md`] } as ProjectCard;
+    const out = await l.projectFiles(linking, 'document');
+    expect(paths(out.items)).toEqual([`${ACME}projects/web/brief.md`]);
+  });
+
+  it("hides every project folder when the index can't be read", async () => {
+    const root = restrictedRoot();
+    const l = lib(root, { projects: unreadable });
+    const client = await l.list('client:acme-heating');
+    expect(paths(client?.items).some((p) => p.includes('/projects/'))).toBe(false);
+    expect(paths(client?.items)).toContain(LINKED);
+    expect((await l.list(LEGACY_PROJECTS_SCOPE))?.items).toEqual([]);
+    expect((await l.list(LEGACY_PROJECTS_SCOPE))?.groups).toEqual([]);
+    expect(await l.file(idFor('client:acme-heating', `${ACME}projects/web/brief.md`))).toBeNull();
+    expect(await l.itemForPath(`${ACME}projects/web/brief.md`)).toBeNull();
+  });
+
+  it('serves exactly what it did before when nothing is hidden', async () => {
+    const root = restrictedRoot();
+    const before = lib(root, {
+      projects: async () => ({ ...(await hidingIndex()()), hiddenPath: undefined, hiddenKey: undefined }),
+    });
+    const after = lib(root, {
+      projects: async () => ({ ...(await hidingIndex()()), hiddenPath: () => false, hiddenKey: () => false }),
+    });
+    for (const scope of ['client:acme-heating', LEGACY_PROJECTS_SCOPE, 'personal'])
+      expect(await after.list(scope), scope).toEqual(await before.list(scope));
+    expect(await after.search('plan', 'document')).toEqual(await before.search('plan', 'document'));
+  });
+});

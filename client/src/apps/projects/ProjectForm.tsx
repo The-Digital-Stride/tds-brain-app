@@ -1,16 +1,19 @@
 import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
+import { mayRestrict } from '../../../../shared/project-visibility.ts';
 import {
   PROJECT_SLUG_MAX,
   PROJECT_TITLE_MAX,
   type ProjectCard,
 } from '../../../../shared/projects-contract.ts';
+import { api } from '../../api.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { projectsStore, useProjects } from '../../state/projects.ts';
+import { useStore } from '../../store.tsx';
 import {
   changedFields,
   changedFieldWords,
@@ -27,12 +30,14 @@ import {
   type MoveState,
   mergeOntoLatest,
   personName,
+  restrictQuestion,
   STATUS_WORDS,
   STATUSES,
   serviceWords,
   slugFromTitle,
   validate,
   valuesFromCard,
+  whoStopsSeeing,
 } from './logic.ts';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
@@ -117,7 +122,8 @@ export function ProjectForm({
   onCancel: () => void;
 }) {
   const change = useProjectChange();
-  const { refresh } = useProjects();
+  const { list, refresh } = useProjects();
+  const { boot } = useStore();
   const [v, setV] = useState<FormValues>(() =>
     card ? valuesFromCard(card) : { ...EMPTY_VALUES, owner: me },
   );
@@ -129,6 +135,9 @@ export function ProjectForm({
   const [dropEnd, setDropEnd] = useState(false);
   const [kindNote, setKindNote] = useState('');
   const [reloaded, setReloaded] = useState('');
+  // The question before restricting a project, or before taking someone with open tasks off a restricted one.
+  const [restrictAsk, setRestrictAsk] = useState<{ text: string; person?: string } | null>(null);
+  const openTaskPeople = useRef<Promise<(string | null)[]> | null>(null);
   const initial = useRef(JSON.stringify(v));
   const seen = useRef<ProjectCard | null>(card);
   const base = useId();
@@ -206,6 +215,56 @@ export function ProjectForm({
     );
   };
 
+  // Who has open tasks in this project (read when first needed; a new project has none).
+  const assigneesNow = (): Promise<(string | null)[]> => {
+    if (!card) return Promise.resolve([]);
+    if (!openTaskPeople.current) {
+      openTaskPeople.current = api.projectTodos(card.key).then(
+        (r) => r.todos.map((t) => t.assignee),
+        () => [],
+      );
+    }
+    return openTaskPeople.current;
+  };
+  const askRestrict = async (next: { owner: string; team: string[] }, who: string | null) => {
+    const found = whoStopsSeeing(
+      who === null ? await assigneesNow() : (await assigneesNow()).filter((a) => a === who),
+      { owner: next.owner || null, team: next.team },
+      list?.seesAll,
+      team,
+    );
+    // Taking someone off the team asks only when it matters: they have open tasks and would lose sight of it.
+    if (who !== null && found.length === 0) return false;
+    setRestrictAsk({ text: restrictQuestion(found, who === null), ...(who !== null ? { person: who } : {}) });
+    return true;
+  };
+  const setVisibility = (visibility: FormValues['visibility']) => {
+    if (visibility === v.visibility) return;
+    // Switching a project that exists (and may have tasks in it) on asks first; a new one has nobody to warn.
+    if (visibility === 'restricted' && mode !== 'create') {
+      void askRestrict({ owner: v.owner, team: v.team }, null);
+      return;
+    }
+    setRestrictAsk(null);
+    set({ visibility });
+  };
+  const setTeamMember = (p: string, on: boolean) => {
+    if (on) return set({ team: [...v.team, p] });
+    const next = v.team.filter((x) => x !== p);
+    const restricted = v.visibility === 'restricted' && mode !== 'create';
+    if (!restricted) return set({ team: next });
+    void askRestrict({ owner: v.owner, team: next }, p).then((asked) => {
+      if (!asked) set({ team: next });
+    });
+  };
+  const answerRestrict = () => {
+    const ask = restrictAsk;
+    setRestrictAsk(null);
+    if (!ask) return;
+    if (ask.person !== undefined) set({ team: v.team.filter((x) => x !== ask.person) });
+    else set({ visibility: 'restricted' });
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
@@ -230,7 +289,7 @@ export function ProjectForm({
         space: personal ? 'personal' : 'client',
         ...(personal ? {} : { client: v.client }),
         slug: v.slug,
-        fields: fieldsFromValues(v),
+        fields: personal ? { ...fieldsFromValues(v), visibility: undefined } : fieldsFromValues(v),
       });
     } else if (card && mode === 'card') {
       res = await change({ kind: 'card', key: card.key, fields: fieldsFromValues(v) });
@@ -265,6 +324,12 @@ export function ProjectForm({
         ? `Add a card to ${card?.title ?? 'this project'}`
         : 'Edit project';
   const ongoing = v.kind === 'ongoing';
+  // Shown only where the script can switch it and this person may: anyone creating (the script adds them to the
+  // team), and on an existing card its Account Owner, an owner or a scout. Never for a personal project.
+  const identity = boot?.identity;
+  const canSetVisibility =
+    list?.canRestrict === true &&
+    (mode === 'create' ? !justMe : card !== null && identity !== undefined && mayRestrict(card, identity));
   const clientName = clients.find((c) => c.slug === card?.client)?.name ?? card?.client ?? '';
 
   return (
@@ -500,6 +565,43 @@ export function ProjectForm({
             onChange={(comms) => set({ comms })}
           />
         </div>
+        {canSetVisibility ? (
+          <div className="form-field">
+            <span className="label" id={id('visibility-label')}>
+              Who can see it
+            </span>
+            <Seg
+              label="Who can see it"
+              labelledBy={id('visibility-label')}
+              value={v.visibility}
+              options={[
+                { value: 'everyone', label: 'Everyone on the team' },
+                { value: 'restricted', label: 'Only the project team' },
+              ]}
+              onChange={setVisibility}
+            />
+            <p className="hint" id={id('visibility-hint')}>
+              Hides this project in Cortex. Its files are still in the brain on every Mac.
+            </p>
+          </div>
+        ) : null}
+        {restrictAsk ? (
+          <Confirm
+            // A new question is a new question: Keep takes focus again.
+            key={restrictAsk.person ?? 'switch'}
+            label="Who will see this project"
+            text={restrictAsk.text}
+            action={restrictAsk.person !== undefined ? 'Take them off the team' : 'Only the project team'}
+            safe={restrictAsk.person !== undefined ? 'Keep them on the team' : 'Keep it open to everyone'}
+            variant="primary"
+            busy={false}
+            onConfirm={answerRestrict}
+            onCancel={() => {
+              setRestrictAsk(null);
+              keepFocus.restore();
+            }}
+          />
+        ) : null}
       </section>
 
       <section className="card proj-card proj-form">
@@ -526,9 +628,7 @@ export function ProjectForm({
                 type="checkbox"
                 className="tick"
                 checked={v.team.includes(p)}
-                onChange={(e) =>
-                  set({ team: e.target.checked ? [...v.team, p] : v.team.filter((x) => x !== p) })
-                }
+                onChange={(e) => setTeamMember(p, e.target.checked)}
               />
               <span>{personName(p, team)}</span>
             </label>

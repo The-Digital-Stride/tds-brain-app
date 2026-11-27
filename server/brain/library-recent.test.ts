@@ -192,3 +192,42 @@ describe('library recent', () => {
     expect(await l.recent('document')).toEqual({ files: [], partial: false });
   });
 });
+
+describe('library recent: restricted projects (plan 2026-11-27, decision 5)', () => {
+  const SECRET = 'clients/acme/projects/secret';
+  const hiding: () => Promise<ProjectsIndex> = async () => ({
+    cards: [],
+    byKey: () => null,
+    // A stand-in that still names the hidden key: the library must drop it from the stamp.
+    keysForPath: (rel: string) =>
+      rel.startsWith(`${SECRET}/`) || rel === 'clients/acme/reports/linked.md' ? ['acme/secret'] : [],
+    resolve: () => ({ how: 'none' }),
+    hiddenPath: (rel) => rel.startsWith(`${SECRET}/`),
+    hiddenKey: (key) => key === 'acme/secret',
+    hiddenCount: 1,
+  });
+
+  it("leaves out a hidden project's files, and a linked file elsewhere stays without its stamp", async () => {
+    const root = brain({
+      [`${SECRET}/plan.md`]: 3_000,
+      'clients/acme/reports/linked.md': 2_000,
+      'clients/acme/reports/other.md': 1_000,
+    });
+    const l = lib(root, { projects: hiding });
+    const recent = await l.recent('document');
+    expect(names(recent)).toEqual(['linked.md', 'other.md']);
+    expect(recent.files[0]?.item.projects).toEqual([]);
+    // A project filter for the hidden key finds nothing.
+    expect(names(await l.recent('document', 'acme/secret'))).toEqual([]);
+  });
+
+  it("leaves out every project folder's files when the index can't be read", async () => {
+    const root = brain({ [`${SECRET}/plan.md`]: 3_000, 'clients/acme/reports/other.md': 1_000 });
+    const l = lib(root, {
+      projects: async () => {
+        throw new Error('no index');
+      },
+    });
+    expect(names(await l.recent('document'))).toEqual(['other.md']);
+  });
+});

@@ -7,6 +7,7 @@ import {
   type SkillInfo,
   type TodoItem,
 } from '../../../shared/contract.ts';
+import { isRestricted } from '../../../shared/project-visibility.ts';
 import { api } from '../api.ts';
 import { NewChatBox, ProjectPicker } from '../components/NewChatBox.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
@@ -34,6 +35,7 @@ import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import type { DrawerName } from './contract.ts';
 import { HomeMeetings } from './HomeMeetings.tsx';
+import { RestrictedBadge } from './RestrictedBadge.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { ShowMore } from './ShowMore.tsx';
@@ -809,7 +811,10 @@ export function Home() {
                           star={null}
                         >
                           <span className="line-text">
-                            <span className="line-title">{projectText(p, clients)}</span>
+                            <span className="line-title">
+                              {projectText(p, clients)}
+                              {isRestricted(p) ? <RestrictedBadge /> : null}
+                            </span>
                             <span className="line-meta">
                               {projectWorkedOn(p).mine ? 'You last worked on' : 'Last worked on'}{' '}
                               {whenDate(projectWorkedOn(p).at)}

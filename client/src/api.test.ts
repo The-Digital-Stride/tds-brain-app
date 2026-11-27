@@ -353,3 +353,42 @@ describe('api.projectUnsavedChats', () => {
     );
   });
 });
+
+describe('api.changeProject with visibility (restricted projects, plan 2026-11-27)', () => {
+  it('sends an edit carrying `visibility` that passes the server request check', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.changeProject({
+      kind: 'edit',
+      key: 'acme-heating/launch',
+      fields: { visibility: 'restricted' },
+      expect: 'a'.repeat(64),
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toMatchObject({ fields: { visibility: 'restricted' } });
+    // The browser adds Host, Origin, Sec-Fetch-Site and the cookie; the app adds the rest.
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const decision = checkRequest(
+      {
+        method: 'POST',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+});

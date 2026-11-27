@@ -7,11 +7,12 @@ import {
   type TodoItem,
   type TodoScope,
 } from '../../../shared/contract.ts';
+import { isRestricted } from '../../../shared/project-visibility.ts';
 import { parseProjectKey } from '../../../shared/projects.ts';
 import { splitTodoFiles } from '../../../shared/todo-files.ts';
 import { dueInWords } from '../format.ts';
 import { useProjectChoice } from '../state/client-choice.ts';
-import { todoProjectOptions, useProjects } from '../state/projects.ts';
+import { assignNote, todoProjectOptions, useProjects } from '../state/projects.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { SearchSelect } from './SearchSelect.tsx';
@@ -127,6 +128,7 @@ export function Assignee({
   me,
   team,
   allowOpen,
+  blocked,
 }: {
   id: string;
   value: string;
@@ -134,21 +136,69 @@ export function Assignee({
   me: string;
   team: TeamMember[];
   allowOpen: boolean;
+  /**
+   * A task in a restricted project can't go to someone outside it (decision 7): the note for each person it can't
+   * go to, or null. Those people stay in the list, unavailable, with the note as their tip.
+   */
+  blocked?: AssignGate;
 }) {
   const options = people(me, team);
   // A to-do held by someone the roster doesn't list still shows who it is with.
   const known = value === '' || options.some((o) => o.slug === value);
+  const notes = new Map(options.map((o) => [o.slug, blocked?.(o) ?? null] as const));
+  const any = [...notes.values()].some((n) => n !== null);
+  const current = notes.get(value) ?? null;
   return (
-    <select id={id} className="field" value={value} onChange={(e) => onChange(e.target.value)}>
-      {options.map((o) => (
-        <option key={o.slug} value={o.slug}>
-          {o.name}
-        </option>
-      ))}
-      {known ? null : <option value={value}>{value}</option>}
-      {allowOpen ? <option value="">Open to anyone</option> : null}
-    </select>
+    <>
+      <select
+        id={id}
+        className="field"
+        value={value}
+        aria-describedby={any ? `${id}-blocked` : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => {
+          const note = notes.get(o.slug) ?? null;
+          return (
+            <option key={o.slug} value={o.slug} disabled={note !== null} title={note ?? undefined}>
+              {note ? `${o.name} (not on this project)` : o.name}
+            </option>
+          );
+        })}
+        {known ? null : <option value={value}>{value}</option>}
+        {allowOpen ? <option value="">Open to anyone</option> : null}
+      </select>
+      {any ? (
+        <p className="hint" id={`${id}-blocked`}>
+          {current ??
+            "People who aren't on this restricted project can't be given its tasks. Add them to the project team first."}
+        </p>
+      ) : null}
+    </>
   );
+}
+
+/** Who a task can't go to: their note, or null (see `Assignee`'s `blocked`). */
+export type AssignGate = (person: { slug: string; name: string }) => string | null;
+
+/**
+ * The gate for a task in this project: restricted ones block anyone outside it. Undefined when nothing can be
+ * blocked (no project, an open one, or an older server that sends no `seesAll`).
+ */
+export function useAssignGate(projectKey: string | null | undefined): AssignGate | undefined {
+  const { list } = useProjects();
+  const { boot } = useStore();
+  const card = projectKey ? list?.projects.find((c) => c.key === projectKey) : undefined;
+  const seesAll = list?.seesAll;
+  if (!card || !seesAll || !isRestricted(card)) return undefined;
+  const meSlug = boot?.identity?.slug;
+  const meName = boot?.identity?.name;
+  return (person) =>
+    assignNote(
+      card,
+      person.slug === meSlug && meName ? { slug: person.slug, name: meName } : person,
+      seesAll,
+    );
 }
 
 /**
@@ -212,6 +262,7 @@ export function AddTodoForm({
   const personal = canUsePersonal && personalChoice && mine;
   // A TDS to-do is never put in a personal project, so a preset one falls away when it isn't personal.
   const projectKey = canProject && (personal || !project.startsWith('personal/')) ? project : '';
+  const assignGate = useAssignGate(projectKey);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -299,6 +350,7 @@ export function AddTodoForm({
           me={me}
           team={team}
           allowOpen={canAddOpen}
+          blocked={assignGate}
         />
       </div>
       {canProject ? (

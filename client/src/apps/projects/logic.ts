@@ -1,6 +1,7 @@
 import type { TeamMember } from '../../../../shared/contract.ts';
 import { foldRef, nearRefs, refCandidates } from '../../../../shared/project-refs.ts';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
+import { canTakeTask, type ProjectVisibility } from '../../../../shared/project-visibility.ts';
 import { matchedKey } from '../../../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
@@ -362,6 +363,8 @@ export interface FormValues {
   billable: boolean | null;
   stages: string;
   brief: string;
+  /** Who can see it (decision 10): the card's line, 'everyone' when it has none. */
+  visibility: ProjectVisibility;
 }
 
 export function valuesFromCard(card: ProjectCard): FormValues {
@@ -382,6 +385,7 @@ export function valuesFromCard(card: ProjectCard): FormValues {
     billable: card.billable,
     stages: card.stages.join('\n'),
     brief: card.brief,
+    visibility: card.visibility === 'restricted' ? 'restricted' : 'everyone',
   };
 }
 
@@ -402,6 +406,7 @@ export const EMPTY_VALUES: FormValues = {
   billable: null,
   stages: '',
   brief: '',
+  visibility: 'everyone',
 };
 
 export type FormErrors = Partial<Record<keyof FormValues, string>>;
@@ -457,6 +462,8 @@ export function fieldsFromValues(v: FormValues): ProjectFields & { title: string
     billable: v.billable,
     stages: parseStages(v.stages),
     brief: v.brief.trim(),
+    // Only a restricted choice is sent on create; 'everyone' is the absence of the line.
+    ...(v.visibility === 'restricted' ? { visibility: 'restricted' as const } : {}),
   };
 }
 
@@ -483,7 +490,11 @@ export function changedFields(card: ProjectCard, v: FormValues): ProjectFields {
   };
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(next) as (keyof ProjectFields)[]) {
-    if (!same(next[k], was[k])) out[k] = next[k];
+    if (k !== 'visibility' && !same(next[k], was[k])) out[k] = next[k];
+  }
+  // Sent only when changed; 'everyone' is sent as such, so the card's line is removed.
+  if (v.visibility !== (card.visibility === 'restricted' ? 'restricted' : 'everyone')) {
+    out.visibility = v.visibility;
   }
   return out as ProjectFields;
 }
@@ -505,6 +516,7 @@ export function changedFieldWords(a: ProjectCard, b: ProjectCard): string[] {
     ['billable', 'Billable'],
     ['stages', 'Stages'],
     ['brief', 'Brief'],
+    ['visibility', 'Who can see it'],
   ];
   return labels
     .filter(([k]) => !same(a[k as keyof ProjectCard], b[k as keyof ProjectCard]))
@@ -576,3 +588,48 @@ export function groupUpdates(
 /** "3 updates · latest 24 Nov 2026" for a conversation row. */
 export const threadLine = (n: number, latestSentAt: string): string =>
   `${n} ${n === 1 ? 'update' : 'updates'} · latest ${dateWords(latestSentAt)}`;
+
+// ─── Restricted projects: the confirm that says who will stop seeing it (decision 9) ──────────────────────
+
+/** Said on every restricted-project confirm: the app hides it, and an older Cortex doesn't know how. */
+export const OLDER_CORTEX_NOTE = 'People on an older Cortex still see it until they update.';
+/** Said when a task stays with someone who can no longer see its project. */
+export const TASKS_STAY_NOTE = 'Their tasks stay with them, shown as a restricted project.';
+
+/**
+ * The people with open tasks in a project who would stop seeing it once it is restricted to this team: not its
+ * Account Owner, not on its team, not an owner or scout (`seesAll`). Named in order, once each. Without `seesAll`
+ * nobody is left out for being an owner or scout (a longer warning is safer than a shorter one).
+ */
+export function whoStopsSeeing(
+  assignees: readonly (string | null)[],
+  project: { owner: string | null; team: readonly string[] },
+  seesAll: readonly string[] | undefined,
+  team: readonly TeamMember[] | undefined,
+): string[] {
+  const names: string[] = [];
+  const asRestricted = {
+    space: 'client' as const,
+    visibility: 'restricted' as const,
+    owner: project.owner,
+    team: [...project.team],
+  };
+  for (const slug of new Set(assignees)) {
+    if (!slug) continue;
+    const name = personName(slug, team);
+    if (!canTakeTask(asRestricted, { slug, name }, seesAll ?? [])) names.push(name);
+  }
+  return names;
+}
+
+/** The question's text. `names` is who stops seeing it; `switching` is turning it on (else removing from a team). */
+export function restrictQuestion(names: readonly string[], switching: boolean): string {
+  const who = joinWords(names);
+  const lead =
+    names.length > 0
+      ? `${who} ${names.length === 1 ? 'has' : 'have'} open tasks here and will stop seeing this project. ${TASKS_STAY_NOTE}`
+      : switching
+        ? 'Nobody with open tasks here will lose sight of it.'
+        : '';
+  return [lead, OLDER_CORTEX_NOTE].filter(Boolean).join(' ');
+}

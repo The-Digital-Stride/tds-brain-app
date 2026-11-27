@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Identity } from '../../shared/contract.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture } from './test-helpers.ts';
 import { ASKED_LOG_MAX_OUTPUT, ASKED_LOG_TIMEOUT_MS, askedLogArgs, createAskedTodos } from './todo-asked.ts';
 import type { GitLogRunner, GitRunOptions } from './todo-history.ts';
@@ -445,5 +446,50 @@ describe('asked of others', () => {
     rmSync(join(root, 'todo'), { recursive: true, force: true });
     const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW);
     expect(list).toEqual({ waiting: [], done: [], historyRead: true });
+  });
+});
+
+describe('asked of others: restricted projects (plan 2026-11-27, decision 6)', () => {
+  const SECRET = 'acme-heating/secret';
+  const index: ProjectsIndex = {
+    cards: [],
+    byKey: () => null,
+    keysForPath: () => [],
+    resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+    hiddenPath: (rel) => rel.startsWith('clients/acme-heating/projects/secret/'),
+    hiddenKey: (key) => key === SECRET,
+    hiddenCount: 1,
+  };
+  const asked = (by: string) =>
+    fm(
+      [
+        'assignee: alex-sample',
+        'assigned_to: alex-sample',
+        'assigned_at: 2026-11-10T09:00:00+00:00',
+        `assigned_by: ${by}`,
+        'client: acme-heating',
+        `project: ${SECRET}`,
+      ],
+      'Words.\n',
+    );
+
+  it('shows a hidden project task only when sam asked for it, with nothing naming the project', async () => {
+    const root = brainWith({
+      'todo/20261110-by-sam.md': asked('sam-example'),
+      'todo/20261110-by-jo.md': asked('jo-owner'),
+    });
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => index);
+    expect(list.waiting.map((t) => t.id)).toEqual(['20261110-by-sam.md']);
+    expect(list.waiting[0]).toMatchObject({ project: null, projectMatch: { how: 'restricted' } });
+    // The label never leaves the server, whatever the field.
+    expect(JSON.stringify(list)).not.toContain('secret');
+  });
+
+  it("keeps sam's own asks when the index can't be read", async () => {
+    const root = brainWith({ 'todo/20261110-by-sam.md': asked('sam-example') });
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => {
+      throw new Error('no index');
+    });
+    expect(list.waiting.map((t) => t.id)).toEqual(['20261110-by-sam.md']);
   });
 });

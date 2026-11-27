@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { type Identity, TODO_HISTORY_MAX, TodoChangeError, type TodoEvent } from '../../shared/contract.ts';
+import {
+  type AskedTodo,
+  type AskedTodoList,
+  type Identity,
+  TODO_HISTORY_MAX,
+  TodoChangeError,
+  type TodoEvent,
+} from '../../shared/contract.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture } from './test-helpers.ts';
 import { type GitLogRunner, type GitRunOptions, runGit } from './todo-history.ts';
 import { createTodoTimeline, HISTORY_MAX_OUTPUT, historyArgs, parseHistoryKey } from './todo-timeline.ts';
@@ -426,5 +434,66 @@ describe('runGit', () => {
     expect(cut.cut).toBe(true);
     expect(cut.stdout.length).toBeLessThanOrEqual(16);
     await expect(runGit(['rev-parse', 'HEAD'], dir)).rejects.toThrow();
+  });
+});
+
+describe('task history: restricted projects (plan 2026-11-27, decision 6)', () => {
+  const SECRET = 'acme-heating/secret';
+  const index: ProjectsIndex = {
+    cards: [],
+    byKey: () => null,
+    keysForPath: () => [],
+    resolve: (value) => (value === SECRET ? { how: 'restricted' } : { how: 'none' }),
+    hiddenPath: () => false,
+    hiddenKey: (key) => key === SECRET,
+    hiddenCount: 1,
+  };
+  const task = (assignee: string) =>
+    ['---', `assignee: ${assignee}`, 'client: acme-heating', `project: ${SECRET}`, '---', '# Plan'].join(
+      '\n',
+    );
+  const notFound = async (p: Promise<unknown>) => {
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(TodoChangeError);
+    expect((err as TodoChangeError).code).toBe('not-found');
+  };
+  const none = async (): Promise<AskedTodoList> => ({ waiting: [], done: [], historyRead: true });
+
+  it("is not found for a hidden project's task that isn't sam's, by any key, before git runs", async () => {
+    const root = brainWith({ [TOP]: task('alex-sample'), [DONE]: task('alex-sample') });
+    const git = fakeGit('');
+    const timeline = createTodoTimeline(git.run);
+    const deps = { projects: async () => index, asked: none };
+    for (const key of [ID, `asked:todo/${ID}`, `asked:todo/done/${ID}`, `done:todo/done/${ID}`])
+      await notFound(timeline.history(root, key, sam, deps));
+    await notFound(
+      timeline.history(root, ID, sam, {
+        projects: async () => {
+          throw new Error('no index');
+        },
+      }),
+    );
+    expect(git.logCalls()).toEqual([]);
+    // Without the index, as before.
+    expect((await timeline.history(root, ID, sam)).status).toBe('ok');
+  });
+
+  it("opens sam's own task, and one sam asked for from the Asked list", async () => {
+    const root = brainWith({ [TOP]: task('sam-example') });
+    const timeline = createTodoTimeline(fakeGit('').run);
+    expect((await timeline.history(root, ID, sam, { projects: async () => index })).status).toBe('ok');
+    const other = brainWith({ [TOP]: task('alex-sample') });
+    const askedBySam = async (): Promise<AskedTodoList> => ({
+      waiting: [{ id: ID, state: 'waiting' } as AskedTodo],
+      done: [],
+      historyRead: true,
+    });
+    const deps = { projects: async () => index, asked: askedBySam };
+    expect((await timeline.history(other, `asked:todo/${ID}`, sam, deps)).status).toBe('ok');
+    // Asked opens only the Asked key, never the plain one.
+    await notFound(timeline.history(other, ID, sam, deps));
   });
 });

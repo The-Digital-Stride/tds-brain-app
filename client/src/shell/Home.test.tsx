@@ -387,6 +387,25 @@ describe('Home', () => {
       expect(rows[0]?.textContent).toContain('You last worked on 20 Nov');
     });
 
+    it('marks a restricted project in the card, and an open one not', async () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({
+        projects: [
+          { ...card('northwind/secret', 'Secret job', '2026-11-24T09:00:00Z'), visibility: 'restricted' },
+          card('northwind/plain', 'Plain job', '2026-11-20T09:00:00Z'),
+        ],
+        duplicates: [],
+      });
+      await renderHome();
+      const section = (await screen.findByRole('heading', { name: 'Recent projects' })).closest('section');
+      if (!section) throw new Error('no card');
+      const rows = within(section).getAllByRole('listitem');
+      expect(
+        within(rows[0] as HTMLElement).getByText('Restricted: only the project team can see it'),
+      ).toBeTruthy();
+      expect(within(rows[1] as HTMLElement).queryByText(/^Restricted/)).toBeNull();
+    });
+
     it('is not shown when no project has been worked on', async () => {
       projectsStore.reset();
       api.projects.mockResolvedValue({ projects: [], duplicates: [] });

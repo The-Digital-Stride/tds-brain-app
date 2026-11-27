@@ -99,7 +99,7 @@ import { emailCodeLine } from '../../shared/project-email-threads-contract.ts';
 import { isValidRef } from '../../shared/project-refs.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
 import type { ProjectCard, ProjectKey } from '../../shared/projects-contract.ts';
-import type { ProjectsIndex } from '../brain/projects.ts';
+import { isHiddenPath, type ProjectsIndex } from '../brain/projects.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import { type AssetCache, inlinePageAssets } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
@@ -283,7 +283,9 @@ export interface SessionManagerOptions {
    * Optional so older set-ups and test fakes still fit: without it a new chat's project is refused and
    * a reopened chat's saved project is dropped.
    */
-  projectsIndex?: () => Promise<Pick<ProjectsIndex, 'cards' | 'byKey'>>;
+  projectsIndex?: () => Promise<
+    Pick<ProjectsIndex, 'cards' | 'byKey'> & Partial<Pick<ProjectsIndex, 'hiddenPath' | 'hiddenCount'>>
+  >;
   /** Each chat's newest context reading, by `sdkSessionId`. Optional: without it nothing is kept. */
   contextReadings?: ContextReadingStore;
   /**
@@ -1064,6 +1066,88 @@ export function touchesEmailDrafts(input: unknown, toolName = ''): boolean {
 
 export const EMAIL_DRAFTS_REFUSAL =
   "Email drafts wait for the inbox owner's OK in the Projects app, so Claude never reads or changes them. To suggest an email for a project, use the tdsapp-projects skill's email-draft action.";
+
+/** Restricted projects (plan 2026-11-27, decision 11): Claude's reason when it reaches a hidden project's folder. */
+export const RESTRICTED_PROJECT_REFUSAL = 'That project is restricted to its team.';
+
+/** The tools whose path fields the restricted-project guard reads; Bash is read by its words. */
+const RESTRICTED_FILE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
+
+/**
+ * Every folder a project can live in, for when the projects index can't be read: the guard then refuses all
+ * of them rather than none (decision 4, "when unsure, hide"). Personal folders are this Mac's own.
+ */
+const ANY_PROJECT_FOLDER =
+  /^(?:clients\/_archive\/[^/]+\/projects|clients\/[^/]+\/projects(?:-archive)?|projects(?:-archive)?)\/[^/]+(?:\/|$)/i;
+
+/**
+ * A path (absolute, or relative to `cwd`) as a brain-relative one, `.` and `..` resolved; null when it is
+ * outside every brain root. Roots compare in any case, as macOS reads paths.
+ */
+function brainRelative(raw: string, cwd: string, roots: readonly string[]): string | null {
+  const p = cleanPath(raw);
+  if (!p) return null;
+  const abs = p.startsWith('/') ? p : posix.normalize(`${cleanPath(cwd) || '/'}/${p}`);
+  for (const root of roots) {
+    const r = posix.normalize(root).replace(/\/+$/, '');
+    if (abs.toLowerCase() === r.toLowerCase()) return '';
+    if (abs.toLowerCase().startsWith(`${r.toLowerCase()}/`))
+      return abs.slice(r.length + 1).replace(/\/+$/, '');
+  }
+  return null;
+}
+
+/**
+ * Restricted projects, decision 11: whether a call aims at a hidden project's folder. File tools by their
+ * path fields (Grep and Glob search `cwd` when they name none; a Glob's pattern counts as a path, a Grep's
+ * is a regex over file text and doesn't). Bash by every path-shaped word of its command, with any brain
+ * root taken off first so a root with a space in it still reads. `hidden` decides on a brain-relative path,
+ * whole folder names only, so a look-alike folder beside a hidden one is never refused. A guard rail, not a
+ * wall: a broad search from the brain's root can still reach those files' text.
+ */
+export function reachesHiddenProject(
+  toolName: string,
+  input: unknown,
+  cwd: string,
+  roots: readonly string[],
+  hidden: (brainRel: string) => boolean,
+): boolean {
+  if (!isRec(input)) return false;
+  const hit = (raw: string, from = cwd) => {
+    const rel = brainRelative(raw, from, roots);
+    return rel !== null && rel !== '' && hidden(rel);
+  };
+  if (RESTRICTED_FILE_TOOLS.has(toolName)) {
+    const paths: string[] = [];
+    for (const k of ['file_path', 'notebook_path', 'path']) {
+      const v = input[k];
+      if (typeof v === 'string' && v.trim() !== '') paths.push(v);
+    }
+    const searches = toolName === 'Grep' || toolName === 'Glob';
+    if (searches && paths.length === 0) paths.push(cwd);
+    if (paths.some((p) => hit(p))) return true;
+    if (toolName === 'Glob' && typeof input.pattern === 'string') {
+      // The pattern is read from the folder it searches.
+      const base = cleanPath(paths[0] as string);
+      return hit(input.pattern, base.startsWith('/') ? base : `${cwd}/${base}`);
+    }
+    return false;
+  }
+  if (toolName !== 'Bash' || typeof input.command !== 'string') return false;
+  let command = input.command;
+  for (const root of [...roots].sort((a, b) => b.length - a.length)) {
+    for (const form of [root, root.replace(/ /g, '\\ ')]) {
+      const r = form.replace(/\/+$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      command = command.replace(new RegExp(`${r}(?=/|["'\\s]|$)/?`, 'gi'), '');
+    }
+  }
+  const words = shellWords(command).flatMap((w) => [w, ...w.split(/[=:]/).slice(1)]);
+  // A word is read as brain-relative (an absolute brain path, once its root is gone) and from `cwd`.
+  return words.some((w) => {
+    const p = cleanPath(w);
+    return p !== '' && !p.startsWith('/') && (hidden(p) || hit(p));
+  });
+}
 
 /** The TDS logo sprite the branded copy uses (R5), read from the brain; never larger than this. */
 export const LOGO_SPRITE_PATH = 'templates/tds-doc-system/logo-symbol.svg';
@@ -2615,15 +2699,16 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       PreModelSwitch: [{ hooks: [modelSwitchHook(s)] }],
       // Every tool, main chat and helpers, on every engine: runs even for calls that need no permission.
       // The change guard (plan 2026-11-25-app-change-guards, decision 7) shares the first entry: Claude Code
-      // runs a matcher's hooks together and a deny beats an ask, so it is never skipped.
-      PreToolUse: [{ hooks: [draftsGuardHook(s), changeGuardHook(s)] }],
+      // runs a matcher's hooks together and a deny beats an ask, so it is never skipped. So does the
+      // restricted-project guard (plan 2026-11-27, decision 11), which does nothing while nothing is hidden.
+      PreToolUse: [{ hooks: [draftsGuardHook(s), changeGuardHook(s), restrictedGuardHook(s)] }],
     };
     if (levels) {
       options.agents = helperAgents();
       options.hooks = {
         ...options.hooks,
         PreToolUse: [
-          { hooks: [draftsGuardHook(s), changeGuardHook(s)] },
+          { hooks: [draftsGuardHook(s), changeGuardHook(s), restrictedGuardHook(s)] },
           { matcher: AGENT_TOOLS, hooks: [agentHook(s)] },
         ],
         PostToolUse: [
@@ -3154,6 +3239,46 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
           permissionDecisionReason: reason,
+        },
+      };
+    };
+  }
+
+  /**
+   * Restricted projects (plan 2026-11-27, decision 11): refuses a call aimed at the folder of a project
+   * hidden from this person, main chat and helpers alike. Denies with a reason and never changes the call (a
+   * changed call is refused by auto mode's check). Nothing hidden: nothing to do. An index that can't be
+   * read refuses every project folder instead (when unsure, hide).
+   */
+  function restrictedGuardHook(s: Session): HookCallback {
+    return async (raw, toolUseID) => {
+      const input: unknown = raw;
+      if (!isRec(input) || !opts.projectsIndex) return { continue: true };
+      const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
+      if (tool !== 'Bash' && !RESTRICTED_FILE_TOOLS.has(tool)) return { continue: true };
+      let hidden: (rel: string) => boolean;
+      try {
+        const index = await opts.projectsIndex();
+        if (!index.hiddenCount) return { continue: true };
+        hidden = (rel) => isHiddenPath(index, rel);
+      } catch {
+        hidden = (rel) => ANY_PROJECT_FOLDER.test(rel);
+      }
+      const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : opts.brainRoot;
+      let reaches = true;
+      try {
+        reaches = reachesHiddenProject(tool, input.tool_input, cwd, brainRoots, hidden);
+      } catch {
+        // A thrown hook would let the call run: refuse instead.
+      }
+      if (!reaches) return { continue: true };
+      const id = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : '');
+      if (id) s.deniedTools.add(id);
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: RESTRICTED_PROJECT_REFUSAL,
         },
       };
     };

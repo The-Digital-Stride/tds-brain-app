@@ -19,6 +19,7 @@ import { useStore } from '../store.tsx';
 import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { HOVER_GRACE_MS, PaletteTip, tipLines, tipWanted, useTipKey } from './PaletteTip.tsx';
+import { RestrictedBadge } from './RestrictedBadge.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { GO_TO_SOURCE, searchSources } from './search-sources.ts';
 
@@ -341,6 +342,7 @@ function PaletteDialog() {
                     >
                       <Icon name={hit.icon} size={18} />
                       <span className="opt-label">{hit.label}</span>
+                      {hit.restricted ? <RestrictedBadge /> : null}
                       {shortcut ? (
                         state.singleKeys ? (
                           <kbd>{hit.hint}</kbd>

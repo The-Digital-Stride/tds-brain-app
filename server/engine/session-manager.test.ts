@@ -95,6 +95,7 @@ import {
   type SessionManager,
   splitAttachmentNote,
   splitPageNote,
+  TABLES_LINE,
   TASKS_WORD_LINE,
   touchesEmailDrafts,
   UPDATES_BY_HAND_REFUSAL,
@@ -470,7 +471,7 @@ describe('a new chat', () => {
     expect(o.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
     // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
@@ -573,11 +574,11 @@ describe('a new chat', () => {
     // about: a test on 15 Nov 2026 saved an Urban Cooling chart in `personal/` without asking.
     expect(sp.append).toContain('offer `clients/urban-cooling/reports/` first');
     expect(sp.append).toContain('ask even for a quick chart or page');
-    // The client line first, then the files line (decision 7), the tasks word line, then the summary line (context decision 9).
-    expect(sp.append?.split('\n')).toHaveLength(6);
+    // The client line first, then the files line (decision 7), the tasks word line, the tables line, then the summary line (context decision 9).
+    expect(sp.append?.split('\n')).toHaveLength(7);
     expect(
       sp.append?.endsWith(
-        `\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+        `\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       ),
     ).toBe(true);
     await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
@@ -1567,7 +1568,7 @@ describe('reopening a past chat (A4)', () => {
     expect(fx.queries[0]?.options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -3732,7 +3733,7 @@ describe('levels', () => {
     expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
     expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
     expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
     expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBeUndefined();
     expect(o?.hooks?.PreToolUse?.[1]?.matcher).toBe('Agent|Task');
@@ -3744,7 +3745,7 @@ describe('levels', () => {
     await flush();
     expect(queries[0]?.options.agents).toBeUndefined();
     expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
   });
 
@@ -5023,7 +5024,7 @@ describe('context management', () => {
     expect(o?.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -6378,7 +6379,9 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect(text).not.toContain('offer `clients/urban-cooling/reports/` first');
     expect(text).not.toContain('This client has these open projects');
     expect(
-      text.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`),
+      text.endsWith(
+        `\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      ),
     ).toBe(true);
   });
 
@@ -6660,7 +6663,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
   });
 
   it('reopening never fails because of the place: a store or index failure, or a gone client, opens it plain', async () => {
-    const plain = `${FILES_LINE}\n${TASKS_WORD_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
+    const plain = `${FILES_LINE}\n${TASKS_WORD_LINE}\n${TABLES_LINE}\n${GUARD_LINES}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
     const broken: ChatScopeStore = {
       placeOf: () => Promise.reject(new Error('boom')),
       all: () => Promise.reject(new Error('boom')),

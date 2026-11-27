@@ -204,3 +204,13 @@ Release 1, review round 1 (2026-11-27). Each finding was checked in code or repr
 - The details the editor shows and saves no longer include `## Handover history` (when the brain script is 0.7).
 - An update box's text is sent as the note when Mark as done is pressed.
 
+
+**Correctness re-check of the fix round (Opus).** Confirmed 2, dropped 0.
+- Text someone typed under `## Handover history` in an older file was shown nowhere once the section left the details. Fixed: it shows with the hand-edited lines in the Updates list.
+- A held hand back or done-with-note that failed dropped the typed words. Fixed: the store names the failed task and the panel keeps its draft.
+
+**Overseer sign-off (2026-11-27): SIGN-OFF, no blockers.**
+- Condition on the brain step: the `todo/*.md merge=union` line reaches the brain before, or with, the 0.7 script.
+  Plain: the script switches the new controls on for everyone, and without that line two near-simultaneous changes make a duplicate task.
+- A handed-back task stays in the hander's Asked tab, so they can still follow it and answer. Release 2 words the row "Handed back to <name>".
+- Left for release 2: Delete after "Discard" needs a second press; the foot wraps to three rows at 414px; a hand back and its note show as two lines in the same minute.

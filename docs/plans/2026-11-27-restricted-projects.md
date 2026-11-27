@@ -268,5 +268,12 @@ reviews hadn't: Home dropped the "Restricted project" label on a person's own ta
 
 **Checks.** `pnpm check` passes: types, lint, 7,280+ tests, build. No file lost more than 40 lines.
 
+**Overseer sign-off (Fable).** Signed off, no blockers. It confirmed the six decisions made in review (hidden
+uploads and meeting notes, the wording, the picker lock, the guard's wildcard rule, the link check's order)
+and the reading that owners and scouts can be given tasks in a restricted project. It asked for one help
+sentence, now added: linking an existing client file into a restricted project hides it from people outside.
+One side effect noted: the assistant refuses to list `clients/<client>/projects/*` for an outsider once that
+client has a hidden project, which hints that one exists (within decision 11's accepted limits).
+
 **Not changed, on purpose.** An empty bar shows above the project list when there are no email drafts. It
 is in `ProjectsSheet.tsx`, which this work doesn't touch, and is the same on `main`.

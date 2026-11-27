@@ -5,7 +5,7 @@ area: getting-around
 order: 7
 summary: Decide on ad changes Claude has proposed, and see how each Google Ads account is doing.
 benefit: Ad changes get a clear yes or no from you, and nothing goes live by accident.
-roles: [owner, scout]
+roles: all
 related: [workbench, ads-command-centre, ads-account-summary, documents]
 since: 0.46.0
 reviewed: 2026-11-20
@@ -23,7 +23,7 @@ It is one of three Ads tools in Workbench, shown as tabs:
 
 Pick a client once and all three show that client.
 
-Only owners and scouts can use them. Ask one if you need access.
+Anyone on the team can open them if their Mac reaches Google Ads.
 
 ## Why it helps
 

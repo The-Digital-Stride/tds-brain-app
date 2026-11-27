@@ -5,7 +5,7 @@ area: getting-around
 order: 8
 summary: Check an account's data, then start its regular Google Ads jobs.
 benefit: You see every regular job in one place and start each one with a single press.
-roles: [owner, scout]
+roles: all
 related: [ad-manager, ads-account-summary, workbench]
 since: 0.50.0
 reviewed: 2026-11-24

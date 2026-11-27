@@ -4,19 +4,20 @@ import { BRAND } from '../../../shared/brand.ts';
  * Bump to show the tour again to everyone who has finished or skipped an older one. Changing which steps
  * `TOUR_STEPS` has means a bump and a new `TOUR_HISTORY` line (steps.test.ts fails until both are done).
  */
-export const TOUR_VERSION = 4;
+export const TOUR_VERSION = 5;
 
 /**
  * The step ids each tour version walked through, newest last. steps.test.ts checks the current version's line
  * matches `TOUR_STEPS`, so a new step can't ship without everyone being shown the new tour once.
  * 1: the TDS Cortex launch. 2: Projects, Working on, Images and Documents, the Workbench and Home's cards.
- * 3: the cards step now points at Customise Home. 4: the cards step names the Recent cards.
+ * 3: the cards step now points at Customise Home. 4: the cards step names the Recent cards. 5: the task-updates step.
  */
 export const TOUR_HISTORY: Record<number, string> = {
   1: 'message,client,chats,todos,search,help',
   2: 'message,working-on,client,projects,chats,todos,workbench,library,cards,search,help',
   3: 'message,working-on,client,projects,chats,todos,workbench,library,cards,search,help',
   4: 'message,working-on,client,projects,chats,todos,workbench,library,cards,search,help',
+  5: 'message,working-on,client,projects,chats,todos,task-updates,workbench,library,cards,search,help',
 };
 
 /**
@@ -101,6 +102,12 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Your tasks',
     text: 'Yours and the team’s. Star the important ones and they show on Home.',
     covers: ['drawer:todos'],
+  },
+  {
+    id: 'task-updates',
+    anchor: 'button.rail-item[data-dock-label="Tasks"]',
+    title: 'Task updates',
+    text: 'When a teammate updates, finishes or hands back a task of yours, the number on Tasks goes up and the Task updates card on Home lists it.',
   },
   {
     id: 'workbench',

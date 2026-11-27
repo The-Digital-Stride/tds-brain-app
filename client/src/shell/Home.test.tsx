@@ -2,18 +2,21 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  AskedTodo,
   LibraryItem,
   LibraryScope,
   LiveSession,
   SkillInfo,
   TodoItem,
 } from '../../../shared/contract.ts';
+import { PINNED_ROWS } from '../state/home-pins.ts';
 import { openPicker, pickOption } from '../test/pick.ts';
 import { TOUR_VERSION } from '../tour/steps.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
   todos: vi.fn(),
+  askedTodos: vi.fn(),
   sessions: vi.fn(),
   // The rail's last-sync stamp asks for this.
   sync: vi.fn(async () => ({ lastSync: null })),
@@ -144,6 +147,7 @@ const todoList = {
   ],
   open: [],
   othersCount: 0,
+  team: [],
 };
 
 async function renderHome() {
@@ -168,6 +172,7 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource);
   api.bootstrap.mockResolvedValue(boot);
   api.todos.mockResolvedValue(todoList);
+  api.askedTodos.mockResolvedValue({ waiting: [], done: [], historyRead: true });
   api.sessions.mockResolvedValue({
     live: [
       chat('s1', 'Monthly reports check', 'waiting'),
@@ -975,6 +980,7 @@ describe('Home: moving the cards', () => {
     await card('Pinned tasks').findByText('Write the call tracking case');
     expect(order()).toEqual([
       'Meetings',
+      'Task updates',
       'Pinned tasks',
       'Recent tasks',
       'Pinned chats',
@@ -986,10 +992,11 @@ describe('Home: moving the cards', () => {
     ]);
     expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
 
-    const grip = screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 9' });
+    const grip = screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 10' });
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
     expect(order()).toEqual([
       'Meetings',
+      'Task updates',
       'Recent tasks',
       'Pinned tasks',
       'Pinned chats',
@@ -999,11 +1006,12 @@ describe('Home: moving the cards', () => {
       'Recent images',
       'Pinned skills',
     ]);
-    expect(screen.getByText('Pinned tasks moved to 3 of 9')).toBeTruthy();
+    expect(screen.getByText('Pinned tasks moved to 4 of 10')).toBeTruthy();
     // Ads approvals and Recent projects are hidden (nothing waiting, no projects) but keep their default places in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
       'ads',
+      'task-updates',
       'recent-todos',
       'todos',
       'projects',
@@ -1015,15 +1023,16 @@ describe('Home: moving the cards', () => {
       'skills',
     ]);
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 9' })),
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Pinned tasks, 4 of 10' })),
     );
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Pinned files, 6 of 9' }), { key: 'Home' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Pinned files, 7 of 10' }), { key: 'Home' });
     expect(order()[0]).toBe('Pinned files');
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset card order' }));
     expect(order()).toEqual([
       'Meetings',
+      'Task updates',
       'Pinned tasks',
       'Recent tasks',
       'Pinned chats',
@@ -1035,7 +1044,7 @@ describe('Home: moving the cards', () => {
     ]);
     expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual([]);
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 9' })),
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 10' })),
     );
   });
 
@@ -1048,6 +1057,7 @@ describe('Home: moving the cards', () => {
         'Pinned skills',
         'Pinned files',
         'Meetings',
+        'Task updates',
         'Pinned tasks',
         'Recent tasks',
         'Pinned chats',
@@ -1061,9 +1071,9 @@ describe('Home: moving the cards', () => {
 
   it('a key that moves nothing saves nothing', async () => {
     await renderHome();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Meetings, 1 of 9' }), { key: 'ArrowUp' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Meetings, 1 of 10' }), { key: 'ArrowUp' });
     expect(localStorage.getItem(KEY)).toBeNull();
-    expect(screen.getByText('Meetings moved to 1 of 9')).toBeTruthy();
+    expect(screen.getByText('Meetings moved to 1 of 10')).toBeTruthy();
   });
 
   it('a card is only draggable while its grip is pressed', async () => {
@@ -1107,8 +1117,8 @@ describe('Home: choosing what shows', () => {
     });
     await renderHome();
     await card('Pinned tasks').findByText('Write the call tracking case');
-    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Recent tasks', 'Pinned skills']);
-    expect(screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 4' })).toBeTruthy();
+    expect(order()).toEqual(['Meetings', 'Task updates', 'Pinned tasks', 'Recent tasks', 'Pinned skills']);
+    expect(screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 5' })).toBeTruthy();
   });
 
   it('hiding a card keeps the saved order for when it comes back', async () => {
@@ -1119,7 +1129,7 @@ describe('Home: choosing what shows', () => {
     });
     await renderHome();
     await waitFor(() =>
-      expect(order()).toEqual(['Pinned skills', 'Pinned chats', 'Meetings', 'Pinned tasks']),
+      expect(order()).toEqual(['Pinned skills', 'Pinned chats', 'Meetings', 'Task updates', 'Pinned tasks']),
     );
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual(['skills', 'files', 'chats']);
   });
@@ -1174,6 +1184,7 @@ describe('Home: choosing what shows', () => {
         'files',
         'skills',
         'recent-todos',
+        'task-updates',
         'recent-chats',
         'recent-documents',
         'recent-images',
@@ -1222,11 +1233,11 @@ describe('Home: choosing what shows', () => {
   it('lets a lone last card fill the row only with an odd count of shown cards', async () => {
     await renderHome();
     const tray = () => document.querySelector('.home-tray');
-    expect(tray()?.getAttribute('data-odd')).toBe('true');
+    expect(tray()?.getAttribute('data-odd')).toBe('false');
     cleanup();
     withPrefs({ homeHidden: ['files'], homeShortcuts: [] });
     await renderHome();
-    expect(tray()?.getAttribute('data-odd')).toBe('false');
+    expect(tray()?.getAttribute('data-odd')).toBe('true');
   });
 });
 
@@ -1278,7 +1289,7 @@ describe('Home: recent cards', () => {
   };
   afterEach(() => projectsStore.reset());
   const withTodos = (mine: TodoItem[], open: TodoItem[] = []) =>
-    api.todos.mockResolvedValue({ mine, open, othersCount: 0 });
+    api.todos.mockResolvedValue({ mine, open, othersCount: 0, team: [] });
   const unpinned = () =>
     api.bootstrap.mockResolvedValue({
       ...boot,
@@ -1800,5 +1811,149 @@ describe('Home: recent cards', () => {
       );
       expect(card(name).getAllByRole('listitem')).toHaveLength(1);
     });
+  });
+});
+
+describe('Home: Task updates', () => {
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const note = (by: string, byName: string, minutes: number, text = 'Sent it over') => ({
+    kind: 'note' as const,
+    at: ago(minutes),
+    by,
+    byName,
+    text,
+    via: null,
+    action: null,
+  });
+  const held = (id: string, title: string, updates: ReturnType<typeof note>[]): TodoItem => ({
+    ...todo(id, title, null),
+    updates,
+  });
+  const askedTask = (id: string, title: string, over: Partial<AskedTodo> = {}): AskedTodo => ({
+    key: `asked:todo/${id}`,
+    id,
+    state: 'waiting',
+    path: `todo/${id}`,
+    title,
+    assignee: 'ben-mcadam',
+    assigneeName: 'Ben McAdam',
+    due: null,
+    details: '',
+    asked: { slug: 'sam-example', name: 'Sam Example', at: ago(60 * 24), source: 'stamp' },
+    done: null,
+    version: 'v1',
+    attachments: [],
+    ...over,
+  });
+  const withUpdates = (mine: TodoItem[], waiting: AskedTodo[] = [], done: AskedTodo[] = []) => {
+    api.todos.mockResolvedValue({ mine, open: [], othersCount: 0, team: [] });
+    api.askedTodos.mockResolvedValue({ waiting, done, historyRead: true });
+  };
+
+  it('lists held and asked tasks newest first, with the change line, and who has an asked one', async () => {
+    withUpdates(
+      [
+        held('h1.md', 'Held old', [
+          note('ben-mcadam', 'Ben McAdam', 300),
+          note('ben-mcadam', 'Ben McAdam', 200),
+        ]),
+        held('h-own.md', 'My own note', [note('sam-example', 'Sam Example', 5)]),
+      ],
+      [askedTask('a1.md', 'Asked newest', { updates: [note('ben-mcadam', 'Ben McAdam', 10)] })],
+    );
+    await renderHome();
+    const c = card('Task updates');
+    await c.findByText('Asked newest');
+    const rows = c.getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toMatch(
+      /^Asked newestWith Ben · Ben McAdam added an update · Today, \d\d:\d\d$/,
+    );
+    expect(rows[1]?.textContent).toMatch(
+      /^Held oldBen McAdam added an update · (Today|Yesterday), \d\d:\d\d and 1 more$/,
+    );
+    expect(c.queryByText('My own note')).toBeNull();
+    expect(screen.getByText(/and 2 tasks have updates\.$/)).toBeTruthy();
+  });
+
+  it('says so when empty and has an All tasks button that opens the drawer', async () => {
+    await renderHome();
+    expect(
+      await card('Task updates').findByText('Updates from teammates on your tasks show here.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/have updates|has an update/)).toBeNull();
+    fireEvent.click(card('Task updates').getByRole('button', { name: 'All tasks' }));
+    await waitFor(() =>
+      expect(
+        within(document.getElementById('drawer') as HTMLElement).getByRole('heading', { name: 'Tasks' }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('puts the summary part for one task as "one task has an update"', async () => {
+    withUpdates([held('h1.md', 'Held one', [note('ben-mcadam', 'Ben McAdam', 30)])]);
+    await renderHome();
+    expect(await screen.findByText(/and one task has an update\.$/)).toBeTruthy();
+  });
+
+  it('opens a held task in the panel and marks it looked', async () => {
+    withUpdates([held('h1.md', 'Held one', [note('ben-mcadam', 'Ben McAdam', 30)])]);
+    await renderHome();
+    fireEvent.click(await card('Task updates').findByRole('button', { name: /Held one/ }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await waitFor(() =>
+      expect(api.updatePrefs.mock.calls.some((c) => JSON.stringify(c).includes('h1.md'))).toBe(true),
+    );
+  });
+
+  it('opens an asked task in the panel and marks it looked', async () => {
+    withUpdates([], [askedTask('a1.md', 'Asked one', { updates: [note('ben-mcadam', 'Ben McAdam', 30)] })]);
+    await renderHome();
+    fireEvent.click(await card('Task updates').findByRole('button', { name: /Asked one/ }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await waitFor(() =>
+      expect(api.updatePrefs.mock.calls.some((c) => JSON.stringify(c).includes('a1.md'))).toBe(true),
+    );
+  });
+
+  it('shows a finished asked task as marked done, without a "With" prefix', async () => {
+    withUpdates(
+      [],
+      [],
+      [
+        askedTask('d1.md', 'Finished one', {
+          key: 'asked:todo/done/d1.md',
+          state: 'done',
+          done: { slug: 'ben-mcadam', name: 'Ben McAdam', at: ago(20), source: 'stamp' },
+        }),
+      ],
+    );
+    await renderHome();
+    const row = (await card('Task updates').findByText('Finished one')).closest('li') as HTMLElement;
+    expect(row.textContent).toMatch(/^Finished oneBen McAdam marked it as done · /);
+  });
+
+  it('shows "Show more" past the usual rows', async () => {
+    withUpdates(
+      Array.from({ length: 7 }, (_, i) =>
+        held(`h${i}.md`, `Held ${i}`, [note('ben-mcadam', 'Ben McAdam', 10 + i)]),
+      ),
+    );
+    await renderHome();
+    const c = card('Task updates');
+    await c.findByText('Held 0');
+    expect(c.getAllByRole('listitem')).toHaveLength(PINNED_ROWS);
+    fireEvent.click(c.getByRole('button', { name: /Show .* more/ }));
+    expect(c.getAllByRole('listitem')).toHaveLength(7);
+  });
+
+  it('can be hidden', async () => {
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      prefs: { ...boot.prefs, homeHidden: ['task-updates'], homeShortcuts: [] },
+    });
+    await renderHome();
+    await card('Pinned tasks').findByText('Write the call tracking case');
+    expect(screen.queryByRole('region', { name: 'Task updates' })).toBeNull();
   });
 });

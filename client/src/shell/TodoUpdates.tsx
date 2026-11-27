@@ -1,11 +1,12 @@
 import { type FormEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react';
 import type { TeamMember } from '../../../shared/contract.ts';
+import { entryKey } from '../../../shared/todo-changes.ts';
 import {
   TODO_LINK_URL_MAX,
   TODO_UPDATE_MAX,
   type TodoUpdate,
 } from '../../../shared/todo-updates-contract.ts';
-import { updateWhen, updateWhenFull } from './words.ts';
+import { handoverEntryLine, updateWhen, updateWhenFull } from './words.ts';
 
 /** The count shows once the text is this close to the limit. */
 const COUNT_FROM = TODO_UPDATE_MAX - 200;
@@ -61,22 +62,6 @@ function NoteText({ text }: { text: string }) {
   );
 }
 
-/** A handover line names people by slug ("passed it from ben-mcadam to ian-hancock"): say their names instead. */
-function withNames(text: string, team: readonly TeamMember[]): string {
-  let out = text;
-  for (const m of team) {
-    const escaped = m.slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, 'g'), m.name);
-  }
-  return out;
-}
-
-/** A handover line with names; "from" the very person the line starts with is left out, so no name reads twice. */
-function handoverLine(who: string, text: string, team: readonly TeamMember[]): string {
-  const named = withNames(text, team);
-  return who ? named.replace(` from ${who} to `, ' to ') : named;
-}
-
 function When({ at }: { at: string }) {
   const text = updateWhen(at);
   return text ? (
@@ -99,6 +84,51 @@ export interface TodoUpdateCompose {
   onAdd: (text: string, markDone: boolean) => Promise<boolean>;
 }
 
+const MINUTE_MS = 60_000;
+const minuteOf = (iso: string): number => Math.floor(Date.parse(iso) / MINUTE_MS);
+
+/** One card in the list: an entry, or a handover with the note written with it (shown as one). */
+interface UpdateCard {
+  entry: TodoUpdate;
+  /** The note that went with a handover: same person, same minute. */
+  note?: TodoUpdate;
+}
+
+/**
+ * Newest first. A hand back or pass-on and the note sent with it (same name, same minute) show as one card: the
+ * handover line as the heading, the note under it. Display only: the file and every count are unchanged.
+ */
+function toCards(updates: readonly TodoUpdate[]): UpdateCard[] {
+  const paired = new Set<TodoUpdate>();
+  const noteFor = new Map<TodoUpdate, TodoUpdate>();
+  for (const h of updates) {
+    if (h.kind !== 'handover' || !h.byName) continue;
+    const n = updates.find(
+      (e) =>
+        e.kind === 'note' &&
+        !paired.has(e) &&
+        e.byName === h.byName &&
+        !Number.isNaN(minuteOf(e.at)) &&
+        minuteOf(e.at) === minuteOf(h.at),
+    );
+    if (n) {
+      paired.add(n);
+      noteFor.set(h, n);
+    }
+  }
+  const cards: UpdateCard[] = [];
+  for (const e of [...updates].reverse()) {
+    if (paired.has(e)) continue;
+    const note = noteFor.get(e);
+    cards.push(note ? { entry: e, note } : { entry: e });
+  }
+  return cards;
+}
+
+function NewTag() {
+  return <span className="badge">New</span>;
+}
+
 export interface TodoUpdatesProps {
   /** Oldest first, as the server sends them. */
   updates?: TodoUpdate[];
@@ -107,6 +137,8 @@ export interface TodoUpdatesProps {
   /** Lines in the section that aren't entries. */
   extras?: string[];
   team: readonly TeamMember[];
+  /** `entryKey`s of the entries this person had not seen when they opened the task: tagged "New" while it stays open. */
+  newKeys?: ReadonlySet<string>;
   compose: TodoUpdateCompose | null;
   onStatus: (text: string, isError?: boolean) => void;
 }
@@ -116,11 +148,13 @@ export interface TodoUpdatesProps {
  * an update for the person holding the task (or the one who asked, while it waits). Plan
  * 2026-11-27-task-updates-handback, decision 12.
  */
-export function TodoUpdates({ updates, more, extras, team, compose, onStatus }: TodoUpdatesProps) {
+export function TodoUpdates({ updates, more, extras, team, newKeys, compose, onStatus }: TodoUpdatesProps) {
   const headId = useId();
-  const entries = [...(updates ?? [])].reverse();
+  const cards = toCards(updates ?? []);
+  const isNew = (e: TodoUpdate): boolean => newKeys?.has(entryKey(e)) === true;
+  const newCount = (updates ?? []).filter(isNew).length;
   const lines = extras ?? [];
-  if (!compose && entries.length === 0 && lines.length === 0) return null;
+  if (!compose && cards.length === 0 && lines.length === 0) return null;
   return (
     <section className="todo-updates" aria-labelledby={headId}>
       <h3 className="todo-files-head" id={headId}>
@@ -128,32 +162,42 @@ export function TodoUpdates({ updates, more, extras, team, compose, onStatus }: 
       </h3>
       {/* The box sits above the newest-first list, so a new update appears right under it. */}
       {compose ? <AddUpdate compose={compose} onStatus={onStatus} /> : null}
-      {entries.length === 0 && lines.length === 0 ? <p className="todo-empty">No updates yet.</p> : null}
-      {entries.length > 0 ? (
-        <ul className="todo-update-list">
-          {entries.map((e, i) =>
-            e.kind === 'note' ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: entries can share a minute and never reorder.
-              <li key={i} className="todo-update" data-kind="note">
-                <p className="todo-update-meta">
-                  <span className="todo-update-who">{e.byName || e.by || 'Someone'}</span>
-                  <When at={e.at} />
-                </p>
-                <NoteText text={e.text} />
-              </li>
-            ) : (
-              // biome-ignore lint/suspicious/noArrayIndexKey: entries can share a minute and never reorder.
-              <li key={i} className="todo-update" data-kind={e.kind}>
-                <p className="todo-update-line">
-                  {e.byName || e.by || 'Someone'}{' '}
-                  {e.kind === 'handover' ? handoverLine(e.byName || e.by || '', e.text, team) : e.text}
-                  {updateWhen(e.at) ? <span className="todo-sep"> · </span> : null}
-                  <When at={e.at} />
-                </p>
-              </li>
-            ),
-          )}
-        </ul>
+      {cards.length === 0 && lines.length === 0 ? <p className="todo-empty">No updates yet.</p> : null}
+      {cards.length > 0 ? (
+        <>
+          {/* Present before it has words, so a screen reader hears it when it fills. */}
+          <p className="todo-update-news" role="status" aria-live="polite">
+            {newCount > 0 ? `${newCount} new since you last looked.` : ''}
+          </p>
+          <ul className="todo-update-list">
+            {cards.map(({ entry: e, note }, i) => {
+              const merged = note ? 'true' : undefined;
+              return e.kind === 'note' ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: entries can share a minute and never reorder.
+                <li key={i} className="todo-update" data-kind="note">
+                  <p className="todo-update-meta">
+                    <span className="todo-update-who">{e.byName || e.by || 'Someone'}</span>
+                    <When at={e.at} />
+                    {isNew(e) ? <NewTag /> : null}
+                  </p>
+                  <NoteText text={e.text} />
+                </li>
+              ) : (
+                // biome-ignore lint/suspicious/noArrayIndexKey: entries can share a minute and never reorder.
+                <li key={i} className="todo-update" data-kind={e.kind} data-merged={merged}>
+                  <p className="todo-update-line">
+                    {e.byName || e.by || 'Someone'}{' '}
+                    {e.kind === 'handover' ? handoverEntryLine(e.byName || e.by || '', e.text, team) : e.text}
+                    {updateWhen(e.at) ? <span className="todo-sep"> · </span> : null}
+                    <When at={e.at} />
+                    {isNew(e) || (note && isNew(note)) ? <NewTag /> : null}
+                  </p>
+                  {note ? <NoteText text={note.text} /> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
       ) : null}
       {more ? <p className="todo-note">Older updates aren't shown.</p> : null}
       {lines.length > 0 ? (

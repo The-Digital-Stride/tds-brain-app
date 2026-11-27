@@ -7,7 +7,7 @@ import { card, projectList } from '../apps/projects/testing.ts';
 // The drawer's project filter across Mine, Open and Asked, and the row chips that set it (Ian, 2026-11-21).
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
-const api = vi.hoisted(() => ({ askedTodos: vi.fn(), projects: vi.fn(), todoHistory: vi.fn() }));
+const api = vi.hoisted(() => ({ projects: vi.fn(), todoHistory: vi.fn() }));
 vi.mock('../api.ts', () => ({ api }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
 vi.mock('./ShellProvider.tsx', async () => ({
@@ -17,6 +17,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { fakeShell } = await import('./todo-test-kit.tsx');
 const { projectsStore } = await import('../state/projects.ts');
@@ -70,6 +71,8 @@ const asked = (id: string, title: string, over: Partial<AskedTodo> = {}): AskedT
 
 function setStore(mine: TodoItem[], open: TodoItem[] = []) {
   store.current = {
+    ...askedStoreFields,
+    asked: ASKED,
     changeTodos: vi.fn().mockResolvedValue({ done: 1 }),
     markTodosSeen: vi.fn(),
     openView: vi.fn(),
@@ -123,7 +126,6 @@ const ASKED: AskedTodoList = {
 beforeEach(() => {
   fakeShell.reset();
   api.projects.mockResolvedValue(projectList([SITE, SEO]));
-  api.askedTodos.mockResolvedValue(ASKED);
   projectsStore.apply(projectList([SITE, SEO]));
   setStore(
     [
@@ -202,11 +204,14 @@ describe('a task in a project this person cannot see', () => {
   });
 
   it('shows the same words on an Asked row', async () => {
-    api.askedTodos.mockResolvedValue({
-      waiting: [asked('a9.md', 'Hidden ask', { projectMatch: { how: 'restricted' } })],
-      done: [],
-      historyRead: true,
-    });
+    store.current = {
+      ...store.current,
+      asked: {
+        waiting: [asked('a9.md', 'Hidden ask', { projectMatch: { how: 'restricted' } })],
+        done: [],
+        historyRead: true,
+      },
+    };
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
     const row = (await screen.findByText('Hidden ask')).closest('li') as HTMLElement;
@@ -237,7 +242,7 @@ describe('the Asked tab', () => {
   });
 
   it('says why it is empty when nothing asked of others is in the project, with Clear filters', async () => {
-    api.askedTodos.mockResolvedValue({ ...ASKED, waiting: [ASKED.waiting[0] as AskedTodo] });
+    store.current = { ...store.current, asked: { ...ASKED, waiting: [ASKED.waiting[0] as AskedTodo] } };
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Bolt · SEO audit' }));
     fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));

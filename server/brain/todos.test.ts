@@ -14,13 +14,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { TODO_SCRIPT, type TodoAction, TodoChangeError } from '../../shared/contract.ts';
+import { type TeamMember, TODO_SCRIPT, type TodoAction, TodoChangeError } from '../../shared/contract.ts';
 import { TODO_PROJECT_CAPABILITY } from '../../shared/projects-contract.ts';
 import { createBrainReaders } from './index.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, person } from './test-helpers.ts';
 import { TODO_ATTACH_CAPABILITY } from './todo-skill.ts';
-import { changeTodo, listTodos, TODO_UPDATES_MESSAGES } from './todos.ts';
+import { changeTodo, listTodos, TODO_UPDATES_MESSAGES, timelineFields } from './todos.ts';
 
 const sam = person('sam-example', 'scout');
 
@@ -1756,7 +1756,7 @@ describe('task updates: what the server sends and lets through', () => {
     expect(t?.updatesMore).toBe(false);
     expect(t?.updateExtras).toEqual([]);
     expect(t?.updates?.map((u) => [u.kind, u.by, u.byName])).toEqual([
-      ['handover', null, 'Alex Sample'],
+      ['handover', 'alex-sample', 'Alex Sample'],
       ['note', 'alex-sample', 'Alex Sample'],
       ['auto', null, 'Zed Stranger'],
     ]);
@@ -1814,6 +1814,36 @@ describe('task updates: what the server sends and lets through', () => {
     const t = (await listTodos(root, sam)).mine.find((x) => x.id === ID);
     expect(t).toMatchObject({ assignee: 'sam-example', title: 'New title' });
     expect(t?.handover).toMatchObject({ by: 'alex-sample', back: true, source: 'stamp' });
+  });
+
+  it('fills the slug on a handover entry from the roster name: exact, one match only', async () => {
+    const { root } = setup({ [ID]: task(MINE) });
+    const t = (await listTodos(root, sam)).mine.find((x) => x.id === ID);
+    const handover = t?.updates?.find((u) => u.kind === 'handover');
+    expect(handover).toMatchObject({ byName: 'Alex Sample', by: 'alex-sample' });
+    expect(t?.updates?.find((u) => u.kind !== 'handover')?.by).not.toBeUndefined();
+  });
+
+  it('leaves a handover slug null when no name or more than one name matches', () => {
+    const body = [
+      '# T',
+      '',
+      '## Handover history',
+      '',
+      '- 26 Nov 2026, 09:00 UK: Alex Sample passed it from alex-sample to sam-example (TDS Brain App).',
+      '- 26 Nov 2026, 10:00 UK: Zed Zed passed it from zed to sam-example (TDS Brain App).',
+      '',
+    ].join('\n');
+    const member = (slug: string, name: string) => ({ slug, name }) as TeamMember;
+    const one = timelineFields({}, body, [member('alex-sample', 'Alex Sample')]);
+    expect(one.updates?.map((u) => u.by)).toEqual(['alex-sample', null]);
+    const two = timelineFields({}, body, [
+      member('alex-sample', 'Alex Sample'),
+      member('alex-2', 'Alex Sample'),
+    ]);
+    expect(two.updates?.map((u) => u.by)).toEqual([null, null]);
+    const none = timelineFields({}, body, [member('alex-sample', 'alex sample')]);
+    expect(none.updates?.map((u) => u.by)).toEqual([null, null]);
   });
 
   describe('completeTodoWithNote (Add update and mark as done)', () => {

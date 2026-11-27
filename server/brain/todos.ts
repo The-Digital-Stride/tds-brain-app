@@ -152,7 +152,16 @@ export function timelineFields(
 ): TodoTimelineFields {
   const { updates: all, extras } = todoTimeline(body);
   const known = new Set(team.map((m) => m.slug));
-  const withBy = all.map((u) => (u.by !== null && !known.has(u.by) ? { ...u, by: null } : u));
+  // A handover line carries no slug (decision 5a): match its written name to the roster, exactly and only when
+  // one member has it, so "my own pass-on" is told apart by slug, not by a name that may differ.
+  const slugOfName = (name: string): string | null => {
+    const hits = team.filter((m) => m.name === name);
+    return hits.length === 1 && hits[0] ? hits[0].slug : null;
+  };
+  const withBy = all.map((u) => {
+    if (u.kind === 'handover') return u.by === null ? { ...u, by: slugOfName(u.byName) } : u;
+    return u.by !== null && !known.has(u.by) ? { ...u, by: null } : u;
+  });
   const newest = withBy[withBy.length - 1];
   const lastChange: TodoLastChange | null = newest
     ? { at: newest.at, by: newest.by, byName: newest.byName, action: newest.action }

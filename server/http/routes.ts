@@ -155,6 +155,7 @@ import {
   type TidyApply,
   type TidySuggestion,
 } from '../../shared/projects-contract.ts';
+import { isLookedMark, TODO_LOOKED_MAX, type TodoLookedMark } from '../../shared/todo-changes.ts';
 import {
   UPDATE_CHECK_EVERY_MS,
   UpdateRefused,
@@ -466,6 +467,18 @@ export async function validatePrefsPatch(
           throw bad('The list of tasks you have seen was not understood.');
         }
         patch.todoSeen = Object.fromEntries(entries as [string, string][]);
+        break;
+      }
+      case 'todoLooked': {
+        const entries = isRec(value) ? Object.entries(value) : null;
+        if (
+          entries === null ||
+          entries.length > TODO_LOOKED_MAX ||
+          !entries.every(([k, v]) => k !== '' && k.length <= SEEN_KEY_MAX && isLookedMark(v))
+        ) {
+          throw bad('The list of tasks whose changes you have seen was not understood.');
+        }
+        patch.todoLooked = Object.fromEntries(entries as [string, TodoLookedMark][]);
         break;
       }
       case 'todoPanelOpen':

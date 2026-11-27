@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { entryKey } from '../../../shared/todo-changes.ts';
 import type { TodoUpdate } from '../../../shared/todo-updates-contract.ts';
 import { TodoUpdates, type TodoUpdatesProps } from './TodoUpdates.tsx';
 
@@ -280,5 +281,143 @@ describe('adding an update', () => {
     render(<TodoUpdates team={team} compose={null} onStatus={vi.fn()} updates={[note('Hi')]} />);
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('what is new since the person looked', () => {
+  const old = note('Old one.', { at: '2026-11-27T10:00:00+00:00' });
+  const fresh = note('Fresh one.', { at: '2026-11-27T14:05:00+00:00' });
+
+  it('tags the entries in the set with "New", and says how many in a polite status line above the list', () => {
+    today('2026-11-27T15:00:00Z');
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[old, fresh]}
+        newKeys={new Set([entryKey(fresh)])}
+      />,
+    );
+    const line = screen.getByText('1 new since you last looked.');
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.getAttribute('aria-live')).toBe('polite');
+    const items = screen.getAllByRole('listitem');
+    expect(within(items[0] as HTMLElement).getByText('New')).toBeTruthy();
+    expect(within(items[1] as HTMLElement).queryByText('New')).toBeNull();
+  });
+
+  it('counts more than one', () => {
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[old, fresh]}
+        newKeys={new Set([entryKey(old), entryKey(fresh)])}
+      />,
+    );
+    expect(screen.getByText('2 new since you last looked.')).toBeTruthy();
+    expect(screen.getAllByText('New')).toHaveLength(2);
+  });
+
+  it('shows no tag and no words without a set, or with an empty one', () => {
+    const { rerender } = render(
+      <TodoUpdates team={team} compose={null} onStatus={vi.fn()} updates={[old, fresh]} />,
+    );
+    expect(screen.queryByText('New')).toBeNull();
+    rerender(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[old, fresh]}
+        newKeys={new Set()}
+      />,
+    );
+    expect(screen.queryByText(/new since you last looked/)).toBeNull();
+  });
+});
+
+describe('a handover and the note written with it', () => {
+  const handover = (over: Partial<TodoUpdate> = {}): TodoUpdate => ({
+    kind: 'handover',
+    at: '2026-11-27T14:05:00+00:00',
+    by: null,
+    byName: 'Ben McAdam',
+    text: 'handed it back to sam-example',
+    via: 'TDS Brain App',
+    action: 'assignee',
+    ...over,
+  });
+
+  it('show as one card: the handover line as its heading with the time, the note under it', () => {
+    today('2026-12-05T12:00:00Z');
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[handover(), note('Over to you, the quote is attached.')]}
+      />,
+    );
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-kind')).toBe('handover');
+    expect(items[0]?.getAttribute('data-merged')).toBe('true');
+    expect(items[0]?.querySelector('.todo-update-line')?.textContent).toBe(
+      'Ben McAdam handed it back to Sam Example · 27 Nov, 14:05',
+    );
+    expect(items[0]?.querySelector('.todo-update-text')?.textContent).toBe(
+      'Over to you, the quote is attached.',
+    );
+  });
+
+  it('pairs them whichever came first in the log', () => {
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[note('Over to you.'), handover()]}
+      />,
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('keep apart when the writers differ, or the minute does', () => {
+    const { rerender } = render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[handover(), note('Hello.', { byName: 'Sam Example', by: 'sam-example' })]}
+      />,
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    rerender(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[handover(), note('Later.', { at: '2026-11-27T14:06:00+00:00' })]}
+      />,
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('tag the one card when either was unseen', () => {
+    const n = note('Over to you.');
+    render(
+      <TodoUpdates
+        team={team}
+        compose={null}
+        onStatus={vi.fn()}
+        updates={[handover(), n]}
+        newKeys={new Set([entryKey(n)])}
+      />,
+    );
+    expect(screen.getAllByText('New')).toHaveLength(1);
+    expect(screen.getByText('1 new since you last looked.')).toBeTruthy();
   });
 });

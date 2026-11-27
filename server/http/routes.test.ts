@@ -2001,6 +2001,42 @@ describe('validatePrefsPatch: todoSeen', () => {
   });
 });
 
+describe('validatePrefsPatch: todoLooked', () => {
+  const brain = { clients: async () => [] };
+  const mark = { keys: ['abcde12345f'], seen: '2026-11-27T10:00:00Z' };
+
+  it('accepts a map of task ids to markers, and an empty map', async () => {
+    const todoLooked = { '20261127-a.md': mark, 'b.md': { ...mark, done: true as const } };
+    expect(await validatePrefsPatch({ todoLooked }, brain)).toEqual({ todoLooked });
+    expect(await validatePrefsPatch({ todoLooked: {} }, brain)).toEqual({ todoLooked: {} });
+  });
+
+  it('refuses anything else, in plain words about tasks', async () => {
+    const many = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`k${i}.md`, mark]));
+    const bad: unknown[] = [
+      null,
+      [],
+      'x',
+      many,
+      { a: 'x' },
+      { a: { keys: ['short'], seen: mark.seen } },
+      { a: { keys: [], seen: 'soon' } },
+      { a: { ...mark, done: false } },
+      { a: { ...mark, extra: 1 } },
+      { '': mark },
+      { [`${'k'.repeat(301)}`]: mark },
+    ];
+    for (const todoLooked of bad) {
+      await expect(
+        validatePrefsPatch({ todoLooked }, brain),
+        JSON.stringify(todoLooked).slice(0, 60),
+      ).rejects.toThrow(/tasks/);
+    }
+    const max = Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`k${i}.md`, mark]));
+    expect(await validatePrefsPatch({ todoLooked: max }, brain)).toEqual({ todoLooked: max });
+  });
+});
+
 describe('validatePrefsPatch: Home hidden items and shortcuts', () => {
   const brain = { clients: async () => [] };
   const place = { kind: 'place', place: 'projects' };

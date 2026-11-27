@@ -10,7 +10,6 @@ import { pickOption } from '../test/pick.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 const api = vi.hoisted(() => ({
-  askedTodos: vi.fn(),
   doneTodos: vi.fn(),
   projects: vi.fn(),
   todoHistory: vi.fn(),
@@ -25,6 +24,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { fakeShell, sent } = await import('./todo-test-kit.tsx');
 const { projectsStore } = await import('../state/projects.ts');
@@ -76,6 +76,7 @@ const LIST: DoneTodoList = {
 
 function setStore() {
   store.current = {
+    ...askedStoreFields,
     changeTodos: vi.fn(),
     markTodosSeen: vi.fn(),
     openView: vi.fn(),
@@ -119,7 +120,6 @@ function setStore() {
 beforeEach(() => {
   fakeShell.reset();
   setStore();
-  api.askedTodos.mockResolvedValue({ waiting: [], done: [], historyRead: true });
   api.doneTodos.mockResolvedValue(LIST);
   api.projects.mockResolvedValue(projectList([SITE, SEO]));
   api.todoHistory.mockResolvedValue({ status: 'ok', events: [], more: false });
@@ -139,7 +139,6 @@ const openDone = () => fireEvent.click(screen.getByRole('radio', { name: 'Done' 
 describe('the Done tab', () => {
   it('loads only when opened, then lists finished tasks with who and when', async () => {
     render(<TodosDrawer />);
-    await waitFor(() => expect(api.askedTodos).toHaveBeenCalled());
     expect(api.doneTodos).not.toHaveBeenCalled();
     openDone();
     await screen.findByText('Send the quote');

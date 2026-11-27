@@ -13,6 +13,7 @@ import {
 import type { AdsSummary } from '../../shared/ads-contract.ts';
 import type {
   AppPrefs,
+  AskedTodoList,
   Bootstrap,
   ChatKind,
   HomeItemId,
@@ -42,6 +43,7 @@ import { FILES_CHANGE_MESSAGES, filesDeletedNotice } from '../../shared/files-co
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectKey } from '../../shared/projects-contract.ts';
+import { type ChangeSubject, fitLooked, lookedMark, type TodoLooked } from '../../shared/todo-changes.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { toolView } from './shell/sections.ts';
 import type { ToolSnapshot } from './shell/sections-contract.ts';
@@ -428,6 +430,19 @@ export interface Store {
   dismissLevelOffer: (sessionId: string) => void;
   /** Marks these to-dos' handovers as seen ("New to you"): saves `prefs.todoSeen` with the full map. */
   markTodosSeen: (todos: TodoItem[]) => void;
+  /**
+   * The tasks this person asked for (waiting and done), loaded with the task list and again on every `todos` change.
+   * The last list is kept while a reload runs or after a failure. null until the first load.
+   */
+  asked: AskedTodoList | null;
+  askedState: 'loading' | 'loaded' | 'failed';
+  /** Loads the Asked list again: one request at a time, one more queued behind it however often this is called. */
+  reloadAsked: () => void;
+  /**
+   * The person has looked at these tasks: saves `prefs.todoLooked` (the whole map) with a marker for each whose
+   * entries or finish differ from the saved one (shared/todo-changes.ts).
+   */
+  markTodosLooked: (subjects: ChangeSubject[]) => void;
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
   /**
@@ -1623,6 +1638,98 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [keepStars],
   );
 
+  // The latest "looked" map, kept here so quick successive marks each carry the earlier ones.
+  const lookedRef = useRef<TodoLooked>({});
+  useEffect(() => {
+    lookedRef.current = boot?.prefs.todoLooked ?? {};
+  }, [boot?.prefs.todoLooked]);
+  const meSlug = boot?.identity.slug;
+  const meName = boot?.identity.name;
+  const markTodosLooked = useCallback(
+    (subjects: ChangeSubject[]) => {
+      if (meSlug === undefined || meName === undefined) return;
+      const me = { slug: meSlug, name: meName };
+      const now = new Date();
+      let next = lookedRef.current;
+      let changed = false;
+      for (const subject of subjects) {
+        // Only TDS tasks have markers: nobody else can change a personal one.
+        if (subject.kind === 'held' && subject.todo.scope !== 'tds') continue;
+        const mark = lookedMark(subject, me, now);
+        const old = next[subject.todo.id];
+        if (
+          old &&
+          old.done === mark.done &&
+          old.keys.length === mark.keys.length &&
+          old.keys.every((k, i) => k === mark.keys[i])
+        )
+          continue;
+        if (!changed) next = { ...next };
+        next[subject.todo.id] = mark;
+        changed = true;
+      }
+      if (!changed) return;
+      next = fitLooked(next);
+      lookedRef.current = next;
+      const saved = next;
+      // Optimistic, so the badge drops at once; the server's reply (pruned, capped) replaces it.
+      setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoLooked: saved } } : b));
+      api
+        .updatePrefs({ todoLooked: saved })
+        .then((prefs) => {
+          if (lookedRef.current === saved) setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
+        })
+        .catch(() => {
+          // Not saved: the changes show as new again next time. Nothing to tell the person.
+        });
+    },
+    [meSlug, meName, keepStars],
+  );
+
+  // The Asked list (asked-of-others): its own request, never blocking or failing the task list.
+  const [asked, setAsked] = useState<AskedTodoList | null>(null);
+  const [askedState, setAskedState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const askedHave = useRef(false);
+  const askedBusy = useRef(false);
+  const askedQueued = useRef(false);
+  const askedAlive = useRef(true);
+  useEffect(() => {
+    askedAlive.current = true;
+    return () => {
+      askedAlive.current = false;
+    };
+  }, []);
+  const reloadAsked = useCallback(() => {
+    if (askedBusy.current) {
+      askedQueued.current = true;
+      return;
+    }
+    askedBusy.current = true;
+    void (async () => {
+      do {
+        askedQueued.current = false;
+        // Only the very first load shows as loading: a reload keeps the list and its state as they were.
+        if (!askedHave.current && askedAlive.current) setAskedState('loading');
+        try {
+          const list = await api.askedTodos();
+          if (askedAlive.current) {
+            askedHave.current = true;
+            setAsked(list);
+            setAskedState('loaded');
+          }
+        } catch {
+          if (askedAlive.current) setAskedState('failed');
+        }
+      } while (askedQueued.current && askedAlive.current);
+      askedBusy.current = false;
+    })();
+  }, []);
+  const haveTodos = todos !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `todos` changing (a new object each load) is the trigger.
+  useEffect(() => {
+    if (haveTodos) reloadAsked();
+  }, [todos, haveTodos, reloadAsked]);
+
   const completeTodo = useCallback(async (id: string) => {
     try {
       setTodos(await api.completeTodo(id));
@@ -1988,6 +2095,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatLevel,
       dismissLevelOffer,
       markTodosSeen,
+      asked,
+      askedState,
+      reloadAsked,
+      markTodosLooked,
       togglePin,
       completeTodo,
       changeTodos,
@@ -2087,6 +2198,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatLevel,
       dismissLevelOffer,
       markTodosSeen,
+      asked,
+      askedState,
+      reloadAsked,
+      markTodosLooked,
       togglePin,
       completeTodo,
       changeTodos,

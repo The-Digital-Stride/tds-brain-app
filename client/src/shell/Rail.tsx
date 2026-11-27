@@ -3,6 +3,7 @@ import type { Attention } from '../../../shared/contract.ts';
 import { helpVisible, skillsMenuVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
+import { changedTodos } from '../state/todo-changed.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { useStore, useToolSnapshot } from '../store.tsx';
 import { useTourOpen } from '../tour/request.ts';
@@ -111,7 +112,7 @@ function Mark() {
 
 /** Layer 1: one slim strip that gets you everywhere. */
 export function Rail({ inert = false }: { inert?: boolean }) {
-  const { boot, todos, sessions, view, activeChat, newChat, openView } = useStore();
+  const { boot, todos, asked, askedState, sessions, view, activeChat, newChat, openView } = useStore();
   const snap = useToolSnapshot();
   const { state, dispatch } = useShell();
   const { railShowsNames: wide, width, drawerModal, panelModal } = useDesk();
@@ -166,8 +167,12 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
   const live = sessions?.live ?? [];
   const mine = todos?.mine.length ?? 0;
+  // "New to you" plus the tasks with a change since the person looked. While the Asked list is loading, or
+  // failed, only the tasks they hold are counted.
+  const now = new Date();
   const fresh = todos
-    ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date()).length
+    ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, now).length +
+      changedTodos(todos, askedState === 'loaded' ? asked : null, boot.identity, boot.prefs, now).total
     : 0;
   const sections = visibleSections(snap);
   const app = APPS.find((a) => view === `app:${a.id}`);

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TodoItem } from '../../../shared/contract.ts';
+import type { AskedTodo, AskedTodoList, TodoItem } from '../../../shared/contract.ts';
+import { lookedMark, type TodoLooked } from '../../../shared/todo-changes.ts';
+import type { TodoUpdate } from '../../../shared/todo-updates-contract.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 const desk = vi.hoisted(() => ({
@@ -42,11 +44,22 @@ const todo = (id: string, by: string | null): TodoItem => ({
   attachments: [],
 });
 
-function setStore(mine: TodoItem[], seen: Record<string, string> = {}, role = 'team') {
+function setStore(
+  mine: TodoItem[],
+  seen: Record<string, string> = {},
+  role = 'team',
+  more: {
+    asked?: AskedTodoList | null;
+    askedState?: 'loading' | 'loaded' | 'failed';
+    looked?: TodoLooked;
+  } = {},
+) {
   store.current = {
+    asked: more.asked ?? null,
+    askedState: more.askedState ?? 'loaded',
     boot: {
       identity: { slug: 'sam-example', name: 'Sam Example', role },
-      prefs: { todoSeen: seen },
+      prefs: { todoSeen: seen, todoLooked: more.looked ?? {} },
     },
     todos: { mine },
     sessions: { live: [] },
@@ -66,7 +79,7 @@ describe('Rail tasks item', () => {
   it('says how many are new and shows the pip', () => {
     setStore([todo('a.md', 'ben-mcadam'), todo('b.md', null)]);
     const { container } = render(<Rail />);
-    expect(screen.getByRole('button', { name: 'Tasks, 2 of yours, 1 new' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tasks, 2 of yours, 1 new or updated' })).toBeTruthy();
     expect(container.querySelector('.rail-pip[data-new="true"]')).toBeTruthy();
   });
 
@@ -75,6 +88,59 @@ describe('Rail tasks item', () => {
     const { container } = render(<Rail />);
     expect(screen.getByRole('button', { name: 'Tasks, 1 of yours' })).toBeTruthy();
     expect(container.querySelector('.rail-pip[data-new="true"]')).toBeNull();
+  });
+});
+
+describe('Rail tasks item: changes since you looked', () => {
+  const entry = (at: string): TodoUpdate => ({
+    kind: 'note',
+    at,
+    by: 'ben-mcadam',
+    byName: 'Ben McAdam',
+    text: 'Hello',
+    via: null,
+    action: 'update',
+  });
+  const recent = new Date(Date.now() - 3_600_000).toISOString();
+  const changedHeld = (id: string) => ({ ...todo(id, null), updates: [entry(recent)] });
+  const askedRow = (id: string): AskedTodo =>
+    ({
+      id,
+      key: `asked:${id}`,
+      state: 'waiting',
+      asked: { slug: 'sam-example', name: 'Sam Example', at: '2020-01-01T00:00:00Z', source: 'stamp' },
+      done: null,
+      updates: [entry(recent)],
+    }) as unknown as AskedTodo;
+  const list = (...ids: string[]): AskedTodoList => ({
+    waiting: ids.map(askedRow),
+    done: [],
+    historyRead: true,
+  });
+
+  it('adds held tasks that changed and asked tasks that changed to the new count', () => {
+    setStore([todo('a.md', 'ben-mcadam'), changedHeld('b.md')], {}, 'team', { asked: list('q.md') });
+    render(<Rail />);
+    expect(screen.getByRole('button', { name: 'Tasks, 2 of yours, 3 new or updated' })).toBeTruthy();
+  });
+
+  it('counts held tasks only while the Asked list is loading or has failed', () => {
+    for (const askedState of ['loading', 'failed'] as const) {
+      setStore([changedHeld('b.md')], {}, 'team', { asked: list('q.md'), askedState });
+      const { unmount } = render(<Rail />);
+      expect(screen.getByRole('button', { name: 'Tasks, 1 of yours, 1 new or updated' })).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('drops a task once it has been looked at', () => {
+    const t = changedHeld('b.md');
+    const looked = {
+      'b.md': lookedMark({ kind: 'held', todo: t }, { slug: 'sam-example', name: 'Sam Example' }, new Date()),
+    };
+    setStore([t], {}, 'team', { looked });
+    render(<Rail />);
+    expect(screen.getByRole('button', { name: 'Tasks, 1 of yours' })).toBeTruthy();
   });
 });
 

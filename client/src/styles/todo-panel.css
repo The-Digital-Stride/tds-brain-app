@@ -254,6 +254,10 @@
     align-items: center;
     gap: var(--sp-8);
   }
+  /* Edit stays on the right when the buttons wrap onto a second line. */
+  .todo-foot-group + .todo-foot-group {
+    margin-left: auto;
+  }
   .todo-foot-note {
     flex-basis: 100%;
     padding: 0;
@@ -654,7 +658,18 @@
     list-style: none;
     font-size: var(--fs-control);
   }
-  .todo-update[data-kind="note"] {
+  /* "N new since you last looked.": a quiet line above the list; nothing at all when there is nothing new. */
+  .todo-update-news {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .todo-update-news:empty {
+    display: none;
+  }
+  /* A handover and the note written with it are one card, like a note. */
+  .todo-update[data-kind="note"],
+  .todo-update[data-merged="true"] {
     display: grid;
     gap: var(--sp-2);
     padding: var(--sp-8) var(--sp-12);

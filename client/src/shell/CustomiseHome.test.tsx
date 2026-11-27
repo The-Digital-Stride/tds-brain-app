@@ -89,6 +89,14 @@ describe('CustomiseHome', () => {
     expect(screen.getByRole('status').textContent).toBe('Recent images hidden from Home');
   });
 
+  it('has a Task updates switch, on by default, and hides it by its id', () => {
+    render(<CustomiseHome />);
+    expect((screen.getByRole('switch', { name: 'Task updates' }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('switch', { name: 'Task updates' }));
+    expect(h.setHomeItemShown).toHaveBeenCalledWith('task-updates', false);
+    expect(screen.getByRole('status').textContent).toBe('Task updates hidden from Home');
+  });
+
   it('leaves out Start my day, Ads approvals and Pinned skills when they are not available', () => {
     h.hasGm = false;
     h.hasAds = false;

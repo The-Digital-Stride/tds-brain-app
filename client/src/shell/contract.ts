@@ -616,7 +616,7 @@ export interface HomeLogic {
    * One plain sentence, e.g. "One to-do is overdue and one chat is waiting for you." Counts of
    * zero are left out; with nothing to say: "Nothing is waiting for you."
    */
-  summary: (counts: { overdue: number; dueToday: number; asking: number }) => string;
+  summary: (counts: { overdue: number; dueToday: number; asking: number; updates?: number }) => string;
 }
 
 // ── Chats drawer ───────────────────────────────────────────────────────────────────────────────

@@ -1434,6 +1434,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   todoPanelOpen: true,
   directWrites: false,
   todoSeen: {},
+  todoLooked: {},
   model: null,
   effort: null,
   levelMode: 'auto',

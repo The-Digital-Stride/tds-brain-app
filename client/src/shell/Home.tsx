@@ -30,6 +30,7 @@ import {
 } from '../state/home-pins.ts';
 import { ASYNC_RETRIES, ASYNC_RETRY_MS } from '../state/palette.ts';
 import { projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
+import { changedTodos } from '../state/todo-changed.ts';
 import { todoProjectKey } from '../state/todo-filter.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
@@ -44,7 +45,7 @@ import { StateNote } from './StateNote.tsx';
 import { useCardOrder } from './useCardOrder.tsx';
 import { useHomeShortcuts } from './useHomeShortcuts.ts';
 import { WhatsNewCard } from './WhatsNewCard.tsx';
-import { placeName, STATE_WORDS, starterSkills, whenWords } from './words.ts';
+import { changeLine, placeName, STATE_WORDS, starterSkills, updateWhen, whenWords } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
 /**
@@ -86,6 +87,7 @@ function whenDate(iso: string): string {
 const HOME_CARDS = [
   'meetings',
   'ads',
+  'task-updates',
   'todos',
   'recent-todos',
   'projects',
@@ -178,6 +180,9 @@ export function Home() {
     newChat,
     openChat,
     markTodosSeen,
+    markTodosLooked,
+    asked,
+    askedState,
     openPast,
     openView,
     libraryVersion,
@@ -199,6 +204,7 @@ export function Home() {
   // Pinned cards opened with "Show N more". Not saved: Home starts compact each visit.
   const [expanded, setExpanded] = useState<Record<PinnedCard, boolean>>({
     todos: false,
+    taskUpdates: false,
     projects: false,
     chats: false,
     files: false,
@@ -301,6 +307,7 @@ export function Home() {
   const cardList = [
     { id: 'meetings', title: 'Meetings', shown: isShown('meetings', homeHidden) },
     { id: 'ads', title: 'Ads approvals', shown: isShown('ads', homeHidden, adsShown) },
+    { id: 'task-updates', title: 'Task updates', shown: isShown('task-updates', homeHidden) },
     { id: 'todos', title: 'Pinned tasks', shown: isShown('todos', homeHidden) },
     { id: 'recent-todos', title: 'Recent tasks', shown: isShown('recent-todos', homeHidden) },
     { id: 'projects', title: 'Recent projects', shown: isShown('projects', homeHidden, projectsShown) },
@@ -324,12 +331,25 @@ export function Home() {
   const live = sessions?.live ?? [];
   const mine = todos?.mine ?? [];
   // Only a chosen project narrows Home; a client alone behaves as it always has.
-  const inProject = <T extends TodoItem>(t: T) => !project || todoProjectKey(t) === project;
+  const inProject = <T extends Pick<TodoItem, 'projectMatch'>>(t: T) =>
+    !project || todoProjectKey(t) === project;
   const recentProjectRows = recentProjects(projectList?.projects);
   const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []).filter(
     inProject,
   );
   const recentTodoRows = recentTodos(mine, today, boot.identity.slug).filter(inProject).slice(0, RECENT_MAX);
+  // Updates from teammates on tasks held or asked for, newest first. A chosen project narrows them like Recent tasks.
+  const changed = changedTodos(
+    { mine },
+    askedState === 'loaded' ? asked : null,
+    boot.identity,
+    boot.prefs,
+    new Date(),
+  );
+  const updateRows = [
+    ...changed.held.filter((r) => inProject(r.todo)).map((r) => ({ kind: 'held' as const, ...r })),
+    ...changed.asked.filter((r) => inProject(r.todo)).map((r) => ({ kind: 'asked' as const, ...r })),
+  ].sort((a, b) => Date.parse(b.change.at) - Date.parse(a.change.at));
   const recentChatRows = recentChats(live, sessions?.past ?? []).slice(0, RECENT_MAX);
   const favTodos = new Set(boot.prefs.favouriteTodos ?? []);
   const favChats = new Set(boot.prefs.favouriteChats ?? []);
@@ -393,6 +413,18 @@ export function Home() {
     // button inside the panel does that.
     openDrawer('todos');
     revealTodo(todo);
+  };
+
+  const openUpdated = (row: (typeof updateRows)[number]) => {
+    if (row.kind === 'held') {
+      markTodosLooked([{ kind: 'held', todo: row.todo }]);
+      openTodo(row.todo);
+      return;
+    }
+    // An asked task opens in the same panel as from the drawer, by its `asked:` key.
+    markTodosLooked([{ kind: 'asked', todo: row.todo }]);
+    openDrawer('todos');
+    dispatch({ type: 'open-todo', key: row.todo.key, mode: 'read' });
   };
 
   // Recent documents and Recent images: the same card, a different kind and wording.
@@ -514,6 +546,7 @@ export function Home() {
         overdue: mine.filter((t) => t.due !== null && isOverdue(t.due, today)).length,
         dueToday: mine.filter((t) => t.due === today).length,
         asking: live.filter((s) => attentionFor(s.state) === 'asking').length,
+        updates: updateRows.length,
       })
     : '';
 
@@ -698,6 +731,65 @@ export function Home() {
                           noun={['task', 'tasks']}
                           expanded={expanded.todos}
                           onToggle={() => toggleCard('todos')}
+                        />
+                      </>
+                    )}
+                  </section>
+                ),
+              },
+              {
+                id: 'task-updates',
+                node: (
+                  <section
+                    key="task-updates"
+                    className="card"
+                    aria-labelledby="home-task-updates"
+                    tabIndex={-1}
+                    {...order.cardProps('task-updates')}
+                  >
+                    <div className="card-head">
+                      {order.grip('task-updates')}
+                      <h2 id="home-task-updates">Task updates</h2>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        onClick={() => openDrawer('todos')}
+                      >
+                        All tasks
+                      </button>
+                    </div>
+                    {!todos ? (
+                      <StateNote kind="loading" />
+                    ) : updateRows.length === 0 ? (
+                      <StateNote kind="empty">Updates from teammates on your tasks show here.</StateNote>
+                    ) : (
+                      <>
+                        <ul className="drawer-list">
+                          {updateRows.slice(0, rowsShown('taskUpdates')).map((row) => {
+                            const line = changeLine(row.change, todos.team);
+                            const who =
+                              row.kind === 'asked' && row.todo.state === 'waiting'
+                                ? `With ${row.todo.assigneeName.split(/\s+/)[0] || row.todo.assigneeName} · `
+                                : '';
+                            return (
+                              <HomeRow key={row.todo.key} onOpen={() => openUpdated(row)} star={null}>
+                                <span className="line-text">
+                                  <span className="line-title">{row.todo.title}</span>
+                                  <span className="line-meta">
+                                    {`${who}${line.text} · ${updateWhen(line.at)}${line.more > 0 ? ` and ${line.more} more` : ''}`}
+                                  </span>
+                                </span>
+                              </HomeRow>
+                            );
+                          })}
+                        </ul>
+                        <MoreLink
+                          total={updateRows.length}
+                          noun={['task', 'tasks']}
+                          expanded={expanded.taskUpdates}
+                          onToggle={() => toggleCard('taskUpdates')}
                         />
                       </>
                     )}
@@ -1134,6 +1226,7 @@ export function Home() {
 
 type PinnedCard =
   | 'todos'
+  | 'taskUpdates'
   | 'projects'
   | 'chats'
   | 'files'

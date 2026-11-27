@@ -13,6 +13,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+const { askedStoreFields } = await import('./todo-test-kit.tsx');
 
 const { fakeShell, sent } = await import('./todo-test-kit.tsx');
 
@@ -63,6 +64,7 @@ const undoHeld = vi.fn();
 
 function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: HeldTodo[] = []) {
   store.current = {
+    ...askedStoreFields,
     changeTodos,
     openView,
     openSettings,

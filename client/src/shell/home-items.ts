@@ -21,6 +21,7 @@ export const HOME_ITEMS: readonly HomeItemDef[] = [
     kind: 'card',
     hint: "Shows only while an Ads change waits for you. You'll still find it in Ads Manager.",
   },
+  { id: 'task-updates', title: 'Task updates', kind: 'card' },
   { id: 'todos', title: 'Pinned tasks', kind: 'card' },
   { id: 'recent-todos', title: 'Recent tasks', kind: 'card' },
   {

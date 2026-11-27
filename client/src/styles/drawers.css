@@ -274,6 +274,20 @@
     width: 6px;
     height: 6px;
   }
+  /* Updated: the line under the title saying the newest change, level with the title. */
+  .todo-changed {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* The Asked tab's dot: the same red as a new row, after the label. */
+  .seg-dot {
+    width: 6px;
+    height: 6px;
+    margin-left: var(--sp-4);
+    vertical-align: 1px;
+    background: var(--danger);
+  }
   .todo-lock {
     display: inline-flex;
     vertical-align: -1px;

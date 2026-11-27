@@ -537,6 +537,37 @@ describe('asked of others: the timeline and canUpdate (task updates)', () => {
     expect(list.done[0]?.createdAt).toBeNull();
   });
 
+  it('marks handedBack only on a waiting row this person handed back (the current stamp, made by them)', async () => {
+    const stamp = (by: string, back: boolean) => [
+      'assignee: alex-sample',
+      'assigned_to: alex-sample',
+      'assigned_at: 2026-11-10T09:00:00+00:00',
+      `assigned_by: ${by}`,
+      ...(back ? ['assigned_back: true'] : []),
+    ];
+    const root = brainWith({
+      'todo/20261110-back.md': fm(stamp('sam-example', true), '# Back\n'),
+      'todo/20261110-plain.md': fm(stamp('sam-example', false), '# Plain\n'),
+      'todo/20261110-other.md': fm([...stamp('jo-owner', true), 'created_by: sam-example'], '# Other\n'),
+      'todo/done/20261110-done.md': fm(
+        [
+          ...stamp('sam-example', true),
+          'completed_by: alex-sample',
+          'completed_at: 2026-11-15T09:00:00+00:00',
+        ],
+        '# Done\n',
+      ),
+    });
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW);
+    const by = (id: string) => [...list.waiting, ...list.done].find((r) => r.id === id);
+    expect(by('20261110-back.md')?.handedBack).toBe(true);
+    expect(by('20261110-plain.md')).toBeDefined();
+    expect(by('20261110-plain.md')).not.toHaveProperty('handedBack');
+    expect(by('20261110-other.md') ?? {}).not.toHaveProperty('handedBack');
+    expect(by('20261110-done.md')).toBeDefined();
+    expect(by('20261110-done.md')).not.toHaveProperty('handedBack');
+  });
+
   it('sets canUpdate on a waiting row only when the caller says updates are on', async () => {
     const root = brainWith({
       'todo/20261110-waiting.md': asked(),

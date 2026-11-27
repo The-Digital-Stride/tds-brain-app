@@ -597,11 +597,7 @@ const SCENES: Record<string, Scene> = {
     await enableTodoChanges(page);
     await openDrawer(page, 'Tasks');
     // "New to you" stays in the picture: the page explains how the two sections differ.
-    await page
-      .locator('#drawer')
-      .getByText('Alex added an update', { exact: false })
-      .first()
-      .waitFor();
+    await page.locator('#drawer').getByText('Alex added an update', { exact: false }).first().waitFor();
     await sleep(300);
   },
 

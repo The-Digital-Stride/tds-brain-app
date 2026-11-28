@@ -5,15 +5,15 @@
  * the draft or anywhere under `<dataDir>/time/`, never logged and never sent to Toolbox, unless the person
  * uses it as the description (then it is an ordinary description edit).
  *
- * Only a real title counts: a custom title, or Claude Code's summary when it isn't just the first prompt
- * (equal to it, or either one a prefix of the other). A chat titled by its first prompt gives no hint.
+ * Only a real title counts: the custom or AI title. The Claude Agent SDK's `listSessions` puts the AI title in
+ * `customTitle` (custom, then AI), and builds `summary` as customTitle, aiTitle, lastPrompt, summary,
+ * firstPrompt: with no title, `summary` is the person's own prompt text. So `summary` and `firstPrompt` are
+ * never read, and a chat with no custom or AI title gives no hint. Prompt text is never shown.
  */
 
-/** What Claude Code's `listSessions` knows about a chat's title (server/engine/session-manager.ts `PastInfo`). */
+/** What a chat's title hint is made from: `listSessions`' `customTitle` (server/engine/session-manager.ts `PastInfo`). */
 export interface ChatTitleSource {
   customTitle?: string | undefined;
-  summary?: string | undefined;
-  firstPrompt?: string | undefined;
 }
 
 /** Chats Cortex still lists, by sdkSessionId (= the transcript's file name). */
@@ -51,23 +51,15 @@ export function cleanTitle(text: string): string {
     .trimEnd()}…`;
 }
 
-/** For comparing a summary with the first prompt: one line, no controls, no trailing ellipsis, lower case. */
-function comparable(text: string): string {
-  return oneLine(text)
-    .replace(/(…|\.\.\.)$/, '')
-    .trimEnd()
-    .toLowerCase();
+/** The hint for a chat: its custom or AI title, or null when it has none. */
+export function titleHint(source: ChatTitleSource | undefined): string | null {
+  return source?.customTitle ? cleanTitle(source.customTitle) || null : null;
 }
 
-/** The hint for a chat, or null when it has no real title. */
-export function titleHint(source: ChatTitleSource | undefined): string | null {
-  if (!source) return null;
-  const custom = source.customTitle ? cleanTitle(source.customTitle) : '';
-  if (custom) return custom;
-  const summary = source.summary ? comparable(source.summary) : '';
-  // Without the first prompt there is no telling a summary from it, so no hint.
-  const prompt = source.firstPrompt ? comparable(source.firstPrompt) : '';
-  if (!summary || !prompt) return null;
-  if (summary.startsWith(prompt) || prompt.startsWith(summary)) return null;
-  return cleanTitle(source.summary ?? '') || null;
+/**
+ * Whether a project's title hints are offered with no one-click use (decision 32.4). Fails closed: no card
+ * (or no projects index to find it in) counts as restricted.
+ */
+export function cardRestricted(card: { visibility?: string | undefined } | null | undefined): boolean {
+  return card ? card.visibility === 'restricted' : true;
 }

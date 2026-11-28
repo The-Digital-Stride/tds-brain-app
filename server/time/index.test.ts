@@ -367,10 +367,10 @@ describe('TimeService: chat titles stay in the view (decision 32)', () => {
     );
   });
 
-  it('a chat titled by its first prompt gives no hint; a chat no longer listed gives no link', async () => {
+  it('a chat with no custom or AI title gives no hint; a chat no longer listed gives no link', async () => {
     const prompt = service({
       fetch: fakeToolbox({}).fetchFn,
-      chatTitles: async () => new Map([['chat-1', { summary: 'look at r4r', firstPrompt: 'look at r4r' }]]),
+      chatTitles: async () => new Map([['chat-1', {}]]),
     });
     expect((await prompt.day(DAY)).entries[0]).toMatchObject({ titleHint: null, chatId: 'chat-1' });
     const gone = service({ fetch: fakeToolbox({}).fetchFn, chatTitles: async () => new Map() });

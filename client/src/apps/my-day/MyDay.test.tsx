@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
 const openSettings = vi.hoisted(() => vi.fn());
 const openPast = vi.hoisted(() => vi.fn());
 const dispatch = vi.hoisted(() => vi.fn());
+const shellModes = vi.hoisted(() => ({ panelOverlays: false }));
 vi.mock('../../api.ts', () => ({ api }));
 vi.mock('../../store.tsx', () => ({ useStore: () => ({ openSettings, openPast }) }));
 // A small stand-in for the shell's panel hold: typed work makes guardPanel ask instead of run.
@@ -28,7 +29,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
   useShell: () => ({
     state: { panelOpen: true, singleKeys: true },
     dispatch,
-    modes: { panelOverlays: false },
+    modes: { panelOverlays: shellModes.panelOverlays },
     guardPanel,
     panelHold: { dirty: hold.dirty, asking: hold.asking },
   }),
@@ -57,6 +58,7 @@ beforeEach(() => {
     if (a.type === 'set-panel-dirty') hold.dirty = a.dirty === true;
   });
   hold.dirty = false;
+  shellModes.panelOverlays = false;
   hold.asking = false;
   hold.held = null;
   guardPanel.mockReset();
@@ -155,7 +157,7 @@ describe('the day', () => {
     render(screenUi());
     const placeholder = await screen.findByText('Add a description');
     expect(placeholder.className).toBe('myday-placeholder');
-    expect(screen.getByText('1 of 1 need a description or work item.')).toBeTruthy();
+    expect(screen.getByText('1 of 1 need a description or work item')).toBeTruthy();
     expect(screen.queryByText('No work item')).toBeNull();
   });
 
@@ -608,6 +610,46 @@ describe('chat titles and the chat link (decisions 32 and A)', () => {
   const CHAT = '5d0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b';
   const fromChat = (over: Parameters<typeof entry>[0] = {}) =>
     entry({ chatId: CHAT, titleHint: 'Homepage audit', hintAcceptable: true, ...over });
+
+  it("keeps a chat row's meta short: the place name only, and Billable only when it is", async () => {
+    const unbilled = fromChat({
+      id: 'b0000000-0000-4000-8000-000000000002',
+      values: {
+        ...entry().values,
+        startAt: '2026-11-27T13:00:00+00:00',
+        description: 'Call',
+        billable: false,
+      },
+      placeLabel: null,
+      evidence: 'Cortex chat',
+    });
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat(), unbilled] }));
+    await shown();
+    const [first, second] = screen.getAllByRole('listitem') as [HTMLElement, HTMLElement];
+    const meta = (row: HTMLElement) => row.querySelector('.line-meta')?.textContent;
+    expect(meta(first)).toBe('Acme retainer · Billable · Acme website');
+    // No place, and the chat button already says it came from a chat.
+    expect(meta(second)).toBe('Acme retainer');
+    expect(screen.queryByText('Not billable')).toBeNull();
+  });
+
+  it('closes an empty docked panel when the window narrows so it would overlay, never one being edited', async () => {
+    const view = render(screenUi());
+    await screen.findByText('Planning the launch');
+    dispatch.mockClear();
+    shellModes.panelOverlays = true;
+    view.rerender(screenUi());
+    expect(dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: false });
+
+    shellModes.panelOverlays = false;
+    view.rerender(screenUi());
+    fireEvent.click(screen.getByText('Planning the launch'));
+    await screen.findByRole('form', { name: 'Edit entry' });
+    dispatch.mockClear();
+    shellModes.panelOverlays = true;
+    view.rerender(screenUi());
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'set-panel', open: false });
+  });
 
   it('opens the chat in the drawer from a button beside the row, never writing a prompt', async () => {
     api.timeDay.mockResolvedValue(day({ entries: [fromChat()] }));

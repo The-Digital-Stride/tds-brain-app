@@ -45,7 +45,11 @@ export function EntryRow({
   const itemWords = entry.workItemClosed
     ? 'Work item no longer listed'
     : (name ?? (v.workItemId ? 'Work item not loaded' : null));
-  const meta = [itemWords, v.billable ? 'Billable' : 'Not billable', entry.evidence].filter(
+  // Only "Billable" is said: not billable is the quiet default. Where a chat row came from: its place's name,
+  // or "Cortex chat" only when there's no chat button to say it.
+  const fromChat = entry.evidence !== null;
+  const whereWords = fromChat ? (entry.placeLabel ?? (chatId ? null : entry.evidence)) : null;
+  const meta = [itemWords, v.billable ? 'Billable' : null, whereWords].filter(
     (m): m is string => m !== null && m !== '',
   );
   // "Unassigned" says what an empty work item already says; the source says what the evidence line says.

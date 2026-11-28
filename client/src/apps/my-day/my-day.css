@@ -43,7 +43,12 @@
   .myday-summary {
     display: flex;
     align-items: center;
-    gap: var(--sp-4) var(--sp-12);
+    gap: var(--sp-4) var(--sp-6);
+  }
+  /* Its parts are separated by " · ", as a row's meta line is. */
+  .myday-summary .todo-sep {
+    font-size: var(--fs-control);
+    color: var(--iron);
   }
   .myday-sum {
     font-size: var(--fs-control);
@@ -146,7 +151,7 @@
   /* The chat's own title, a quiet second line while the entry has no description (plan decision 32). */
   .myday-hint {
     display: block;
-    font-size: var(--fs-control);
+    font-size: var(--fs-small);
     color: var(--iron);
     overflow-wrap: anywhere;
   }
@@ -248,7 +253,8 @@
     font-variant-numeric: tabular-nums;
     color: var(--iron);
   }
-  /* The chat title under Description, with "Use as description" beside it. */
+  /* The chat title under Description, with "Use as description" beside it when both fit, beneath it when not.
+     The title never grows, so a short one leaves room for the button on its line. */
   .myday-title-hint {
     display: flex;
     flex-wrap: wrap;
@@ -256,7 +262,7 @@
     gap: var(--sp-4) var(--sp-8);
   }
   .myday-title-hint .hint {
-    flex: 1 1 12rem;
+    flex: 0 1 auto;
     min-width: 0;
     margin: 0;
     overflow-wrap: anywhere;

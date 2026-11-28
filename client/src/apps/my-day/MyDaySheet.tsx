@@ -108,6 +108,16 @@ export function MyDaySheet() {
     return () => clearInterval(timer);
   }, [pending]);
 
+  // The window narrowed so the panel would float over the day: with nothing in it, it closes rather than
+  // turn into an empty modal. Only on the change, so opening the panel deliberately still works.
+  const overlays = modes.panelOverlays;
+  const editing = s.editing;
+  const panelOpen = state.panelOpen;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the panel starts to overlay.
+  useEffect(() => {
+    if (overlays && editing === null && panelOpen) dispatch({ type: 'set-panel', open: false });
+  }, [overlays]);
+
   const lines = useMemo(() => (s.day ? timeline(s.day) : []), [s.day]);
   const status = s.status;
   const date = s.date;
@@ -238,13 +248,23 @@ export function MyDaySheet() {
                 {STATUS_WORDS[day.status]}
               </span>
             )}
+            <span className="todo-sep" aria-hidden="true">
+              {' · '}
+            </span>
             <span className="myday-sum">
               Day total{' '}
               <strong>
                 <Duration minutes={day.totalMinutes} />
               </strong>
             </span>
-            {needing > 0 ? <span className="myday-sum">{needWords(needing, day.entries.length)}</span> : null}
+            {needing > 0 ? (
+              <>
+                <span className="todo-sep" aria-hidden="true">
+                  {' · '}
+                </span>
+                <span className="myday-sum">{needWords(needing, day.entries.length)}</span>
+              </>
+            ) : null}
           </div>
         ) : null}
         <div className="myday-actions">

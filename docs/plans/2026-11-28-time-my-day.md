@@ -153,7 +153,8 @@ Six blocking items, all folded in. The contract already carries them.
     Plain: a long Claude run while you're away shows as a gap, not as hours you'd have to trim.
 18. **(B2) Refresh matches by chat and overlap, not by key.** `mergeCapture` pairs a new block with an entry of the
     same chat whose captured interval overlaps it. A touched or deleted entry freezes its interval and new blocks
-    of that chat are cut around it. `captureKey` is informational.
+    of that chat are cut around it (since decision 32, only a time edit or a delete freezes; touched entries
+    are paired first). `captureKey` is informational.
     Plain: refreshing never double-counts time you've already corrected.
 19. **(B3) A failed send is finished with the exact same body.** The draft keeps `pending {submissionId, body}`.
     Confirm resends it unchanged first; edits made since then show as "Changed since confirmed" and go in the
@@ -204,17 +205,22 @@ Six blocking items, all folded in. The contract already carries them.
     `DayEntryView.titleHint` (`server/time/chat-titles.ts`). It never goes into `DraftEntry`, anything under
     `<dataDir>/time/`, a log line or a submission body; the transcript reader is unchanged. Titles come through
     `TimeServiceDeps.chatTitles`, wired in `server/index.ts` from Claude Code's sessions list (the same
-    `listSessions` the session manager's `listPast` reads). Real titles only: a custom title, or the summary when
-    it isn't the first prompt (equal to it, or either one a prefix of the other, gives no hint; so does a missing
-    first prompt). One line, control and bidi characters stripped, cut to 80 characters with an ellipsis.
+    `listSessions` the session manager's `listPast` reads). Custom or AI title only: the SDK puts the AI title in
+    `customTitle`, and its `summary` falls back to the latest or first prompt, so only `customTitle` is passed
+    and prompt text is never shown (review, 2026-11-28). One line, control and bidi characters stripped, cut to 80 characters with an ellipsis.
     "Use as description" in the edit panel saves the hint as an ordinary, logged description edit, through the
     panel's unsaved-work hold; there is no "use all". For a chat in a restricted project (card
     `visibility: restricted`, through `TimeServiceDeps.projectRestricted`; a failed lookup counts as restricted)
-    the hint shows with no button (`hintAcceptable: false`).
+    the hint shows with no button (`hintAcceptable: false`); so does a project key with no card, or no projects
+    index (fails closed).
     With it, `mergeCapture`: only a `startAt` or `minutes` edit (or a delete) freezes an entry's times. An entry
     with only description, work item or billable edits still follows capture for its times and keeps the
     person's values (a picked work item keeps its billable flag and certainty). `captured` is always what capture
-    proposed, and a times update from capture records no change.
+    proposed, and a times update from capture records no change. Pairing puts entries the person touched (any
+    edit) or Toolbox holds first, then the largest overlap, so a description stays on its time when blocks join.
+    Such an entry left without a piece keeps its own times: the chat's pieces are cut around it and paired again
+    until stable. An untouched entry Toolbox never held whose minutes other entries of its chat already count
+    is removed with its changes; otherwise it's kept and marked missing. Day totals always equal real minutes.
     Plain: Cortex can show you the chat's name to save typing, but it only goes to Toolbox if you choose it.
 A. **Open the chat an entry came from.** `DayEntryView.chatId` is set while the chat is still in Cortex's
     sessions list, otherwise null; it is never sent to Toolbox. Each such row has a trailing 28px `icon-btn` with

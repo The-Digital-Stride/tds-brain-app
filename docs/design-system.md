@@ -288,9 +288,10 @@ named here or it isn't one.
 10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
 11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
     {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron. One named
-    exception: the Ads proposal stepper sits in the panel's fixed band (`.drawer-split` > `.drawer-tools`) above
-    the scrolling proposal, because the dock header has no slot for it. It uses the same icons and has no P and
-    N keys. Its "Discard your changes?" strip sticks to the top of the proposal's scroller, as a project form's does.
+    exceptions, both because the dock header has no slot for previous / next: the Ads proposal stepper sits in
+    the panel's fixed band (`.drawer-split` > `.drawer-tools`) above the scrolling proposal, uses the same icons
+    and has no P and N keys; My day's edit panel steps between entries with buttons in its own form head
+    (`.myday-step`), with P and N while focus is not in a field. Its "Discard your changes?" strip sticks to the top of the proposal's scroller, as a project form's does.
 12. **Busy** buttons are `aria-disabled`, never `disabled`, so focus never drops to the page. A control with
     nothing to act on yet may be `disabled` (Send while the box is empty); a busy control never is.
 
@@ -506,6 +507,7 @@ another card, no page padding), `bin={false}`, `takeOut` (a remove action in the
 |---|---|
 | `client/src/apps/images` | Grid or list. Tiles: padding 8px, radius 10, 2px apart, picture box 3:2 with a hairline edge, the picture contained at its own proportions. No picture (or one that fails to load): the standard tile, the `image` line icon centred in the same box. Meta: the dimensions, else the size. |
 | `client/src/apps/documents` | Rows that read like a table: a 32px flat white box with a line icon for the file's kind, type badge (see Row meta lines), title and meta ("840 KB"; "840 KB, from claude.ai" for a copy), then the date changed (80px, right-aligned, 12px; gone under 480px of sheet, it is in the panel). Grid or list (list by default). Tiles as in Images, but the picture box is 3:4. No ticks: one document at a time, through its row or the panel (Ian, 2026-11-13: the panel already does what the selection bar did). On a Mac, Quick Look draws the first page of PDFs, Word, Excel and PowerPoint; other files (web pages too: Quick Look would load local files into them), and every file elsewhere, show their format icon in the same box. In the panel: the preview (square when there is a picture, 3:2 with the icon when not), then the title and file name. |
+| `client/src/apps/my-day` | One day of time, owners and scouts only. Header: previous / next day, the date, then a summary whose parts are split by `.todo-sep` " · " (status, "Day total", "N of M need a description or work item"). The status is plain text on today and a `warn` badge on a past day never confirmed. Rows are `.line` buttons: the time and duration, the description (or a placeholder), then one meta line (work item, "Billable" only when it is, the chat's place name). An entry from a chat Cortex still lists has a trailing 28px `icon-btn` with the chat icon, a sibling of the row's button, never inside it ("Open chat: <title>"); with it, no "Cortex chat" words. While the description is empty, the chat's own title is a quiet line under the placeholder (12px, `--iron`). Most rows read in two lines. From 1100px of container width the totals by work item sit beside the entries; narrower, beneath them. An empty edit panel closes when the window narrows so it would overlay; one being edited stays. |
 
 In both panels the `.kv` row for a card is labelled "Group" (it is a card name, not always a folder).
 

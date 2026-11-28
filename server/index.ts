@@ -60,6 +60,7 @@ import { createContextReadingStore } from './store/context-readings.ts';
 import { createKitShadowStore } from './store/kit-shadow.ts';
 import { createPageCopies, type PageCopyStore } from './store/page-copies.ts';
 import { createTokenSavingsStore } from './store/token-savings.ts';
+import { cardRestricted } from './time/chat-titles.ts';
 import { createTimeService } from './time/index.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
@@ -243,16 +244,11 @@ function buildBrainSide(path: string | null) {
           new Map(
             (await engine.listSessions({ dir: path }))
               .filter((p) => typeof p.sessionId === 'string')
-              .map((p) => [
-                p.sessionId,
-                { customTitle: p.customTitle, summary: p.summary, firstPrompt: p.firstPrompt },
-              ]),
+              // Only the custom or AI title: `summary` and `firstPrompt` can be prompt text (chat-titles.ts).
+              .map((p) => [p.sessionId, { customTitle: p.customTitle }]),
           ),
-        projectRestricted: async (key) => {
-          const index = await brain.projectsIndex?.();
-          // No projects index: nothing can be known, so count it as restricted.
-          return index ? index.byKey(key)?.visibility === 'restricted' : true;
-        },
+        // No projects index, or no card for the key: nothing can be known, so it counts as restricted.
+        projectRestricted: async (key) => cardRestricted((await brain.projectsIndex?.())?.byKey(key)),
         clientNames: async () => new Map((await brain.clients()).map((c) => [c.slug, c.name])),
         openBrowser: (url) => openLink(url),
         log,

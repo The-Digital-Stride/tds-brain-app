@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatPlace, DayDraft, DraftEntry } from '../../shared/time-contract.ts';
 import { editEntry } from './changes.ts';
 import { emptyDraft } from './day-store.ts';
+import { dayView } from './day-view.ts';
 import type { Assignment } from './links.ts';
 import { type CaptureBlock, canAutoRefresh, mergeCapture } from './merge-capture.ts';
 
@@ -380,5 +381,52 @@ describe('mergeCapture: only time edits freeze an entry (decision 32.5)', () => 
     const out = mergeCapture(d, [], assignFn, NOW);
     expect(out.entries.map(span)).toEqual(['c1 09:00 30 missing']);
     expect(out.entries[0]?.values.description).toBe('Homepage');
+  });
+});
+
+describe('mergeCapture: blocks that join never count time twice (review, 2026-11-28)', () => {
+  const VIEW = { connected: true, workItemsKnown: false };
+  const two = () =>
+    mergeCapture(fresh(), [block('c1', '09:00', '09:30'), block('c1', '09:45', '10:00')], assignFn, NOW, {
+      newId,
+    });
+  const describeEntry = (d: DayDraft, index: number, description: string): DayDraft => ({
+    ...d,
+    entries: d.entries.map((e, i) =>
+      i === index ? { ...e, edited: ['description'], values: { ...e.values, description } } : e,
+    ),
+  });
+  const total = (d: DayDraft) => dayView(d, [], () => null, NOW, VIEW).totalMinutes;
+  const live = (d: DayDraft) => d.entries.filter((e) => !e.deleted);
+
+  it('a described entry keeps its description on the joined time, and the day adds up to the real minutes', () => {
+    const d = describeEntry(two(), 1, 'Homepage copy');
+    const [, e2] = d.entries as [DraftEntry, DraftEntry];
+    const out = mergeCapture(d, [block('c1', '09:00', '10:00')], assignFn, NOW, { newId });
+    expect(total(out)).toBe(60);
+    expect(live(out).map(span)).toEqual(['c1 09:00 60']);
+    expect(out.entries.find((e) => e.id === e2.id)?.values.description).toBe('Homepage copy');
+  });
+
+  it('two untouched entries of a joined block count it once', () => {
+    const out = mergeCapture(two(), [block('c1', '09:00', '10:00')], assignFn, NOW, { newId });
+    expect(total(out)).toBe(60);
+    expect(live(out).map(span)).toEqual(['c1 09:00 60']);
+  });
+
+  it('two described entries of a joined block are both kept, with the time shared out once', () => {
+    const d = describeEntry(describeEntry(two(), 0, 'Audit'), 1, 'Homepage copy');
+    const out = mergeCapture(d, [block('c1', '09:00', '10:00')], assignFn, NOW, { newId });
+    expect(total(out)).toBe(60);
+    expect(
+      live(out)
+        .map((e) => e.values.description)
+        .sort(),
+    ).toEqual(['Audit', 'Homepage copy']);
+    expect(live(out).some((e) => e.missing)).toBe(false);
+    // And a second refresh is stable.
+    const again = mergeCapture(out, [block('c1', '09:00', '10:00')], assignFn, NOW, { newId });
+    expect(total(again)).toBe(60);
+    expect(again.entries).toEqual(out.entries);
   });
 });

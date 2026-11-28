@@ -241,7 +241,7 @@ describe('dayView: chat titles and the chat link (decisions 32 and A)', () => {
     });
   const chats = new Map([
     ['c-real', { customTitle: 'Homepage audit' }],
-    ['c-prompt', { summary: 'fix the footer', firstPrompt: 'fix the footer' }],
+    ['c-prompt', {}],
   ]);
 
   it('joins the title by captured chat id, and the id only while Cortex still lists the chat', () => {
@@ -258,7 +258,7 @@ describe('dayView: chat titles and the chat link (decisions 32 and A)', () => {
       hintAcceptable: true,
       chatId: 'c-real',
     });
-    // Titled only by its first prompt: no hint, but it can still be opened.
+    // No custom or AI title: no hint, but it can still be opened.
     expect(byId.get(id(2))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: 'c-prompt' });
     expect(byId.get(id(3))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: null });
     expect(byId.get(id(4))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: null });

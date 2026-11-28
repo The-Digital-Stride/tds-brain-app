@@ -8,10 +8,13 @@
  *   snapshot is always what capture proposed, and a times update from capture records no change (decision 32).
  * - An entry with a time edit, or a deleted one, is frozen: new blocks of its chat are cut around its captured
  *   interval (and around the person's own times), so corrected time is never counted twice or brought back.
+ * - Entries the person has touched (any edit) or Toolbox holds are paired with capture first, so their
+ *   description stays on the time. One left without a piece holds its own time: its chat's blocks are cut
+ *   around it and paired again, until stable, so blocks that join never count the same minutes twice.
  * - Blocks left over become new `cortex-chat` entries (a create change while the day has never been confirmed).
  * - An entry following capture that capture no longer finds is kept and marked `missing`, never removed
- *   silently, except that a chat since marked personal loses its untouched (never edited) entries Toolbox has
- *   never held.
+ *   silently, except an untouched (never edited) entry Toolbox has never held when its chat was marked
+ *   personal, or when other entries of its chat already count all of its time (blocks that joined).
  * The caller decides when to refresh: a confirmed day is never refreshed automatically (`canAutoRefresh`).
  */
 import { randomUUID } from 'node:crypto';
@@ -81,6 +84,25 @@ function cut(span: Span, cuts: readonly Span[]): Span[] {
   }
   return pieces;
 }
+
+const capturedSpan = (e: DraftEntry): Span => [
+  toMin(e.captured?.startAt ?? ''),
+  toMin(e.captured?.endAt ?? ''),
+];
+const blockSpan = (b: ChatBlock): Span => [toMin(b.startAt), toMin(b.endAt)];
+
+/** The minutes an entry counts in the day: its own start and minutes. */
+function valueSpans(e: DraftEntry): Span[] {
+  if (!e.values.startAt) return [];
+  const s = toMin(e.values.startAt);
+  return [[s, s + e.values.minutes]];
+}
+
+/**
+ * Never dropped by a refresh: the person touched it (any edit), or Toolbox holds it. Such an entry is paired
+ * first, and one left without a piece of capture holds its own time.
+ */
+const keeps = (e: DraftEntry) => e.edited.length > 0 || e.confirmed !== null || e.fromToolbox;
 
 const overlap = (a: Span, b: Span) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
 
@@ -194,6 +216,8 @@ export function mergeCapture(
 
   const updated = new Map<string, DraftEntry>();
   const created: CaptureBlock[] = [];
+  // Untouched entries whose time other entries of their chat now count (blocks that joined).
+  const gone = new Set<string>();
 
   // Live entries capture didn't make (added by the person, or from Toolbox after a lost draft) already
   // account for their time: chat time is cut around them so it is never counted twice (review, 2026-11-28).
@@ -201,42 +225,78 @@ export function mergeCapture(
 
   for (const chatId of [...chatIds].sort()) {
     const mine = entries.filter((e) => e.captured?.chatId === chatId);
-    const frozen = [...mine.filter((e) => !followsCapture(e)).flatMap(frozenSpans), ...uncaptured];
-    const pieces = dayBlocks
-      .filter((b) => b.chatId === chatId)
-      .flatMap((b) =>
+    const chatBlocks = dayBlocks.filter((b) => b.chatId === chatId);
+    const fixedFrozen = [...mine.filter((e) => !followsCapture(e)).flatMap(frozenSpans), ...uncaptured];
+
+    // Pair entries that follow capture with pieces, one to one: an entry the person has touched (or Toolbox
+    // holds) first, so their description stays on the time, then largest overlap. Such an entry left without a
+    // piece holds its own time instead: the chat's pieces are cut around it and paired again, until stable.
+    const held = new Set<string>();
+    let pieces: CaptureBlock[] = [];
+    let usedPieces = new Set<number>();
+    let matched = new Map<string, CaptureBlock>();
+    for (let round = 0; round <= mine.length; round++) {
+      const frozen = [...fixedFrozen, ...mine.filter((e) => held.has(e.id)).flatMap(frozenSpans)];
+      pieces = chatBlocks.flatMap((b) =>
         cut([toMin(b.startAt), toMin(b.endAt)], frozen)
           .filter(([s, e]) => e - s >= CHAT_TIME.minBlockMinutes)
           .map((span) => piece(b, span)),
       );
+      const pairs: Array<{ entry: DraftEntry; p: number; size: number; keep: number }> = [];
+      for (const entry of mine) {
+        if (!followsCapture(entry) || held.has(entry.id)) continue;
+        const span = capturedSpan(entry);
+        pieces.forEach((pc, p) => {
+          const size = overlap(span, [toMin(pc.startAt), toMin(pc.endAt)]);
+          if (size > 0) pairs.push({ entry, p, size, keep: keeps(entry) ? 1 : 0 });
+        });
+      }
+      pairs.sort((a, b) => b.keep - a.keep || b.size - a.size || a.p - b.p);
+      usedPieces = new Set<number>();
+      matched = new Map<string, CaptureBlock>();
+      for (const { entry, p } of pairs) {
+        if (usedPieces.has(p) || matched.has(entry.id)) continue;
+        usedPieces.add(p);
+        matched.set(entry.id, pieces[p] as CaptureBlock);
+      }
+      const losers = mine.filter(
+        (e) => followsCapture(e) && keeps(e) && !held.has(e.id) && !matched.has(e.id),
+      );
+      if (losers.length === 0) break;
+      for (const e of losers) held.add(e.id);
+    }
 
-    // Pair entries that follow capture with pieces, largest overlap first, one to one.
-    const live = mine.filter(followsCapture);
-    const pairs: Array<{ entry: DraftEntry; p: number; size: number }> = [];
-    for (const entry of live) {
-      const span: Span = [toMin(entry.captured?.startAt ?? ''), toMin(entry.captured?.endAt ?? '')];
-      pieces.forEach((pc, p) => {
-        const size = overlap(span, [toMin(pc.startAt), toMin(pc.endAt)]);
-        if (size > 0) pairs.push({ entry, p, size });
-      });
+    const counted: Span[] = [];
+    for (const entry of mine) {
+      const pc = matched.get(entry.id);
+      if (pc) {
+        updated.set(entry.id, fromBlock(entry, pc, assignFn));
+        counted.push([toMin(pc.startAt), toMin(pc.endAt)]);
+      } else if (held.has(entry.id)) {
+        // Still in the chat's time, so not missing: it just keeps its own times.
+        const missing = !chatBlocks.some((b) => overlap(capturedSpan(entry), blockSpan(b)) > 0);
+        if (entry.missing !== missing) updated.set(entry.id, { ...entry, missing });
+        counted.push(...valueSpans(entry));
+      } else if (!entry.deleted && !followsCapture(entry)) {
+        counted.push(...valueSpans(entry));
+      }
     }
-    pairs.sort((a, b) => b.size - a.size || a.p - b.p);
-    const usedPieces = new Set<number>();
-    const matched = new Set<string>();
-    for (const { entry, p } of pairs) {
-      if (usedPieces.has(p) || matched.has(entry.id)) continue;
-      usedPieces.add(p);
-      matched.add(entry.id);
-      updated.set(entry.id, fromBlock(entry, pieces[p] as CaptureBlock, assignFn));
-    }
-    for (const entry of live) {
-      if (!matched.has(entry.id) && !entry.missing) updated.set(entry.id, { ...entry, missing: true });
+    for (const entry of mine) {
+      if (!followsCapture(entry) || matched.has(entry.id) || held.has(entry.id)) continue;
+      // Untouched and never in Toolbox: when other entries of its chat already count all its time, it goes.
+      const own = valueSpans(entry);
+      if (own.length > 0 && own.every((sp) => cut(sp, counted).length === 0)) gone.add(entry.id);
+      else if (!entry.missing) updated.set(entry.id, { ...entry, missing: true });
     }
     pieces.forEach((pc, p) => {
       if (!usedPieces.has(p)) created.push(pc);
     });
   }
 
+  if (gone.size > 0) {
+    entries = entries.filter((e) => !gone.has(e.id));
+    changes = changes.filter((c) => !gone.has(c.entryId));
+  }
   entries = entries.map((e) => updated.get(e.id) ?? e);
   const base: DayDraft = { ...draft, entries, changes };
   created.sort((a, b) => a.startAt.localeCompare(b.startAt) || a.chatId.localeCompare(b.chatId));

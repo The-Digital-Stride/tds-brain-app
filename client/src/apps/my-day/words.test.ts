@@ -12,6 +12,7 @@ import {
   hoursWords,
   londonClock,
   londonIso,
+  needWords,
   nextNeedingAttention,
   openChatLabel,
   sourceWords,
@@ -112,5 +113,11 @@ describe('chat title words (decisions 32 and A)', () => {
     expect(openChatLabel('Homepage audit')).toBe('Open chat: Homepage audit');
     expect(openChatLabel(null)).toBe('Open the chat this came from');
     expect(chatTitleWords('Homepage audit')).toBe('Chat title: Homepage audit');
+  });
+});
+
+describe('needWords', () => {
+  it('is one part of the header summary, with no full stop', () => {
+    expect(needWords(2, 5)).toBe('2 of 5 need a description or work item');
   });
 });

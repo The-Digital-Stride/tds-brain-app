@@ -1,38 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { cleanTitle, TITLE_HINT_CHARS, titleHint } from './chat-titles.ts';
+import {
+  type ChatTitleSource,
+  cardRestricted,
+  cleanTitle,
+  TITLE_HINT_CHARS,
+  titleHint,
+} from './chat-titles.ts';
 
 describe('titleHint (decision 32)', () => {
-  it('uses a custom title', () => {
-    expect(titleHint({ customTitle: 'Homepage audit', summary: 'x', firstPrompt: 'y' })).toBe(
-      'Homepage audit',
-    );
+  it('uses the custom or AI title (the SDK puts the AI title in customTitle)', () => {
+    expect(titleHint({ customTitle: 'Homepage audit' })).toBe('Homepage audit');
   });
 
-  it("uses Claude Code's summary when it isn't the first prompt", () => {
-    expect(
-      titleHint({
-        summary: 'Rubber4Roofs keyword research',
-        firstPrompt: 'can you look at the r4r keywords',
-      }),
-    ).toBe('Rubber4Roofs keyword research');
+  it("never uses the sessions list's summary: it can be the person's latest prompt", () => {
+    // listSessions builds `summary` as customTitle, aiTitle, lastPrompt, summary, firstPrompt: with no
+    // title it is prompt text. Passed through anyway (a wider object), it must give no hint.
+    const latestPrompt: ChatTitleSource & { summary: string; firstPrompt: string } = {
+      summary: 'now check the r4r ads too',
+      firstPrompt: 'can you look at the r4r keywords',
+    };
+    expect(titleHint(latestPrompt)).toBeNull();
+    const titled = { customTitle: 'Rubber4Roofs keyword research', summary: 'Rubber4Roofs keyword research' };
+    expect(titleHint(titled)).toBe('Rubber4Roofs keyword research');
   });
 
-  it('gives null when the summary is only the first prompt (equal, or either a prefix of the other)', () => {
-    const firstPrompt = 'Can you look at the  Rubber4Roofs keywords for me please';
-    expect(titleHint({ summary: firstPrompt, firstPrompt })).toBeNull();
-    expect(titleHint({ summary: 'Can you look at the Rubber4Roofs…', firstPrompt })).toBeNull();
-    expect(titleHint({ summary: `${firstPrompt} and the ads too`, firstPrompt })).toBeNull();
-    expect(
-      titleHint({ summary: 'can you look at the rubber4roofs keywords for me please', firstPrompt }),
-    ).toBeNull();
-  });
-
-  it('gives null with no title at all, or a summary with no first prompt to tell them apart', () => {
+  it('gives null with no title at all', () => {
     expect(titleHint(undefined)).toBeNull();
     expect(titleHint({})).toBeNull();
-    expect(titleHint({ firstPrompt: 'hello' })).toBeNull();
-    expect(titleHint({ summary: 'A summary' })).toBeNull();
-    expect(titleHint({ customTitle: '  \n ', summary: '', firstPrompt: 'hi' })).toBeNull();
+    expect(titleHint({ customTitle: '  \n ' })).toBeNull();
+  });
+
+  it('a project with no card counts as restricted (fails closed)', () => {
+    expect(cardRestricted(null)).toBe(true);
+    expect(cardRestricted(undefined)).toBe(true);
+    expect(cardRestricted({ visibility: 'restricted' })).toBe(true);
+    expect(cardRestricted({ visibility: 'everyone' })).toBe(false);
+    expect(cardRestricted({})).toBe(false);
   });
 
   it('strips control characters and keeps one line', () => {

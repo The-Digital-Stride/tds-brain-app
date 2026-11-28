@@ -214,7 +214,7 @@ export function emptyDayWords(confirmed: boolean): string {
     : 'Nothing recorded for this day yet. Add an entry, or refresh to read your chats again.';
 }
 
-/** "2 of 5 need a description or work item." */
+/** "2 of 5 need a description or work item" (a part of the header summary, so no full stop). */
 export function needWords(need: number, total: number): string {
-  return `${need} of ${total} need a description or work item.`;
+  return `${need} of ${total} need a description or work item`;
 }

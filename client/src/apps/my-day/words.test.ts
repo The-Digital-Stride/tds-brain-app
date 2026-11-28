@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { day, entry } from './testing.ts';
 import {
   addDays,
   certaintyWords,
+  chatTitleWords,
   dateWords,
+  dayTitle,
+  durationWords,
+  emptyDayWords,
   endClock,
   hoursWords,
   londonClock,
   londonIso,
+  nextNeedingAttention,
+  openChatLabel,
   sourceWords,
 } from './words.ts';
 
@@ -51,6 +58,44 @@ describe('dates', () => {
   });
 });
 
+describe('spoken words', () => {
+  it('says durations in words', () => {
+    expect(durationWords(75)).toBe('1 hour 15 minutes');
+    expect(durationWords(60)).toBe('1 hour');
+    expect(durationWords(45)).toBe('45 minutes');
+    expect(durationWords(1)).toBe('1 minute');
+    expect(durationWords(0)).toBe('0 minutes');
+  });
+
+  it('titles today and drops this year', () => {
+    expect(dayTitle('2026-11-28', '2026-11-28')).toBe('Today, Saturday 28 November');
+    expect(dayTitle('2026-11-27', '2026-11-28')).toBe('Friday 27 November');
+    expect(dayTitle('2025-12-31', '2026-11-28')).toBe('Wednesday 31 December 2025');
+  });
+
+  it('mentions Refresh only on a day that has it', () => {
+    expect(emptyDayWords(false)).toMatch(/refresh/i);
+    expect(emptyDayWords(true)).not.toMatch(/refresh/i);
+  });
+
+  it('finds the next entry needing attention, wrapping round, never the one just saved', () => {
+    const a = entry({ id: 'a', values: { ...entry().values, startAt: '2026-11-27T09:00:00+00:00' } });
+    const b = entry({
+      id: 'b',
+      values: { ...entry().values, startAt: '2026-11-27T10:00:00+00:00', description: '' },
+    });
+    const c = entry({
+      id: 'c',
+      values: { ...entry().values, startAt: '2026-11-27T11:00:00+00:00', workItemId: null },
+    });
+    const d = day({ entries: [c, a, b] });
+    expect(nextNeedingAttention(d, 'a')).toBe('b');
+    expect(nextNeedingAttention(d, 'b')).toBe('c');
+    expect(nextNeedingAttention(d, 'c')).toBe('b');
+    expect(nextNeedingAttention(day({ entries: [a] }), 'a')).toBeNull();
+  });
+});
+
 describe('chips', () => {
   it('words the source and certainty', () => {
     expect(sourceWords('cortex-chat', false)).toBe('From chat');
@@ -59,5 +104,13 @@ describe('chips', () => {
     expect(sourceWords('import-tracket', false)).toBe('From Toolbox');
     expect(certaintyWords('suggested')).toBe('Check');
     expect(certaintyWords('manual')).toBeNull();
+  });
+});
+
+describe('chat title words (decisions 32 and A)', () => {
+  it('names the chat when it has a title, and says where it came from when not', () => {
+    expect(openChatLabel('Homepage audit')).toBe('Open chat: Homepage audit');
+    expect(openChatLabel(null)).toBe('Open the chat this came from');
+    expect(chatTitleWords('Homepage audit')).toBe('Chat title: Homepage audit');
   });
 });

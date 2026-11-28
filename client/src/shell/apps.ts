@@ -57,7 +57,7 @@ function myDayApp(): AppSlot {
     roles: ['owner', 'scout'],
     Sheet: lazy(() => ui().then((m) => ({ default: m.MyDaySheet }))),
     Panel: lazy(() => ui().then((m) => ({ default: m.MyDayPanel }))),
-    panelLabel: 'Edit entry',
+    panelLabel: 'Entry',
     // Entries hold the person's own work notes; the global search doesn't read them.
     search: null,
   };

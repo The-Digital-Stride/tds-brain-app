@@ -1,19 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TimeStatus } from '../../../../shared/time-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useStore } from '../../store.tsx';
 import { myDay } from './store.ts';
-import { lostWords } from './words.ts';
+import { CONNECT_NOTICE, CONNECTED_WORDS, lostWords, NO_ADDRESS_NOTICE, WAITING_NOTICE } from './words.ts';
+
+/** The id the Confirm day button points to when Toolbox is not connected. */
+export const CONNECT_NOTICE_ID = 'myday-connect';
 
 /**
- * Where the day stands with Toolbox (plan 2026-11-28-time-my-day, decision 12). Not connected: a card with what to do
- * next. Connected: one quiet line with Disconnect. The day is always shown beside it.
+ * Where the day stands with Toolbox (plan 2026-11-28-time-my-day, decision 12). Not connected: one notice under the
+ * header with what to do next. Connected: one quiet line with Disconnect. The day is always shown beside it.
  */
 export function ConnectPanel({ status, connectUrl }: { status: TimeStatus; connectUrl: string | null }) {
   const { openSettings } = useStore();
   const [asking, setAsking] = useState(false);
   const [working, setWorking] = useState(false);
+  const disconnectButton = useRef<HTMLButtonElement>(null);
+  const putBack = useRef(false);
   const c = status.connection;
+
+  // Cancelling the Disconnect question puts focus back on the button that asked it.
+  useEffect(() => {
+    if (!asking && putBack.current) {
+      putBack.current = false;
+      disconnectButton.current?.focus();
+    }
+  }, [asking]);
 
   const connect = async () => {
     setWorking(true);
@@ -24,7 +37,7 @@ export function ConnectPanel({ status, connectUrl }: { status: TimeStatus; conne
   if (c.state === 'connected') {
     return (
       <div className="myday-connected">
-        <p className="myday-note">Connected to {c.origin}</p>
+        <p className="myday-note">{CONNECTED_WORDS}</p>
         {c.reconnectSoon ? (
           <>
             <p className="myday-note">Your connection runs out soon. Reconnect to keep sending days.</p>
@@ -51,10 +64,14 @@ export function ConnectPanel({ status, connectUrl }: { status: TimeStatus; conne
               setAsking(false);
               void myDay.disconnect();
             }}
-            onCancel={() => setAsking(false)}
+            onCancel={() => {
+              putBack.current = true;
+              setAsking(false);
+            }}
           />
         ) : (
           <button
+            ref={disconnectButton}
             type="button"
             className="btn"
             data-variant="quiet"
@@ -68,73 +85,55 @@ export function ConnectPanel({ status, connectUrl }: { status: TimeStatus; conne
     );
   }
 
+  const button = (label: string, onClick: () => void, busy = false) => (
+    <button
+      type="button"
+      className="btn"
+      data-size="small"
+      aria-disabled={busy || undefined}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <section className="card myday-connect" aria-labelledby="myday-connect-h">
-      <div className="card-head">
-        <h3 id="myday-connect-h">Connect to Toolbox</h3>
+    // The live region stays in place; what it says changes, so the change is announced.
+    <div className="myday-live" role="status">
+      <div className="notice" data-shape="box" data-level="info" id={CONNECT_NOTICE_ID}>
+        {c.state === 'no-address' ? (
+          <>
+            <span>{NO_ADDRESS_NOTICE}</span>
+            {button('Open Settings', () => openSettings('general', 'toolbox-address'))}
+          </>
+        ) : null}
+        {c.state === 'not-connected' && c.pending ? (
+          <>
+            <span>{WAITING_NOTICE}</span>
+            {connectUrl ? (
+              <span>
+                Nothing opened?{' '}
+                <a href={connectUrl} target="_blank" rel="noreferrer">
+                  Open Toolbox yourself
+                </a>
+                .
+              </span>
+            ) : null}
+          </>
+        ) : null}
+        {c.state === 'not-connected' && !c.pending ? (
+          <>
+            <span>{CONNECT_NOTICE}</span>
+            {button('Connect to Toolbox', () => void connect(), working)}
+          </>
+        ) : null}
+        {c.state === 'lost' ? (
+          <>
+            <span>{lostWords(c.reason)} Reconnect to send your days.</span>
+            {button('Reconnect', () => void connect(), working)}
+          </>
+        ) : null}
       </div>
-      {c.state === 'no-address' ? (
-        <>
-          <p className="myday-note">
-            Cortex does not know where Toolbox is yet. An owner or scout sets its address in Settings.
-          </p>
-          <div>
-            <button type="button" className="btn" onClick={() => openSettings('general', 'toolbox-address')}>
-              Open Settings
-            </button>
-          </div>
-        </>
-      ) : null}
-      {c.state === 'not-connected' && c.pending ? (
-        <>
-          <p className="myday-note" role="status">
-            Waiting for you to press Allow in Toolbox.
-          </p>
-          {connectUrl ? (
-            <p className="myday-note">
-              Nothing opened?{' '}
-              <a href={connectUrl} target="_blank" rel="noreferrer">
-                Open Toolbox yourself
-              </a>
-              .
-            </p>
-          ) : null}
-        </>
-      ) : null}
-      {c.state === 'not-connected' && !c.pending ? (
-        <>
-          <p className="myday-note">
-            Connect once to send your confirmed days to {c.origin}. Your day is shown here either way.
-          </p>
-          <div>
-            <button
-              type="button"
-              className="btn"
-              aria-disabled={working || undefined}
-              onClick={() => void connect()}
-            >
-              Connect to Toolbox
-            </button>
-          </div>
-        </>
-      ) : null}
-      {c.state === 'lost' ? (
-        <>
-          <p className="myday-note" role="status">
-            {lostWords(c.reason)} Reconnect to send your days.
-          </p>
-          <div>
-            <button
-              type="button"
-              className="btn"
-              aria-disabled={working || undefined}
-              onClick={() => void connect()}
-            >
-              Reconnect
-            </button>
-          </div>
-        </>
-      ) : null}
-    </section>
+    </div>
   );
 }

@@ -224,3 +224,61 @@ describe('dayView: problems', () => {
     expect(v.confirmBlocked).toBeNull();
   });
 });
+
+describe('dayView: chat titles and the chat link (decisions 32 and A)', () => {
+  const chatEntry = (n: number, chatId: string, place: ChatPlace | null) =>
+    entry(n, {
+      source: 'cortex-chat',
+      place,
+      captured: {
+        ...values({ description: '' }),
+        chatId,
+        captureKey: `${chatId}@${t('09:00')}`,
+        endAt: t('09:30'),
+        claudeMinutes: 3,
+        prompts: 2,
+      },
+    });
+  const chats = new Map([
+    ['c-real', { customTitle: 'Homepage audit' }],
+    ['c-prompt', { summary: 'fix the footer', firstPrompt: 'fix the footer' }],
+  ]);
+
+  it('joins the title by captured chat id, and the id only while Cortex still lists the chat', () => {
+    const d = day([
+      chatEntry(1, 'c-real', { client: 'acme', project: 'acme/web' }),
+      chatEntry(2, 'c-prompt', null),
+      chatEntry(3, 'c-gone', null),
+      entry(4),
+    ]);
+    const v = dayView(d, ITEMS, labelFor, NOW, { ...opts, chats, restricted: () => false });
+    const byId = new Map(v.entries.map((e) => [e.id, e]));
+    expect(byId.get(id(1))).toMatchObject({
+      titleHint: 'Homepage audit',
+      hintAcceptable: true,
+      chatId: 'c-real',
+    });
+    // Titled only by its first prompt: no hint, but it can still be opened.
+    expect(byId.get(id(2))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: 'c-prompt' });
+    expect(byId.get(id(3))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: null });
+    expect(byId.get(id(4))).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: null });
+    // The evidence line never carries the title.
+    expect(byId.get(id(1))?.evidence).toBe('Cortex chat: Acme website');
+  });
+
+  it('a restricted project shows the hint but offers no one-click use', () => {
+    const place: ChatPlace = { client: 'acme', project: 'acme/web' };
+    const d = day([chatEntry(1, 'c-real', place)]);
+    const v = dayView(d, ITEMS, labelFor, NOW, {
+      ...opts,
+      chats,
+      restricted: (p) => p.project === 'acme/web',
+    });
+    expect(v.entries[0]).toMatchObject({ titleHint: 'Homepage audit', hintAcceptable: false });
+  });
+
+  it('without chats known there are no hints or links', () => {
+    const v = dayView(day([chatEntry(1, 'c-real', null)]), ITEMS, labelFor, NOW, opts);
+    expect(v.entries[0]).toMatchObject({ titleHint: null, hintAcceptable: false, chatId: null });
+  });
+});

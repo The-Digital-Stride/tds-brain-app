@@ -2,12 +2,16 @@
  * My day (plan decisions 9, 18, 28): refreshing capture into the draft. Pure.
  *
  * Blocks are matched to entries by chat and overlap of the captured interval, never by `captureKey`.
- * - An untouched entry (nothing edited, not deleted) takes the overlapping block's times, place and work item.
- * - A touched or deleted entry is frozen: new blocks of its chat are cut around its captured interval (and
- *   around the person's own times), so corrected time is never counted twice or brought back.
+ * - An entry whose times the person hasn't changed (no `startAt` or `minutes` edit, not deleted) follows the
+ *   overlapping block: it takes the block's times and place, and capture's work item and billable flag for
+ *   the fields the person hasn't edited (a picked work item keeps its billable flag too). Its `captured`
+ *   snapshot is always what capture proposed, and a times update from capture records no change (decision 32).
+ * - An entry with a time edit, or a deleted one, is frozen: new blocks of its chat are cut around its captured
+ *   interval (and around the person's own times), so corrected time is never counted twice or brought back.
  * - Blocks left over become new `cortex-chat` entries (a create change while the day has never been confirmed).
- * - An untouched entry capture no longer finds is kept and marked `missing`, never removed silently, except
- *   that a chat since marked personal loses its untouched entries Toolbox has never held.
+ * - An entry following capture that capture no longer finds is kept and marked `missing`, never removed
+ *   silently, except that a chat since marked personal loses its untouched (never edited) entries Toolbox has
+ *   never held.
  * The caller decides when to refresh: a confirmed day is never refreshed automatically (`canAutoRefresh`).
  */
 import { randomUUID } from 'node:crypto';
@@ -38,7 +42,15 @@ export function canAutoRefresh(draft: DayDraft): boolean {
   return draft.revision === 0 && draft.pending === null && draft.status !== 'conflict';
 }
 
+/** Nothing edited and not deleted: what a chat since marked personal may lose. */
 const untouched = (e: DraftEntry) => !e.deleted && e.edited.length === 0;
+
+/**
+ * Follows capture for its times: only a `startAt` or `minutes` edit (or a delete) freezes an entry
+ * (decision 32.5). A description, work item or billable edit is kept, and the times still follow.
+ */
+const followsCapture = (e: DraftEntry) =>
+  !e.deleted && !e.edited.includes('startAt') && !e.edited.includes('minutes');
 
 type Span = [number, number];
 
@@ -90,19 +102,29 @@ function piece(block: CaptureBlock, [s, e]: Span): CaptureBlock {
 
 function fromBlock(e: DraftEntry, b: CaptureBlock, assignFn: AssignFn): DraftEntry {
   const a = assignFn(b.place);
+  // What capture proposes, kept apart from the person's values (its description is capture's: always '').
+  const proposed = {
+    startAt: b.startAt,
+    minutes: b.minutes,
+    workItemId: a.workItemId,
+    description: e.captured?.description ?? '',
+    billable: a.billable,
+  };
+  const ownItem = e.edited.includes('workItemId');
   const values = {
     ...e.values,
     startAt: b.startAt,
     minutes: b.minutes,
-    workItemId: a.workItemId,
-    billable: a.billable,
+    workItemId: ownItem ? e.values.workItemId : a.workItemId,
+    // A picked work item brought its own billable default, so it keeps it.
+    billable: ownItem || e.edited.includes('billable') ? e.values.billable : a.billable,
   };
   return {
     ...e,
-    certainty: a.certainty,
+    certainty: ownItem ? e.certainty : a.certainty,
     values,
     captured: {
-      ...values,
+      ...proposed,
       chatId: b.chatId,
       captureKey: b.captureKey,
       endAt: b.endAt,
@@ -179,7 +201,7 @@ export function mergeCapture(
 
   for (const chatId of [...chatIds].sort()) {
     const mine = entries.filter((e) => e.captured?.chatId === chatId);
-    const frozen = [...mine.filter((e) => !untouched(e)).flatMap(frozenSpans), ...uncaptured];
+    const frozen = [...mine.filter((e) => !followsCapture(e)).flatMap(frozenSpans), ...uncaptured];
     const pieces = dayBlocks
       .filter((b) => b.chatId === chatId)
       .flatMap((b) =>
@@ -188,8 +210,8 @@ export function mergeCapture(
           .map((span) => piece(b, span)),
       );
 
-    // Pair untouched entries with pieces, largest overlap first, one to one.
-    const live = mine.filter(untouched);
+    // Pair entries that follow capture with pieces, largest overlap first, one to one.
+    const live = mine.filter(followsCapture);
     const pairs: Array<{ entry: DraftEntry; p: number; size: number }> = [];
     for (const entry of live) {
       const span: Span = [toMin(entry.captured?.startAt ?? ''), toMin(entry.captured?.endAt ?? '')];

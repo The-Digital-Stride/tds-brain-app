@@ -1,11 +1,22 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { DayView, WorkItemOption } from '../../../../shared/time-contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
-import { ConnectPanel } from './ConnectPanel.tsx';
+import { CONNECT_NOTICE_ID, ConnectPanel } from './ConnectPanel.tsx';
+import { Duration } from './Duration.tsx';
 import { EntryRow, workItemName } from './EntryRow.tsx';
 import { myDay, useMyDay } from './store.ts';
-import { addDays, dateWords, hoursWords, londonClock, STATUS_TONE, STATUS_WORDS } from './words.ts';
+import {
+  addDays,
+  dayTitle,
+  emptyDayWords,
+  endClock,
+  londonClock,
+  needsAttention,
+  needWords,
+  STATUS_TONE,
+  STATUS_WORDS,
+} from './words.ts';
 
 /** How long Cortex keeps asking whether Toolbox has been allowed (plan 2026-11-28-time-my-day, decision 12). */
 export const POLL_EVERY_MS = 2000;
@@ -51,8 +62,14 @@ function Totals({ day, items }: { day: DayView; items: readonly WorkItemOption[]
               {workItemName(t.workItemId, items) ?? (t.workItemId ? 'Work item not loaded' : 'No work item')}
             </dt>
             <dd>
-              {hoursWords(t.minutes)}
-              {t.billableMinutes > 0 ? ` (${hoursWords(t.billableMinutes)} billable)` : ''}
+              <Duration minutes={t.minutes} />
+              {t.billableMinutes > 0 ? (
+                <>
+                  {' ('}
+                  <Duration minutes={t.billableMinutes} />
+                  {' billable)'}
+                </>
+              ) : null}
             </dd>
           </div>
         ))}
@@ -95,16 +112,37 @@ export function MyDaySheet() {
   const status = s.status;
   const date = s.date;
   const day = s.day;
+  const root = useRef<HTMLDivElement>(null);
+  const title = useRef<HTMLHeadingElement>(null);
+  const { guardPanel } = useShell();
 
-  const open = (id: string) => {
-    myDay.edit(id);
+  // Focus goes where the closed form asked for (its row, or the Add button) once the screen has drawn.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `day` is here so the row exists when focus is asked for.
+  useEffect(() => {
+    if (!s.focusTo) return;
+    const el = root.current?.querySelector<HTMLElement>(`[data-focus="${CSS.escape(s.focusTo)}"]`);
+    if (el) {
+      el.focus();
+      myDay.clearFocus();
+    }
+  }, [s.focusTo, s.day]);
+
+  const showPanel = () => {
     if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
   };
-  const closeDock = modes.panelOverlays;
-  const go = (to: string) => {
-    if (closeDock) dispatch({ type: 'set-panel', open: false });
-    void myDay.loadDay(to);
+  const open = (id: string) => {
+    if (id === s.editing) return;
+    guardPanel(() => {
+      myDay.edit(id);
+      showPanel();
+    });
   };
+  const closeDock = modes.panelOverlays;
+  const go = (to: string) =>
+    guardPanel(() => {
+      if (closeDock) dispatch({ type: 'set-panel', open: false });
+      void myDay.loadDay(to);
+    });
 
   if (!status) {
     return (
@@ -125,16 +163,28 @@ export function MyDaySheet() {
     );
   }
 
+  const connected = status.connection.state === 'connected';
   const confirmed = day?.status === 'confirmed';
   const blocked =
     day?.confirmBlocked ?? (confirmed ? 'This day is confirmed. Change an entry to send it again.' : null);
+  // Not connected, the connect notice already says why the day can't be confirmed.
+  const reason = connected ? blocked : null;
   const atEarliest = !date || date <= status.earliest;
   const atToday = !date || date >= status.today;
   const reasonId = 'myday-reason';
   const disabled = s.busy || !day || blocked !== null || confirmed;
+  const describedBy = reason ? reasonId : connected ? undefined : CONNECT_NOTICE_ID;
+  const needing = day ? day.entries.filter(needsAttention).length : 0;
+  const plainStatus = day?.status === 'not-confirmed' && date === status.today;
+  // A past day that was never confirmed is time that has not been sent: warn, not the quiet grey.
+  const statusTone = !day
+    ? 'muted'
+    : day.status === 'not-confirmed' && date !== null && date < status.today
+      ? 'warn'
+      : STATUS_TONE[day.status];
 
   return (
-    <div className="lib myday">
+    <div className="lib myday" ref={root}>
       <div className="myday-head">
         <div className="myday-nav">
           <button
@@ -149,8 +199,8 @@ export function MyDaySheet() {
           >
             <Icon name="chevron" size={18} />
           </button>
-          <h2 className="myday-title" aria-live="polite">
-            {date ? dateWords(date) : ''}
+          <h2 className="myday-title" ref={title} tabIndex={-1} aria-live="polite">
+            {date ? dayTitle(date, status.today) : ''}
           </h2>
           <button
             type="button"
@@ -164,26 +214,37 @@ export function MyDaySheet() {
           >
             <Icon name="chevron" size={18} />
           </button>
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            aria-disabled={atToday || undefined}
-            onClick={() => {
-              if (!atToday) go(status.today);
-            }}
-          >
-            Today
-          </button>
+          {atToday ? null : (
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              onClick={() => {
+                // The button goes once the day is today, so focus moves to the date it opened.
+                title.current?.focus();
+                go(status.today);
+              }}
+            >
+              Today
+            </button>
+          )}
         </div>
         {day ? (
           <div className="myday-summary">
-            <span className="badge" data-tone={STATUS_TONE[day.status]}>
-              {STATUS_WORDS[day.status]}
-            </span>
+            {plainStatus ? (
+              <span className="myday-sum">{STATUS_WORDS[day.status]}</span>
+            ) : (
+              <span className="badge" data-tone={statusTone}>
+                {STATUS_WORDS[day.status]}
+              </span>
+            )}
             <span className="myday-sum">
-              Day total <strong>{hoursWords(day.totalMinutes)}</strong>
+              Day total{' '}
+              <strong>
+                <Duration minutes={day.totalMinutes} />
+              </strong>
             </span>
+            {needing > 0 ? <span className="myday-sum">{needWords(needing, day.entries.length)}</span> : null}
           </div>
         ) : null}
         <div className="myday-actions">
@@ -197,25 +258,12 @@ export function MyDaySheet() {
               Refresh
             </button>
           ) : null}
-          {day ? (
-            <button
-              type="button"
-              className="btn"
-              aria-disabled={s.busy || undefined}
-              onClick={() => {
-                myDay.edit('new');
-                if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
-              }}
-            >
-              Add entry
-            </button>
-          ) : null}
           <button
             type="button"
             className="btn"
             data-variant="primary"
             aria-disabled={disabled || undefined}
-            aria-describedby={blocked ? reasonId : undefined}
+            aria-describedby={describedBy}
             onClick={() => {
               if (!disabled) void myDay.confirm();
             }}
@@ -224,17 +272,23 @@ export function MyDaySheet() {
           </button>
         </div>
       </div>
-      {blocked ? (
+
+      <ConnectPanel status={status} connectUrl={s.connectUrl} />
+
+      {reason ? (
         <p className="myday-reason" id={reasonId}>
-          {blocked}
+          {reason}
         </p>
       ) : null}
 
-      {s.notice ? (
-        <p className="notice" data-shape="box" data-level={s.notice.tone} role="status">
-          {s.notice.text}
-        </p>
-      ) : null}
+      {/* The live region is always here; the notice is put into it, so it is announced. */}
+      <div className="myday-live" role="status">
+        {s.notice ? (
+          <p className="notice" data-shape="box" data-level={s.notice.tone}>
+            {s.notice.text}
+          </p>
+        ) : null}
+      </div>
       {day?.dayProblems.map((p) => (
         <p className="notice" data-shape="box" data-level="warn" key={p}>
           {p}
@@ -245,8 +299,6 @@ export function MyDaySheet() {
           {n}
         </p>
       ))}
-
-      <ConnectPanel status={status} connectUrl={s.connectUrl} />
 
       {s.dayState === 'loading' && !day ? (
         <p className="myday-note" role="status">
@@ -273,11 +325,26 @@ export function MyDaySheet() {
             <div className="card-head">
               <h3 id="myday-entries-h">Entries</h3>
               <span className="count">{day.entries.length}</span>
+              <button
+                type="button"
+                className="icon-btn"
+                data-variant="primary"
+                data-focus="myday:add"
+                aria-label="Add an entry"
+                data-tip="Add an entry"
+                aria-disabled={s.busy || undefined}
+                onClick={() =>
+                  guardPanel(() => {
+                    myDay.edit('new');
+                    showPanel();
+                  })
+                }
+              >
+                <Icon name="plus" size={18} />
+              </button>
             </div>
             {lines.length === 0 ? (
-              <p className="myday-note">
-                Nothing recorded for this day yet. Add an entry, or refresh to read your chats again.
-              </p>
+              <p className="myday-note">{emptyDayWords(confirmed)}</p>
             ) : (
               <ul className="lib-list">
                 {lines.map((line) =>
@@ -291,7 +358,11 @@ export function MyDaySheet() {
                     />
                   ) : (
                     <li className="myday-gap" key={line.key}>
-                      {hoursWords(line.minutes)} with nothing recorded from {londonClock(line.startAt)}
+                      {londonClock(line.startAt)}–{endClock(line.startAt, line.minutes)}
+                      <span className="todo-sep" aria-hidden="true">
+                        {' · '}
+                      </span>
+                      Nothing recorded (<Duration minutes={line.minutes} />)
                     </li>
                   ),
                 )}

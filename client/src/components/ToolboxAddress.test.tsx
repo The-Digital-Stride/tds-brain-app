@@ -61,9 +61,26 @@ describe('Toolbox address', () => {
   });
 
   it('shows nothing when this build has no time service', async () => {
-    api.timeStatus.mockRejectedValue(new Error('There is nothing at that address.'));
+    api.timeStatus.mockRejectedValue(
+      Object.assign(new Error('There is nothing at that address.'), { status: 404 }),
+    );
     const { container } = render(<ToolboxAddress />);
     await waitFor(() => expect(api.timeStatus).toHaveBeenCalled());
     expect(container.textContent).toBe('');
+  });
+
+  it('shows an alert, not nothing, when the status fails for another reason', async () => {
+    api.timeStatus.mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+    render(<ToolboxAddress />);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/can't be loaded/);
+  });
+
+  it('announces a refusal as an alert', async () => {
+    api.timeStatus.mockResolvedValue(status(null, 'default'));
+    api.timeAddress.mockRejectedValue(new Error('Use an address like https://toolbox.example.com.'));
+    render(<ToolboxAddress />);
+    fireEvent.change(await screen.findByLabelText('Toolbox address'), { target: { value: 'nope' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Use an address/);
   });
 });

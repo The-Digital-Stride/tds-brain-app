@@ -198,6 +198,32 @@ Six blocking items, all folded in. The contract already carries them.
 31. **Nice:** changes older than 60 days are dropped when building a submission. Later Toolbox change: return the
     account name so Cortex can show "Connected as".
 
+## Overseer decisions after the first build (2026-11-28, binding)
+
+32. **The chat's own title as a hint, view only.** `dayView` joins a title by `captured.chatId` into
+    `DayEntryView.titleHint` (`server/time/chat-titles.ts`). It never goes into `DraftEntry`, anything under
+    `<dataDir>/time/`, a log line or a submission body; the transcript reader is unchanged. Titles come through
+    `TimeServiceDeps.chatTitles`, wired in `server/index.ts` from Claude Code's sessions list (the same
+    `listSessions` the session manager's `listPast` reads). Real titles only: a custom title, or the summary when
+    it isn't the first prompt (equal to it, or either one a prefix of the other, gives no hint; so does a missing
+    first prompt). One line, control and bidi characters stripped, cut to 80 characters with an ellipsis.
+    "Use as description" in the edit panel saves the hint as an ordinary, logged description edit, through the
+    panel's unsaved-work hold; there is no "use all". For a chat in a restricted project (card
+    `visibility: restricted`, through `TimeServiceDeps.projectRestricted`; a failed lookup counts as restricted)
+    the hint shows with no button (`hintAcceptable: false`).
+    With it, `mergeCapture`: only a `startAt` or `minutes` edit (or a delete) freezes an entry's times. An entry
+    with only description, work item or billable edits still follows capture for its times and keeps the
+    person's values (a picked work item keeps its billable flag and certainty). `captured` is always what capture
+    proposed, and a times update from capture records no change.
+    Plain: Cortex can show you the chat's name to save typing, but it only goes to Toolbox if you choose it.
+A. **Open the chat an entry came from.** `DayEntryView.chatId` is set while the chat is still in Cortex's
+    sessions list, otherwise null; it is never sent to Toolbox. Each such row has a trailing 28px `icon-btn` with
+    the chat icon, a sibling of the row's main button, named "Open chat: <titleHint>" or "Open the chat this came
+    from". It calls the store's `openPast(chatId, { in: 'drawer' })` and writes no prompt. The row shows
+    `titleHint` as a quiet second line (`--iron`) while the description is empty.
+    Plain: one press takes you back to the chat, to check what the time was for.
+B. **Joining blocks from the same place is deferred to phase 4**, first on its list.
+
 ## Contract
 
 `shared/time-contract.ts`: Toolbox wire types (mirrored from `apps/portal/lib/time/contract.ts` at `75ee320`),

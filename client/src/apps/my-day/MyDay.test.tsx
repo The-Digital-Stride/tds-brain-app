@@ -17,11 +17,21 @@ const api = vi.hoisted(() => ({
   timeConfirm: vi.fn(),
 }));
 const openSettings = vi.hoisted(() => vi.fn());
+const openPast = vi.hoisted(() => vi.fn());
 const dispatch = vi.hoisted(() => vi.fn());
 vi.mock('../../api.ts', () => ({ api }));
-vi.mock('../../store.tsx', () => ({ useStore: () => ({ openSettings }) }));
+vi.mock('../../store.tsx', () => ({ useStore: () => ({ openSettings, openPast }) }));
+// A small stand-in for the shell's panel hold: typed work makes guardPanel ask instead of run.
+const hold = vi.hoisted(() => ({ dirty: false, asking: false, held: null as null | (() => void) }));
+const guardPanel = vi.hoisted(() => vi.fn());
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: { panelOpen: true }, dispatch, modes: { panelOverlays: false } }),
+  useShell: () => ({
+    state: { panelOpen: true, singleKeys: true },
+    dispatch,
+    modes: { panelOverlays: false },
+    guardPanel,
+    panelHold: { dirty: hold.dirty, asking: hold.asking },
+  }),
 }));
 
 const { MyDaySheet } = await import('./MyDaySheet.tsx');
@@ -40,7 +50,20 @@ beforeEach(() => {
   myDay.reset();
   for (const fn of Object.values(api)) fn.mockReset();
   openSettings.mockReset();
+  openPast.mockReset();
+  openPast.mockResolvedValue(true);
   dispatch.mockReset();
+  dispatch.mockImplementation((a: { type: string; dirty?: boolean }) => {
+    if (a.type === 'set-panel-dirty') hold.dirty = a.dirty === true;
+  });
+  hold.dirty = false;
+  hold.asking = false;
+  hold.held = null;
+  guardPanel.mockReset();
+  guardPanel.mockImplementation((run: () => void) => {
+    if (hold.dirty) hold.held = run;
+    else run();
+  });
   api.timeStatus.mockResolvedValue(status());
   api.timeDay.mockResolvedValue(day());
   api.timeWorkItems.mockResolvedValue({ items: WORK_ITEMS, fetchedAt: '2026-11-28T08:00:00Z' });
@@ -82,20 +105,22 @@ describe('the day', () => {
     );
     render(screenUi());
     await screen.findByText('Planning the launch');
-    expect(screen.getByRole('heading', { level: 2, name: 'Saturday 28 November 2026' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Today, Saturday 28 November' })).toBeTruthy();
     expect(screen.getByText('Not confirmed')).toBeTruthy();
     expect(screen.getByText('1:30')).toBeTruthy();
     const rows = screen.getAllByRole('listitem');
     // Time order: the morning entry, the quiet gap, then the afternoon one.
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining('Planning the launch'),
-      expect.stringContaining('3:15 with nothing recorded from 09:45'),
+      expect.stringContaining('09:45–13:00 · Nothing recorded (3:15'),
       expect.stringContaining('Afternoon call'),
     ]);
     expect(within(rows[0] as HTMLElement).getByText('09:00–09:45')).toBeTruthy();
-    expect(within(rows[0] as HTMLElement).getByText('From chat')).toBeTruthy();
+    // The evidence line already says where it came from, so there is no source chip.
+    expect(within(rows[0] as HTMLElement).queryByText('From chat')).toBeNull();
     expect(within(rows[0] as HTMLElement).getByText('Strong')).toBeTruthy();
-    expect(within(rows[0] as HTMLElement).getByText(/Acme retainer · Billable/)).toBeTruthy();
+    expect(within(rows[0] as HTMLElement).getByText('Acme retainer')).toBeTruthy();
+    expect(within(rows[0] as HTMLElement).getByText('Billable')).toBeTruthy();
     const late = within(rows[2] as HTMLElement);
     for (const word of [
       'Check',
@@ -107,6 +132,58 @@ describe('the day', () => {
       expect(late.getByText(word)).toBeTruthy();
     expect(screen.getByText('No chat history is kept this far back.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Totals by work item' })).toBeTruthy();
+    expect(late.getByText('Check').getAttribute('data-tone')).toBe('warn');
+  });
+
+  it('says a duration in words as well as digits', async () => {
+    await shown();
+    expect(screen.getAllByText('45 minutes').length).toBeGreaterThan(0);
+    expect(document.querySelector('.myday-mins [aria-hidden="true"]')?.textContent).toBe('0:45');
+  });
+
+  it('marks the open row as current', async () => {
+    await shown();
+    fireEvent.click(screen.getByText('Planning the launch'));
+    await screen.findByRole('form', { name: 'Edit entry' });
+    expect(document.querySelector('.myday-row')?.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('shows a placeholder, not data, for an empty description, and counts what needs attention', async () => {
+    api.timeDay.mockResolvedValue(
+      day({ entries: [entry({ values: { ...entry().values, description: '', workItemId: null } })] }),
+    );
+    render(screenUi());
+    const placeholder = await screen.findByText('Add a description');
+    expect(placeholder.className).toBe('myday-placeholder');
+    expect(screen.getByText('1 of 1 need a description or work item.')).toBeTruthy();
+    expect(screen.queryByText('No work item')).toBeNull();
+  });
+
+  it('has no Today button on today, and drops the year for this year', async () => {
+    await shown();
+    expect(screen.queryByRole('button', { name: 'Today' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+    await screen.findByRole('heading', { level: 2, name: 'Friday 27 November' });
+    expect(screen.getByRole('button', { name: 'Today' })).toBeTruthy();
+  });
+
+  it('shows plain text on today and a warn badge on a past day that was never confirmed', async () => {
+    await shown();
+    expect(screen.getByText('Not confirmed').className).toBe('myday-sum');
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+    await waitFor(() => expect(screen.getByText('Not confirmed').getAttribute('data-tone')).toBe('warn'));
+  });
+
+  it('explains an empty day without mentioning Refresh when the day is confirmed', async () => {
+    api.timeDay.mockResolvedValue(day({ entries: [], status: 'confirmed', totals: [], totalMinutes: 0 }));
+    render(screenUi());
+    const text = await screen.findByText(/Nothing recorded for this day/);
+    expect(text.textContent).not.toMatch(/refresh/i);
+    cleanup();
+    myDay.reset();
+    api.timeDay.mockResolvedValue(day({ entries: [], totals: [], totalMinutes: 0 }));
+    render(screenUi());
+    expect((await screen.findByText(/Nothing recorded for this day yet/)).textContent).toMatch(/refresh/i);
   });
 
   it('Confirm day is the one primary button, disabled with its reason shown', async () => {
@@ -194,6 +271,26 @@ describe('connecting', () => {
     expect(openSettings).toHaveBeenCalledWith('general', 'toolbox-address');
   });
 
+  it('not connected: one notice, with its button, and no second reason line or raw address', async () => {
+    api.timeDay.mockResolvedValue(day({ confirmBlocked: 'Connect to Toolbox to confirm this day.' }));
+    api.timeStatus.mockResolvedValue(
+      status({ connection: { state: 'not-connected', origin: 'http://localhost:3999', pending: false } }),
+    );
+    await shown();
+    const notices = document.querySelectorAll('.notice[data-level="info"]');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.textContent).toContain('Connect to Toolbox to pick work items and confirm your day.');
+    expect(
+      within(notices[0] as HTMLElement).getByRole('button', { name: 'Connect to Toolbox' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Connect to Toolbox to confirm this day.')).toBeNull();
+    expect(document.body.textContent).not.toContain('localhost:3999');
+    expect(document.querySelector('.myday > .card')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Confirm day' }).getAttribute('aria-describedby')).toBe(
+      'myday-connect',
+    );
+  });
+
   it('not connected: shows the day and a Connect to Toolbox button', async () => {
     api.timeStatus.mockResolvedValue(
       status({ connection: { state: 'not-connected', origin: 'https://toolbox.example', pending: false } }),
@@ -222,7 +319,7 @@ describe('connecting', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2100);
     });
-    await screen.findByText('Connected to https://toolbox.example');
+    await screen.findByText('Connected to Toolbox.');
     expect(api.timeWorkItems).toHaveBeenCalled();
     expect(api.timeDay).toHaveBeenCalled();
     expect(screen.queryByText('Waiting for you to press Allow in Toolbox.')).toBeNull();
@@ -260,7 +357,16 @@ describe('connecting', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
     expect(api.timeDisconnect).not.toHaveBeenCalled();
     const group = screen.getByRole('group', { name: 'Disconnect from Toolbox' });
-    fireEvent.click(within(group).getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Disconnect' })),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Disconnect from Toolbox' })).getByRole('button', {
+        name: 'Disconnect',
+      }),
+    );
     await waitFor(() => expect(api.timeDisconnect).toHaveBeenCalled());
     await screen.findByRole('button', { name: 'Connect to Toolbox' });
   });
@@ -306,12 +412,149 @@ describe('the edit panel', () => {
     });
   });
 
-  it('rejects minutes out of range without calling the server', async () => {
+  it('rejects minutes out of range: one error tied to the field, focus on it, no server call', async () => {
     const form = await open();
-    fireEvent.change(within(form).getByLabelText('Minutes'), { target: { value: '0' } });
+    const mins = within(form).getByLabelText('Minutes') as HTMLInputElement;
+    fireEvent.change(mins, { target: { value: '0' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/whole minutes, from 1 to 1440/);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/whole minutes, from 1 to 1440/);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(mins.getAttribute('aria-invalid')).toBe('true');
+    expect(mins.getAttribute('aria-describedby')).toBe(alert.id);
+    expect(document.activeElement).toBe(mins);
     expect(api.timeChangeEntry).not.toHaveBeenCalled();
+    fireEvent.change(mins, { target: { value: '20' } });
+    expect(mins.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('puts the cursor in Description when the form opens, and shows the entry times and a label', async () => {
+    const form = await open();
+    await waitFor(() => expect(document.activeElement).toBe(within(form).getByLabelText('Description')));
+    expect(within(form).getByText('09:00–09:45')).toBeTruthy();
+    expect(within(form).getByRole('heading', { name: 'Edit entry' })).toBeTruthy();
+  });
+
+  it('labels the add form "Add an entry"', async () => {
+    await shown();
+    fireEvent.click(screen.getByRole('button', { name: 'Add an entry' }));
+    expect(await screen.findByRole('form', { name: 'Add an entry' })).toBeTruthy();
+  });
+
+  it('after Save, opens the next entry still short of a description or work item; with none left, closes', async () => {
+    const second = entry({
+      id: 'b0000000-0000-4000-8000-000000000002',
+      values: { ...entry().values, startAt: '2026-11-27T13:00:00+00:00', description: '', workItemId: null },
+    });
+    api.timeDay.mockResolvedValue(day({ entries: [entry(), second] }));
+    const fixed = entry({
+      id: second.id,
+      values: { ...second.values, description: 'Call', workItemId: 'wi-1' },
+    });
+    api.timeChangeEntry.mockResolvedValueOnce(day({ entries: [entry(), second] }));
+    render(screenUi());
+    await screen.findByText('Planning the launch');
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = await screen.findByRole('form', { name: 'Edit entry' });
+    fireEvent.change(within(form).getByLabelText('Minutes'), { target: { value: '50' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    // The second entry needs attention, so it opens.
+    await waitFor(() => expect(myDay.get().editing).toBe(second.id));
+    api.timeChangeEntry.mockResolvedValueOnce(day({ entries: [entry(), fixed] }));
+    const form2 = await screen.findByRole('form', { name: 'Edit entry' });
+    fireEvent.change(within(form2).getByLabelText('Description'), { target: { value: 'Call' } });
+    fireEvent.change(within(form2).getByLabelText('Work item'), { target: { value: 'wi-1' } });
+    fireEvent.click(within(form2).getByRole('button', { name: 'Save' }));
+    // Nothing is left to fix: the form closes and focus returns to the row.
+    await waitFor(() => expect(myDay.get().editing).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('data-focus')).toBe(`myday:${second.id}`),
+    );
+  });
+
+  it('steps between entries with the buttons and with N, not while typing', async () => {
+    const second = entry({
+      id: 'b0000000-0000-4000-8000-000000000002',
+      values: { ...entry().values, startAt: '2026-11-27T13:00:00+00:00', description: 'Afternoon call' },
+    });
+    api.timeDay.mockResolvedValue(day({ entries: [entry(), second] }));
+    render(screenUi());
+    await screen.findByText('Planning the launch');
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = await screen.findByRole('form', { name: 'Edit entry' });
+    expect(within(form).getByRole('button', { name: 'Previous entry' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    fireEvent.keyDown(within(form).getByLabelText('Description'), { key: 'n' });
+    expect(myDay.get().editing).toBe(ID);
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: 'n' });
+    await waitFor(() => expect(myDay.get().editing).toBe(second.id));
+    fireEvent.click(await screen.findByRole('button', { name: 'Previous entry' }));
+    await waitFor(() => expect(myDay.get().editing).toBe(ID));
+  });
+
+  it('asks before leaving unsaved typing: another row, and Cancel', async () => {
+    const second = entry({
+      id: 'b0000000-0000-4000-8000-000000000002',
+      values: { ...entry().values, startAt: '2026-11-27T13:00:00+00:00', description: 'Afternoon call' },
+    });
+    api.timeDay.mockResolvedValue(day({ entries: [entry(), second] }));
+    render(screenUi());
+    await screen.findByText('Planning the launch');
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = await screen.findByRole('form', { name: 'Edit entry' });
+    fireEvent.change(within(form).getByLabelText('Description'), { target: { value: 'Changed' } });
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'set-panel-dirty', dirty: true }));
+    fireEvent.click(screen.getByText('Afternoon call'));
+    // Held: the form has not switched, and the shell has the move to run if "Discard changes" is pressed.
+    expect(myDay.get().editing).toBe(ID);
+    expect(hold.held).not.toBeNull();
+    hold.held = null;
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    expect(myDay.get().editing).toBe(ID);
+    expect(hold.held).not.toBeNull();
+  });
+
+  it('saves on Cmd+Enter', async () => {
+    api.timeChangeEntry.mockResolvedValue(day());
+    const form = await open();
+    fireEvent.change(within(form).getByLabelText('Minutes'), { target: { value: '50' } });
+    fireEvent.keyDown(within(form).getByLabelText('Minutes'), { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(api.timeChangeEntry).toHaveBeenCalled());
+  });
+
+  it('Cancel returns focus to the row it was opened from', async () => {
+    const form = await open();
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-focus')).toBe(`myday:${ID}`));
+  });
+
+  it('keeps Delete on the left, neutral, and returns focus to it when the question is cancelled', async () => {
+    const form = await open();
+    const del = within(form).getByRole('button', { name: 'Delete' });
+    expect(del.getAttribute('data-variant')).toBeNull();
+    fireEvent.click(del);
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Delete this entry' })).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(form).getByRole('button', { name: 'Delete' })),
+    );
+  });
+
+  it('after a delete, focus goes to the Add button', async () => {
+    api.timeDeleteEntry.mockResolvedValue(day({ entries: [], totals: [], totalMinutes: 0 }));
+    const form = await open();
+    fireEvent.click(within(form).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Delete this entry' })).getByRole('button', {
+        name: 'Remove as private',
+      }),
+    );
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-focus')).toBe('myday:add'));
   });
 
   it('after the first confirmation: no private option, and a quiet note on a changed description', async () => {
@@ -335,8 +578,8 @@ describe('the edit panel', () => {
   it('Add entry opens an empty form and adds a manual entry', async () => {
     api.timeAddEntry.mockResolvedValue(day());
     await shown();
-    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
-    const form = await screen.findByRole('form', { name: 'Add entry' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add an entry' }));
+    const form = await screen.findByRole('form', { name: 'Add an entry' });
     const f = within(form);
     expect((f.getByLabelText('Billable') as HTMLInputElement).disabled).toBe(true);
     fireEvent.change(f.getByLabelText('Description'), { target: { value: 'Phone call' } });
@@ -357,6 +600,91 @@ describe('the edit panel', () => {
 
   it('asks to choose an entry when none is open', async () => {
     await shown();
-    expect(screen.getByText('Choose an entry to edit it, or press Add entry.')).toBeTruthy();
+    expect(screen.getByText('Choose an entry to edit it, or add a new one.')).toBeTruthy();
+  });
+});
+
+describe('chat titles and the chat link (decisions 32 and A)', () => {
+  const CHAT = '5d0c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b';
+  const fromChat = (over: Parameters<typeof entry>[0] = {}) =>
+    entry({ chatId: CHAT, titleHint: 'Homepage audit', hintAcceptable: true, ...over });
+
+  it('opens the chat in the drawer from a button beside the row, never writing a prompt', async () => {
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat()] }));
+    await shown();
+    const button = screen.getByRole('button', { name: 'Open chat: Homepage audit' });
+    // A sibling of the row's main button, not inside it.
+    expect(button.closest('.myday-open')).toBeNull();
+    expect(button.closest('li')?.querySelector('.myday-open')).not.toBeNull();
+    fireEvent.click(button);
+    expect(openPast).toHaveBeenCalledWith(CHAT, { in: 'drawer' });
+    expect(myDay.get().editing).toBeNull();
+    expect(api.timeChangeEntry).not.toHaveBeenCalled();
+  });
+
+  it('names the button plainly when the chat has no title, and has none without a chat', async () => {
+    const other = entry({
+      id: 'b0000000-0000-4000-8000-000000000002',
+      values: { ...entry().values, startAt: '2026-11-27T13:00:00+00:00', description: 'Afternoon call' },
+    });
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat({ titleHint: null }), other] }));
+    await shown();
+    expect(screen.getAllByRole('button', { name: /Open (chat|the chat)/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Open the chat this came from' })).toBeTruthy();
+  });
+
+  it('shows the title as a quiet second line only while the description is empty', async () => {
+    const empty = fromChat({ values: { ...entry().values, description: '' } });
+    api.timeDay.mockResolvedValue(day({ entries: [empty] }));
+    render(screenUi());
+    expect(await screen.findByText('Chat title: Homepage audit')).toBeTruthy();
+    cleanup();
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat()] }));
+    await shown();
+    expect(screen.queryByText('Chat title: Homepage audit')).toBeNull();
+  });
+
+  it('"Use as description" saves the title as an ordinary description edit', async () => {
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat()] }));
+    api.timeChangeEntry.mockResolvedValue(
+      day({ entries: [fromChat({ values: { ...entry().values, description: 'Homepage audit' } })] }),
+    );
+    await shown();
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = within(await screen.findByRole('form', { name: 'Edit entry' }));
+    expect(form.getByText('Chat title: Homepage audit')).toBeTruthy();
+    fireEvent.click(form.getByRole('button', { name: 'Use as description' }));
+    await waitFor(() =>
+      expect(api.timeChangeEntry).toHaveBeenCalledWith('2026-11-28', ID, { description: 'Homepage audit' }),
+    );
+    // Saved and in step: the box shows the title and the form holds no unsaved work.
+    await waitFor(() =>
+      expect((form.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('Homepage audit'),
+    );
+    expect(hold.dirty).toBe(false);
+    expect(form.queryByRole('button', { name: 'Use as description' })).toBeNull();
+  });
+
+  it('asks before "Use as description" drops unsaved typing', async () => {
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat()] }));
+    api.timeChangeEntry.mockResolvedValue(day({ entries: [fromChat()] }));
+    await shown();
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = within(await screen.findByRole('form', { name: 'Edit entry' }));
+    fireEvent.change(form.getByLabelText('Minutes'), { target: { value: '50' } });
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'set-panel-dirty', dirty: true }));
+    fireEvent.click(form.getByRole('button', { name: 'Use as description' }));
+    expect(hold.held).not.toBeNull();
+    expect(api.timeChangeEntry).not.toHaveBeenCalled();
+  });
+
+  it('a restricted project: the title is shown, with no one-click use', async () => {
+    api.timeDay.mockResolvedValue(day({ entries: [fromChat({ hintAcceptable: false })] }));
+    await shown();
+    fireEvent.click(screen.getByText('Planning the launch'));
+    const form = within(await screen.findByRole('form', { name: 'Edit entry' }));
+    expect(form.getByText('Chat title: Homepage audit')).toBeTruthy();
+    expect(form.queryByRole('button', { name: 'Use as description' })).toBeNull();
+    expect(form.getByText(/restricted project/)).toBeTruthy();
   });
 });

@@ -38,6 +38,7 @@ import {
 } from '../../shared/time-contract.ts';
 import { addEntry, deleteEntry, type EditResult, editEntry } from './changes.ts';
 import { chatBlocks } from './chat-blocks.ts';
+import type { ChatTitleSource } from './chat-titles.ts';
 import { createConnectFlow } from './connect.ts';
 import { createConnection } from './connection.ts';
 import { createDayStore, emptyDraft, isWorkDate, londonDate } from './day-store.ts';
@@ -81,6 +82,14 @@ export interface TimeServiceDeps {
   chatPlaces: { all(): Promise<Map<string, ChatScope>> };
   chatKinds: { personal(): Promise<Set<string>> };
   projectTitle: (key: ProjectKey) => Promise<string | null>;
+  /**
+   * Decision 32 and A: the chats Cortex still lists (sdkSessionId → what its title is made from), from
+   * Claude Code's sessions list. Read only to show a title hint and open the chat; nothing from it is stored,
+   * logged or sent. Absent or failing: no hints, no chat links.
+   */
+  chatTitles?: () => Promise<Map<string, ChatTitleSource>>;
+  /** A project card says `visibility: restricted`. Absent or failing counts as restricted (no one-click use). */
+  projectRestricted?: (key: ProjectKey) => Promise<boolean>;
   clientNames: () => Promise<Map<string, string>>;
   openBrowser: (url: string) => void;
   /** Tests. */
@@ -254,7 +263,12 @@ export function createTimeService(deps: TimeServiceDeps): TimeService {
   }
 
   async function view(draft: DayDraft, list: WireWorkItem[], extraNotes: string[] = []): Promise<DayView> {
-    const [names, titles] = await Promise.all([deps.clientNames(), projectTitles(draft)]);
+    const [names, titles, chats, restricted] = await Promise.all([
+      deps.clientNames(),
+      projectTitles(draft),
+      chatTitles(draft),
+      restrictedProjects(draft),
+    ]);
     const labelFor = (place: ChatPlace): string | null => {
       if (place.project) return titles.get(place.project) ?? null;
       return place.client ? (names.get(place.client) ?? place.client) : null;
@@ -263,7 +277,37 @@ export function createTimeService(deps: TimeServiceDeps): TimeService {
       connected: connection.connectedOrigin() !== null,
       captureNotes: [...extraNotes, ...(captureNotes.get(draft.workDate) ?? [])],
       workItemsKnown: items !== null,
+      chats,
+      restricted: (place) => !!place.project && restricted.has(place.project),
     });
+  }
+
+  /** The day's chats Cortex still lists (decision A), with their title sources (decision 32). View only. */
+  async function chatTitles(draft: DayDraft): Promise<Map<string, ChatTitleSource>> {
+    const out = new Map<string, ChatTitleSource>();
+    const wanted = new Set<string>();
+    for (const e of draft.entries) if (!e.deleted && e.captured) wanted.add(e.captured.chatId);
+    if (wanted.size === 0 || !deps.chatTitles) return out;
+    const all = await deps.chatTitles().catch(() => new Map<string, ChatTitleSource>());
+    for (const id of wanted) {
+      const source = all.get(id);
+      if (source) out.set(id, source);
+    }
+    return out;
+  }
+
+  /** The day's restricted projects (decision 32.4). A failed lookup counts as restricted. */
+  async function restrictedProjects(draft: DayDraft): Promise<Set<string>> {
+    const keys = new Set<string>();
+    for (const e of draft.entries) if (!e.deleted && e.place?.project) keys.add(e.place.project);
+    const out = new Set<string>();
+    await Promise.all(
+      [...keys].map(async (k) => {
+        const restricted = deps.projectRestricted ? await deps.projectRestricted(k).catch(() => true) : true;
+        if (restricted) out.add(k);
+      }),
+    );
+    return out;
   }
 
   async function projectTitles(draft: DayDraft): Promise<Map<string, string>> {

@@ -146,7 +146,8 @@ export const CHAT_TIME = {
 } as const;
 
 /**
- * What the transcript reader keeps from one jsonl line. Never text, titles, paths or tool detail.
+ * What the transcript reader keeps from one jsonl line. Never text, titles, paths or tool detail (a chat's
+ * title reaches the screen only as `DayEntryView.titleHint`, from Cortex's sessions list, decision 32).
  * Only top-level `<id>.jsonl` files are read (subagent files under `<id>/subagents/` are not). A `prompt` is a
  * `user` line that is a person's turn: not a tool result, not `isMeta`, not a compaction summary, not a
  * sidechain, and not machine-made (`promptSource` other than a person's, e.g. `system` task notifications;
@@ -229,8 +230,9 @@ export interface DraftEntry {
   values: EntryValues;
   /**
    * What capture last proposed, kept beside the person's values. Null for a manual or Toolbox entry.
-   * `startAt`/`endAt` are the captured interval `mergeCapture` matches on. Once the entry is touched
-   * (edited or deleted) the interval is frozen and new blocks of the same chat are cut around it.
+   * `startAt`/`endAt` are the captured interval `mergeCapture` matches on. Once the person edits the
+   * entry's `startAt` or `minutes`, or deletes it, the interval is frozen and new blocks of the same chat are
+   * cut around it; other edits keep following capture's times (decision 32). Never the chat's title.
    */
   captured:
     | (EntryValues & {
@@ -355,8 +357,21 @@ export interface DayEntryView {
   /** End time, when startAt is set. */
   endAt: string | null;
   edited: LoggedField[];
-  /** "Cortex chat: <project title or client name>", never the chat's title. */
+  /** "Cortex chat: <project title or client name>". The chat's own title is `titleHint`, never this. */
   evidence: string | null;
+  /**
+   * The chat's own title as a hint (decision 32): a custom title or Claude Code's summary when it isn't the
+   * first prompt, one line, at most 80 characters. View only: never stored in the draft, logged or sent to
+   * Toolbox, unless the person uses it as the description (an ordinary description edit). Null otherwise.
+   */
+  titleHint: string | null;
+  /** "Use as description" is offered: there is a hint and the chat's project isn't restricted (decision 32.4). */
+  hintAcceptable: boolean;
+  /**
+   * The sdkSessionId of the chat this came from, while Cortex still lists that chat (decision A), so the
+   * screen can open it. Null otherwise. View only: never sent to Toolbox.
+   */
+  chatId: string | null;
   claudeMinutes: number | null;
   missing: boolean;
   fromToolbox: boolean;

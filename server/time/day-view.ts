@@ -1,6 +1,8 @@
 /**
  * My day (contract §4, decisions 12, 21, 26): the day as the screen shows it. Pure.
- * Evidence says "Cortex chat: <project title or client name>", never a chat's title or id.
+ * Evidence says "Cortex chat: <project title or client name>", never a chat's title or id. The chat's own
+ * title is joined here, by `captured.chatId`, as `titleHint` (decision 32), and its id as `chatId` while
+ * Cortex still lists the chat (decision A): both only in the view, never in the draft.
  */
 import {
   type ChatPlace,
@@ -14,6 +16,7 @@ import {
   type WireWorkItem,
 } from '../../shared/time-contract.ts';
 import { privateAllowed } from './changes.ts';
+import { type ChatTitles, titleHint } from './chat-titles.ts';
 import { londonDate, londonDayBounds } from './day-store.ts';
 
 const MIN = 60_000;
@@ -45,6 +48,10 @@ export interface DayViewOptions {
   captureNotes?: string[];
   /** Whether `workItems` is a real list (fetched or cached). Defaults to "it has items". */
   workItemsKnown?: boolean;
+  /** Chats Cortex still lists, with what their titles are made from. Absent: none known (no hints, no ids). */
+  chats?: ChatTitles;
+  /** The place is a restricted project, so a hint is shown with no one-click use. Absent: never restricted. */
+  restricted?: (place: ChatPlace) => boolean;
 }
 
 export type LabelFor = (place: ChatPlace) => string | null;
@@ -107,6 +114,9 @@ export function dayView(
     }
     const placeLabel = e.place ? labelFor(e.place) : null;
     const fromChat = e.source === 'cortex-chat' || e.captured !== null;
+    const chatId = e.captured && opts.chats?.has(e.captured.chatId) ? e.captured.chatId : null;
+    const hint = chatId === null ? null : titleHint(opts.chats?.get(chatId));
+    const restricted = e.place !== null && (opts.restricted?.(e.place) ?? false);
     return {
       id: e.id,
       source: e.source,
@@ -115,6 +125,9 @@ export function dayView(
       endAt: end === null ? null : new Date(end).toISOString(),
       edited: e.edited,
       evidence: fromChat ? (placeLabel ? `Cortex chat: ${placeLabel}` : 'Cortex chat') : null,
+      titleHint: hint,
+      hintAcceptable: hint !== null && !restricted,
+      chatId,
       claudeMinutes: e.captured ? e.captured.claudeMinutes : null,
       missing: e.missing,
       fromToolbox: e.fromToolbox,

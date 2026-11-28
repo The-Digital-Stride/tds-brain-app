@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatPlace, DayDraft, DraftEntry } from '../../shared/time-contract.ts';
+import { editEntry } from './changes.ts';
 import { emptyDraft } from './day-store.ts';
 import type { Assignment } from './links.ts';
 import { type CaptureBlock, canAutoRefresh, mergeCapture } from './merge-capture.ts';
@@ -292,5 +293,92 @@ describe('mergeCapture: entries capture did not make', () => {
     const live = out.entries.filter((e) => !e.deleted);
     expect(live.reduce((sum, e) => sum + e.values.minutes, 0)).toBe(40);
     expect(live.map(span)).toEqual(['undefined 09:00 30', 'c1 09:40 10']);
+  });
+});
+
+describe('mergeCapture: only time edits freeze an entry (decision 32.5)', () => {
+  const OTHER = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+  const ITEMS = [
+    { id: WI, name: 'Acme web', kind: 'project' as const, cortexKey: null, clientId: null },
+    { id: OTHER, name: 'Admin', kind: 'internal' as const, cortexKey: null, clientId: null },
+  ];
+  const first = () => mergeCapture(fresh(), [block('c1', '09:00', '09:30')], assignFn, NOW, { newId });
+  const edit = (d: DayDraft, patch: Parameters<typeof editEntry>[2]) => {
+    const r = editEntry(d, (d.entries[0] as DraftEntry).id, patch, ITEMS, NOW);
+    if (!r.ok) throw new Error(r.message);
+    return r.draft;
+  };
+
+  it('a description edit keeps following capture for its times, and keeps the description', () => {
+    const d = edit(first(), { description: 'Homepage' });
+    const out = mergeCapture(d, [block('c1', '08:50', '09:45', { claudeMinutes: 7 })], assignFn, NOW, {
+      newId,
+    });
+    expect(out.entries.map(span)).toEqual(['c1 08:50 55']);
+    const e = out.entries[0] as DraftEntry;
+    expect(e.id).toBe(d.entries[0]?.id);
+    expect(e.values).toMatchObject({ description: 'Homepage', workItemId: WI, billable: true });
+    expect(e.edited).toEqual(['description']);
+    // The captured snapshot is what capture proposed, never the person's wording.
+    expect(e.captured).toMatchObject({
+      startAt: t('08:50'),
+      endAt: t('09:45'),
+      minutes: 55,
+      description: '',
+    });
+    expect(e.captured?.claudeMinutes).toBe(7);
+    // A times update from capture is not the person's change: the change list is as the edit left it.
+    expect(out.changes).toEqual(d.changes);
+  });
+
+  it("keeps the person's work item (and the billable that came with it) and certainty", () => {
+    const d = edit(first(), { workItemId: OTHER });
+    expect(d.entries[0]?.values).toMatchObject({ workItemId: OTHER, billable: false });
+    const out = mergeCapture(d, [block('c1', '09:00', '09:40')], assignFn, NOW, { newId });
+    const e = out.entries[0] as DraftEntry;
+    expect(out.entries.map(span)).toEqual(['c1 09:00 40']);
+    expect(e.values).toMatchObject({ workItemId: OTHER, billable: false });
+    expect(e.certainty).toBe('manual');
+    expect(e.captured).toMatchObject({ workItemId: WI, billable: true, minutes: 40 });
+    expect(out.changes).toEqual(d.changes);
+  });
+
+  it("keeps the person's work item when its billable flag happened not to change", () => {
+    const e0 = first().entries[0] as DraftEntry;
+    const d: DayDraft = {
+      ...first(),
+      entries: [
+        { ...e0, certainty: 'manual', values: { ...e0.values, workItemId: OTHER }, edited: ['workItemId'] },
+      ],
+    };
+    const out = mergeCapture(d, [block('c1', '09:00', '09:40')], assignFn, NOW, { newId });
+    expect(out.entries[0]?.values).toMatchObject({ workItemId: OTHER, billable: true, minutes: 40 });
+    expect(out.entries[0]?.certainty).toBe('manual');
+  });
+
+  it("keeps the person's billable flag and takes capture's work item", () => {
+    const d = edit(first(), { billable: false });
+    const out = mergeCapture(
+      d,
+      [block('c1', '09:00', '09:40', { place: { client: 'zed', project: null } })],
+      assignFn,
+      NOW,
+      { newId },
+    );
+    expect(out.entries[0]?.values).toMatchObject({ workItemId: null, billable: false, minutes: 40 });
+    expect(out.entries[0]?.certainty).toBe('unassigned');
+  });
+
+  it('a start or minutes edit still freezes the times', () => {
+    const d = edit(first(), { minutes: 20 });
+    const out = mergeCapture(d, [block('c1', '08:50', '09:45')], assignFn, NOW, { newId });
+    expect(out.entries.map(span)).toEqual(['c1 09:00 20', 'c1 08:50 10', 'c1 09:30 15']);
+  });
+
+  it('a described entry whose time vanishes is kept and marked missing', () => {
+    const d = edit(first(), { description: 'Homepage' });
+    const out = mergeCapture(d, [], assignFn, NOW);
+    expect(out.entries.map(span)).toEqual(['c1 09:00 30 missing']);
+    expect(out.entries[0]?.values.description).toBe('Homepage');
   });
 });

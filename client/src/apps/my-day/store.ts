@@ -31,6 +31,8 @@ export interface MyDayState {
   notice: Notice | null;
   /** The Toolbox address Cortex opened (kept so it can be shown as a link). */
   connectUrl: string | null;
+  /** Where focus goes once the screen has drawn: a `data-focus` value ("myday:<id>" or "myday:add"). */
+  focusTo: string | null;
 }
 
 const initial = (): MyDayState => ({
@@ -45,6 +47,7 @@ const initial = (): MyDayState => ({
   busy: false,
   notice: null,
   connectUrl: null,
+  focusTo: null,
 });
 
 export const CONFIRM_NOTICES = {
@@ -226,6 +229,9 @@ export const myDay = {
 
   setStatus: (status: TimeStatus) => set({ status }),
   edit: (editing: string | null) => set({ editing }),
+  /** Closes the edit form and asks for focus to go to `focusTo` (a `data-focus` value). */
+  leave: (focusTo: string | null) => set({ editing: null, focusTo }),
+  clearFocus: () => set({ focusTo: null }),
   dismissNotice: () => set({ notice: null }),
 };
 

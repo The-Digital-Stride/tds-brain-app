@@ -22,6 +22,9 @@ export function entry(over: Partial<DayEntryView> = {}): DayEntryView {
     placeLabel: 'Acme website',
     workItemClosed: false,
     problems: [],
+    titleHint: null,
+    hintAcceptable: false,
+    chatId: null,
     ...over,
   };
 }

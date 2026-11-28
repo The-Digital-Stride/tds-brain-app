@@ -238,6 +238,21 @@ function buildBrainSide(path: string | null) {
         chatPlaces,
         chatKinds,
         projectTitle: async (key) => (await brain.projectsIndex?.())?.byKey(key)?.title ?? null,
+        // Decision 32 and A: the same sessions list the chats use (the session manager's listPast). View only.
+        chatTitles: async () =>
+          new Map(
+            (await engine.listSessions({ dir: path }))
+              .filter((p) => typeof p.sessionId === 'string')
+              .map((p) => [
+                p.sessionId,
+                { customTitle: p.customTitle, summary: p.summary, firstPrompt: p.firstPrompt },
+              ]),
+          ),
+        projectRestricted: async (key) => {
+          const index = await brain.projectsIndex?.();
+          // No projects index: nothing can be known, so count it as restricted.
+          return index ? index.byKey(key)?.visibility === 'restricted' : true;
+        },
         clientNames: async () => new Map((await brain.clients()).map((c) => [c.slug, c.name])),
         openBrowser: (url) => openLink(url),
         log,

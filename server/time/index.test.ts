@@ -322,3 +322,99 @@ describe('TimeService: review follow-ups', () => {
     expect((await second.workItems(false)).items).toEqual([]);
   });
 });
+
+describe('TimeService: chat titles stay in the view (decision 32)', () => {
+  const TITLE = 'Secret pricing review for Rubber4Roofs';
+  const titled = { chatTitles: async () => new Map([['chat-1', { customTitle: TITLE }]]) };
+  const files = async (dir: string): Promise<string> => {
+    const { readdir, readFile, stat } = await import('node:fs/promises');
+    let all = '';
+    for (const name of await readdir(dir)) {
+      const p = join(dir, name);
+      all += (await stat(p)).isDirectory() ? await files(p) : await readFile(p, 'utf8');
+    }
+    return all;
+  };
+
+  it('shows the hint and the chat id, but never stores, logs or sends the title unless used', async () => {
+    const lines: string[] = [];
+    const toolbox = fakeToolbox({});
+    const time = service({ fetch: toolbox.fetchFn, log: (l) => lines.push(l), ...titled });
+    const day = await time.day(DAY);
+    expect(day.entries[0]).toMatchObject({ titleHint: TITLE, hintAcceptable: true, chatId: 'chat-1' });
+    const id = day.entries[0]?.id as string;
+    await time.changeEntry(DAY, id, { workItemId: ITEM.id });
+    await time.refresh(DAY);
+    expect(await files(dataDir)).not.toContain(TITLE);
+    expect(await time.confirm(DAY)).toMatchObject({ outcome: 'confirmed' });
+    const sent = toolbox.calls.find((c) => c.method === 'POST')?.body;
+    expect(JSON.stringify(sent)).not.toContain(TITLE);
+    expect(JSON.stringify(sent)).not.toContain('chat-1');
+    expect(await files(dataDir)).not.toContain(TITLE);
+    expect(lines.join('\n')).not.toContain(TITLE);
+  });
+
+  it('once used as the description it is an ordinary, logged description edit', async () => {
+    const toolbox = fakeToolbox({});
+    const time = service({ fetch: toolbox.fetchFn, ...titled });
+    const id = (await time.day(DAY)).entries[0]?.id as string;
+    await time.changeEntry(DAY, id, { description: TITLE, workItemId: ITEM.id });
+    await time.confirm(DAY);
+    const sent = toolbox.calls.find((c) => c.method === 'POST')?.body as DaySubmission;
+    expect(sent.entries[0]?.description).toBe(TITLE);
+    expect(sent.changes).toContainEqual(
+      expect.objectContaining({ action: 'update', field: 'description', oldValue: '', newValue: TITLE }),
+    );
+  });
+
+  it('a chat titled by its first prompt gives no hint; a chat no longer listed gives no link', async () => {
+    const prompt = service({
+      fetch: fakeToolbox({}).fetchFn,
+      chatTitles: async () => new Map([['chat-1', { summary: 'look at r4r', firstPrompt: 'look at r4r' }]]),
+    });
+    expect((await prompt.day(DAY)).entries[0]).toMatchObject({ titleHint: null, chatId: 'chat-1' });
+    const gone = service({ fetch: fakeToolbox({}).fetchFn, chatTitles: async () => new Map() });
+    expect((await gone.day(DAY)).entries[0]).toMatchObject({ titleHint: null, chatId: null });
+  });
+
+  it('a chat in a restricted project shows the hint with no one-click use; a failed lookup counts as restricted', async () => {
+    const places = new Map<string, ChatScope>([
+      ['chat-1', { client: 'rubber4roofs', project: 'rubber4roofs/seo' }],
+    ]);
+    const restricted = service({
+      fetch: fakeToolbox({}).fetchFn,
+      chatPlaces: { all: async () => places },
+      projectRestricted: async (key) => key === 'rubber4roofs/seo',
+      ...titled,
+    });
+    expect((await restricted.day(DAY)).entries[0]).toMatchObject({ titleHint: TITLE, hintAcceptable: false });
+    rmSync(join(dataDir, 'time/days'), { recursive: true, force: true });
+    const failing = service({
+      fetch: fakeToolbox({}).fetchFn,
+      chatPlaces: { all: async () => places },
+      projectRestricted: async () => {
+        throw new Error('index unreadable');
+      },
+      ...titled,
+    });
+    expect((await failing.day(DAY)).entries[0]).toMatchObject({ titleHint: TITLE, hintAcceptable: false });
+    rmSync(join(dataDir, 'time/days'), { recursive: true, force: true });
+    const open = service({
+      fetch: fakeToolbox({}).fetchFn,
+      chatPlaces: { all: async () => places },
+      projectRestricted: async () => false,
+      ...titled,
+    });
+    expect((await open.day(DAY)).entries[0]).toMatchObject({ titleHint: TITLE, hintAcceptable: true });
+  });
+
+  it('a failing sessions list just means no hints or links', async () => {
+    const time = service({
+      fetch: fakeToolbox({}).fetchFn,
+      chatTitles: async () => {
+        throw new Error('no list');
+      },
+    });
+    expect((await time.day(DAY)).entries[0]).toMatchObject({ titleHint: null, chatId: null });
+  });
+});

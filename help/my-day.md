@@ -28,13 +28,16 @@ My day shows one day of your time. TDS Cortex builds it from when you were chatt
 1. Open **My day** from the rail. It opens on today.
 2. Use the arrows or **Today** to move between days. You can go back about two months.
 3. Press an entry to change its description, work item, start time, minutes or billable setting. Press **Save**.
-4. Press **Add entry** for time Cortex missed. Press **Refresh** to read your chats again.
+4. Press **Add an entry** for time Cortex missed. Press **Refresh** to read your chats again.
 5. If it says **Connect to Toolbox**, press it and then press Allow in Toolbox. You only do this once in a while.
 6. Press **Confirm day** when the day looks right.
 
 ## Good to know
 
 - Cortex counts the time near your messages. It does not keep what you or Claude said, only when it happened.
+- The chat's own title is shown to you as a hint. It only reaches Toolbox if you press **Use as description**.
+- The chat button at the end of an entry opens the chat it came from.
+- **Refresh** keeps your descriptions and work items. Times follow your chats until you change them yourself.
 - Personal chats are never counted for a client.
 - A confirmed day can be changed later. It then shows **Changed since confirmed** until you confirm it again.
 - If the send fails, your day stays on this Mac. Press **Confirm day** again.

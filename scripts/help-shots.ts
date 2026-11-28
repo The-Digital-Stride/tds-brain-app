@@ -68,6 +68,7 @@ const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'settings-prefs': { width: 1000, height: 1100 },
   'tokens-saved': { width: 1000, height: 1300 },
   'skill-levels': { width: 1000, height: 1300 },
+  performance: { width: 1000, height: 1300 },
   'help-drawer': { width: 1000, height: 760 },
   'guide-sheet': { width: 1000, height: 780 },
   'settings-todos-switch': { width: 1000, height: 1100 },
@@ -669,6 +670,13 @@ const SCENES: Record<string, Scene> = {
     await openSettingsTab(page, 'Skill levels');
     await page.locator('section[aria-labelledby="levels-h"] .levels-row').first().waitFor();
     await page.locator('section[aria-labelledby="levels-h"]').scrollIntoViewIfNeeded();
+  },
+
+  // Demo mode serves a made-up report (server/performance/demo.ts), never this Mac's real logs.
+  async performance(page) {
+    await openSettingsTab(page, 'Performance');
+    await page.locator('section[aria-labelledby="perf-summary-h"] dl').first().waitFor();
+    await page.locator('section[aria-labelledby="perf-summary-h"]').scrollIntoViewIfNeeded();
   },
 
   // Opened from the Tasks drawer's own Help button, so it shows the page for the screen you are on.

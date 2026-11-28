@@ -57,6 +57,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'your-profile',
   'dock-app',
   'skill-levels',
+  'performance',
   'version-history',
   'getting-help',
   'cortex-guide',

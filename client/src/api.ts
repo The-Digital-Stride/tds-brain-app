@@ -82,6 +82,7 @@ import type {
 } from '../../shared/levels-contract.ts';
 import type { LibraryUploadRequest, LibraryUploadResponse } from '../../shared/library-upload-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
+import type { PerformanceRefreshReply, PerformanceReport } from '../../shared/performance-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
 import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
 import type { ProjectChatsResponse } from '../../shared/project-chats-contract.ts';
@@ -415,6 +416,8 @@ export const api = {
     request<Record<string, never>>('POST', ROUTES.clientPickOutcome, {
       outcome,
     } satisfies ClientPickOutcomeRequest),
+  performance: () => request<PerformanceReport>('GET', ROUTES.performance),
+  performanceRefresh: () => request<PerformanceRefreshReply>('POST', ROUTES.performanceRefresh),
   skillLevels: () => request<SkillLevels>('GET', ROUTES.skillLevels),
   setSkillLevel: (req: SetSkillLevelRequest) => request<SkillLevels>('POST', ROUTES.skillLevels, req),
   setChatLevel: (sessionId: string, tier: LevelTier | null) =>

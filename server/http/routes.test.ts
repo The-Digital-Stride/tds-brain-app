@@ -3875,3 +3875,55 @@ describe('chat summaries: parsing (plan 2026-11-24-chat-summary-updates)', () =>
     ).toThrow(HttpError);
   });
 });
+
+describe('performance routes (role gate)', () => {
+  async function call(method: string, role: string) {
+    const calls: string[] = [];
+    const ctx = {
+      brain: {
+        root: '/x',
+        identity: async () => ({ name: 'Sam', slug: 'sam', email: null, role, knownMember: true }),
+      },
+      performance: {
+        report: async () => {
+          calls.push('report');
+          return { status: 'never-run' };
+        },
+        start: async () => {
+          calls.push('start');
+          return { status: 'building' };
+        },
+      },
+      log: () => {},
+    };
+    const req = Object.assign(Readable.from([]), { method, headers: { 'content-type': 'application/json' } });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (s: number) => {
+        sent.status = s;
+      },
+      end: (t: string) => {
+        sent.body = t;
+      },
+    };
+    const path = method === 'GET' ? ROUTES.performance : ROUTES.performanceRefresh;
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx as unknown as RouteContext,
+    );
+    return { status: sent.status, calls };
+  }
+
+  it('owners and scouts reach the service', async () => {
+    expect(await call('GET', 'owner')).toEqual({ status: 200, calls: ['report'] });
+    expect(await call('POST', 'scout')).toEqual({ status: 200, calls: ['start'] });
+  });
+
+  it('team members are refused before the service runs', async () => {
+    expect(await call('GET', 'team')).toEqual({ status: 403, calls: [] });
+    expect(await call('POST', 'team')).toEqual({ status: 403, calls: [] });
+  });
+});

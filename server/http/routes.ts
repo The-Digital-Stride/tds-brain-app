@@ -120,6 +120,7 @@ import {
 } from '../../shared/library-upload-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
+import { PERFORMANCE_VIEWERS } from '../../shared/performance-contract.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
 import type { ProjectChatsResponse } from '../../shared/project-chats-contract.ts';
@@ -199,6 +200,7 @@ import {
   SessionError,
   type SessionManager,
 } from '../engine/session-manager.ts';
+import type { PerformanceService } from '../performance/refresh.ts';
 import { FOLDED_SECTIONS_MAX, isGroupNameList } from '../store/app-store.ts';
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { isPageKey } from '../store/page-copies.ts';
@@ -282,6 +284,8 @@ export interface RouteContext {
   clientPickTally?: ClientPickTally;
   /** Team skill levels: reads the brain's file and runs its skill script to change it. Absent: none (older tests). */
   skillLevels?: SkillLevelsService;
+  /** Settings → Performance: owners and scouts only. Absent (setup mode): the routes say it isn't there. */
+  performance?: PerformanceService;
   /**
    * The token savings ledger (`GET USAGE_SAVINGS_PATH`). Absent (older tests, or no data folder):
    * the route answers 200 with an empty summary, so the Settings panel shows its empty state.
@@ -3413,6 +3417,19 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     }
     ctx.log(`Changed a skill level (${change.tier === null ? 'clear' : 'set'}).`);
     sendJson(res, 200, (await skillLevelsFor(ctx, identity)) as SkillLevels);
+    return;
+  }
+
+  if (path === ROUTES.performance || path === ROUTES.performanceRefresh) {
+    const refresh = path === ROUTES.performanceRefresh;
+    if (method !== (refresh ? 'POST' : 'GET')) throw methodNotAllowed();
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    if (!(PERFORMANCE_VIEWERS as readonly string[]).includes(identity.role)) {
+      throw new HttpError(403, 'not-allowed', 'Only owners and scouts can see Performance.');
+    }
+    const service = ctx.performance;
+    if (!service) throw new HttpError(404, 'not-found', 'Performance is not available yet.');
+    sendJson(res, 200, await (refresh ? service.start() : service.report()));
     return;
   }
 

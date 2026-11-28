@@ -4,7 +4,7 @@
  */
 
 /** A Settings tab. `general` is the default and the fallback for an unknown or hidden tab. */
-export type SettingsTab = 'general' | 'claude' | 'skill-levels' | 'health' | 'about';
+export type SettingsTab = 'general' | 'claude' | 'skill-levels' | 'performance' | 'health' | 'about';
 
 export interface SettingsTabInfo {
   id: SettingsTab;
@@ -19,6 +19,7 @@ export const SETTINGS_TABS: readonly SettingsTabInfo[] = [
   { id: 'general', label: 'General', help: 'settings' },
   { id: 'claude', label: 'Claude', help: 'levels' },
   { id: 'skill-levels', label: 'Skill levels', help: 'skill-levels' },
+  { id: 'performance', label: 'Performance', help: 'performance' },
   { id: 'health', label: 'Health', help: 'health' },
   { id: 'about', label: 'About', help: 'settings' },
 ];
@@ -27,11 +28,17 @@ export const SETTINGS_TABS: readonly SettingsTabInfo[] = [
 export interface SettingsTabContext {
   /** True when the boot (or an override) has skill levels; without them the Skill levels tab hides, as the section did. */
   hasSkillLevels: boolean;
+  /** True when the viewer's role is in `PERFORMANCE_VIEWERS` (owner, scout); the Performance tab hides without it. */
+  hasPerformance?: boolean;
 }
 
 /** The tabs this person sees, in order. */
 export function visibleSettingsTabs(ctx: SettingsTabContext): SettingsTabInfo[] {
-  return SETTINGS_TABS.filter((t) => t.id !== 'skill-levels' || ctx.hasSkillLevels);
+  return SETTINGS_TABS.filter(
+    (t) =>
+      (t.id !== 'skill-levels' || ctx.hasSkillLevels) &&
+      (t.id !== 'performance' || ctx.hasPerformance === true),
+  );
 }
 
 /** `tab` if it is visible, else `general`. */

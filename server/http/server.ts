@@ -18,6 +18,7 @@ import type { Updater } from '../../shared/update-contract.ts';
 import type { AdsService } from '../brain/ads-skill.ts';
 import type { SkillLevelsService } from '../brain/skill-levels.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
+import type { PerformanceService } from '../performance/refresh.ts';
 import type { ClientPickTally } from '../store/client-pick-tally.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
 import type { SavingsService } from '../usage/savings.ts';
@@ -247,6 +248,8 @@ export interface ServerDeps {
   sessions: SessionManager;
   /** Team skill levels (plan 2026-11-14-skill-levels-and-helpers). Absent in setup mode. */
   skillLevels?: SkillLevelsService;
+  /** Settings → Performance (owners and scouts). Absent in setup mode. */
+  performance?: PerformanceService;
   /** The library's small pictures, cached in the app's data folder. */
   thumbs: Thumbnailer;
   /** Chat attachments waiting in the app's data folder. */
@@ -294,6 +297,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     store: deps.store,
     sessions: deps.sessions,
     skillLevels: deps.skillLevels,
+    performance: deps.performance,
     thumbs: deps.thumbs,
     uploads: deps.uploads,
     hub,

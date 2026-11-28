@@ -68,4 +68,5 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'ad-manager',
   'ads-command-centre',
   'ads-account-summary',
+  'my-day',
 ];

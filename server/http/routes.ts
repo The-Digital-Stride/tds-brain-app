@@ -155,6 +155,7 @@ import {
   type TidyApply,
   type TidySuggestion,
 } from '../../shared/projects-contract.ts';
+import type { TimeService } from '../../shared/time-contract.ts';
 import { isLookedMark, TODO_LOOKED_MAX, type TodoLookedMark } from '../../shared/todo-changes.ts';
 import {
   UPDATE_CHECK_EVERY_MS,
@@ -220,6 +221,7 @@ import {
   sessionSetCookie,
 } from './security.ts';
 import { type AppEventHub, openStream } from './stream.ts';
+import { timeRoute } from './time-routes.ts';
 
 export interface RouteContext {
   /** `ads`: Ad Manager's bridge (the real brain always has one; older test fakes don't). Read per request. */
@@ -287,6 +289,8 @@ export interface RouteContext {
    * the route answers 200 with an empty summary, so the Settings panel shows its empty state.
    */
   savings?: Pick<SavingsService, 'summary'>;
+  /** My day (plan 2026-11-28-time-my-day): the `/api/time/*` routes. Absent: those routes answer 404. */
+  time?: TimeService;
 }
 
 export class HttpError extends Error {
@@ -3133,6 +3137,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   const path = url.pathname;
 
   if (await routeAds(req, res, url, ctx)) return;
+
+  if (path.startsWith('/api/time/') && (await timeRoute(req, res, url, ctx))) return;
 
   if (path === '/api/bootstrap') {
     if (method !== 'GET') throw methodNotAllowed();

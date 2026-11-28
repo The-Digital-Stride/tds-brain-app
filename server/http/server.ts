@@ -14,6 +14,7 @@ import {
   type VersionNotes,
 } from '../../shared/contract.ts';
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
+import type { CallbackOutcome, TimeService } from '../../shared/time-contract.ts';
 import type { Updater } from '../../shared/update-contract.ts';
 import type { AdsService } from '../brain/ads-skill.ts';
 import type { SkillLevelsService } from '../brain/skill-levels.ts';
@@ -117,6 +118,40 @@ const FAILED_CODE_PAGE = plainPage(SIGNED_OUT_COPY.heading, SIGNED_OUT_COPY.para
 const NOT_BUILT_PAGE = plainPage('TDS Cortex is not quite ready', [
   'Its screens have not been set up on this computer yet. Ask whoever looks after the brain to finish setting it up.',
 ]);
+
+/**
+ * The Toolbox callback page's words (plan 2026-11-28-time-my-day, decision 4), kept together for review.
+ * One short sentence per failure, then what to do.
+ */
+export const TOOLBOX_CALLBACK_COPY = {
+  success: {
+    heading: 'Connected to Toolbox',
+    paragraphs: ['You can close this tab and go back to TDS Cortex.'],
+  },
+  failureHeading: 'Not connected to Toolbox',
+  failures: {
+    state: 'This link was not started by TDS Cortex on this Mac, or it has already been used.',
+    expired: 'More than 10 minutes passed after you pressed Connect to Toolbox, so the link ran out.',
+    denied: 'Toolbox did not allow the connection.',
+    exchange: 'TDS Cortex could not finish connecting to Toolbox.',
+    'too-many':
+      'Your Toolbox account already has 5 connections. Remove one you no longer use in Toolbox first.',
+    storage: "TDS Cortex could not save the connection in this Mac's Keychain, so it did not connect.",
+  } satisfies Record<Extract<CallbackOutcome, { ok: false }>['reason'], string>,
+  tryAgain: 'Go back to TDS Cortex and press Connect to Toolbox again.',
+} as const;
+
+/** Replaces the app's policy on the callback page: nothing loads, inline styles only. */
+export const TOOLBOX_CALLBACK_CSP = "default-src 'none'; style-src 'unsafe-inline'";
+
+function toolboxCallbackPage(outcome: CallbackOutcome): string {
+  if (outcome.ok)
+    return plainPage(TOOLBOX_CALLBACK_COPY.success.heading, TOOLBOX_CALLBACK_COPY.success.paragraphs);
+  return plainPage(TOOLBOX_CALLBACK_COPY.failureHeading, [
+    TOOLBOX_CALLBACK_COPY.failures[outcome.reason],
+    TOOLBOX_CALLBACK_COPY.tryAgain,
+  ]);
+}
 
 /** Used when the built client has no `sw-off.js`: unregister, then clear every cache. */
 const SW_OFF_FALLBACK = `self.addEventListener('install', () => {
@@ -261,6 +296,11 @@ export interface ServerDeps {
   clientPickTally?: ClientPickTally;
   /** The token savings ledger (`GET USAGE_SAVINGS_PATH`). Absent: the route answers the empty summary. */
   savings?: Pick<SavingsService, 'summary'>;
+  /**
+   * My day (plan 2026-11-28-time-my-day): the Toolbox connection and the day engine. Absent: the
+   * callback answers 404 and the time routes say they aren't there.
+   */
+  time?: TimeService;
   log?: (line: string) => void;
 }
 
@@ -311,6 +351,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     log,
     clientPickTally: deps.clientPickTally,
     savings: deps.savings,
+    time: deps.time,
   };
 
   const server = createServer((req, res) => {
@@ -384,6 +425,24 @@ export function createAppServer(deps: ServerDeps): AppServer {
           }
           res.writeHead(303, { 'Set-Cookie': result.setCookie, Location: '/', 'Cache-Control': 'no-store' });
           res.end();
+          return;
+        }
+        case 'toolbox-callback': {
+          if (!deps.time) {
+            sendHtml(res, 404, plainPage('Page not found', ['There is nothing at that address.']), method);
+            return;
+          }
+          let outcome: CallbackOutcome;
+          try {
+            outcome = await deps.time.callback(url.searchParams);
+          } catch {
+            // Only the route: the address carries the code and the state.
+            log('The Toolbox callback failed unexpectedly.');
+            outcome = { ok: false, reason: 'exchange' };
+          }
+          res.setHeader('Content-Security-Policy', TOOLBOX_CALLBACK_CSP);
+          res.setHeader('Referrer-Policy', 'no-referrer');
+          sendHtml(res, outcome.ok ? 200 : 400, toolboxCallbackPage(outcome), method);
           return;
         }
         case 'unregister-worker':

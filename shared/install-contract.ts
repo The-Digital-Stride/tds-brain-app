@@ -11,6 +11,12 @@
 export interface AppSettings {
   /** Absolute, link-resolved path to the person's brain. */
   brainPath?: string;
+  /**
+   * The TDS Toolbox address for My day (plan 2026-11-28-time-my-day, decision 2): an origin only. Checked
+   * where it is used (`server/time/connection.ts`); `TDS_TOOLBOX_URL` overrides it. Undefined in a
+   * `mergeSettings` patch removes it.
+   */
+  toolboxUrl?: string;
 }
 
 /** Where a setting came from, so Settings and `doctor` can say why. */

@@ -41,7 +41,7 @@ function deps(over: Partial<InstallDeps> = {}): InstallDeps {
     settings: {
       resolveDataDir: () => dataDir,
       readSettings: () => ({ brainPath: '/Users/a/agencybrain' }),
-      writeSettings: (_d, s) => void calls.push(`writeSettings:${s.brainPath}`),
+      mergeSettings: (_d, s) => void calls.push(`mergeSettings:${s.brainPath}`),
     },
     checkBrain: async (p) => {
       calls.push('checkBrain');
@@ -83,7 +83,7 @@ describe('install', () => {
     expect(calls.filter((c) => c !== 'sleep')).toEqual([
       'checkBrain',
       'bootout',
-      'writeSettings:/Users/a/agencybrain',
+      'mergeSettings:/Users/a/agencybrain',
       'enable',
       `bootstrap:${p.plist}`,
       'open:http://127.0.0.1:3877/auth?code=CODE123',
@@ -94,6 +94,26 @@ describe('install', () => {
     expect(existsSync(join(p.signinApp, 'Contents', 'MacOS', 'signin'))).toBe(true);
     expect(p.signinApp.endsWith(`${SIGNIN_APP_NAME}.app`)).toBe(true);
     expect(existsSync(p.logDir)).toBe(true);
+  });
+
+  it('keeps settings made in the app, such as the Toolbox address, when it reinstalls', async () => {
+    const settings = await import('../settings.ts');
+    const dataDir = d0();
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(
+      join(dataDir, 'settings.json'),
+      JSON.stringify({ brainPath: '/Users/a/old-brain', toolboxUrl: 'https://toolbox.example' }),
+    );
+    const d = deps();
+    const r = await install(
+      { brain: '/Users/a/agencybrain' },
+      { ...d, settings: { ...d.settings, mergeSettings: settings.mergeSettings } },
+    );
+    expect(r.ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(dataDir, 'settings.json'), 'utf8'))).toEqual({
+      brainPath: '/Users/a/agencybrain',
+      toolboxUrl: 'https://toolbox.example',
+    });
   });
 
   it('refuses a folder that is not a brain, before changing anything', async () => {
@@ -110,7 +130,7 @@ describe('install', () => {
     expect(r.ok).toBe(true);
     expect(calls.indexOf(`migrate:/old/data->${d.settings.resolveDataDir({}, home)}`)).toBeGreaterThan(0);
     expect(calls.findIndex((c) => c.startsWith('migrate'))).toBeLessThan(
-      calls.findIndex((c) => c.startsWith('writeSettings')),
+      calls.findIndex((c) => c.startsWith('mergeSettings')),
     );
   });
 

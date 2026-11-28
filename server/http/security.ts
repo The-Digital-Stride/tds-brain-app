@@ -9,6 +9,7 @@ import {
   PUBLIC_ICON_PATTERN,
   PUBLIC_PATHS,
 } from '../../shared/install-contract.ts';
+import { TOOLBOX_CALLBACK_PATH } from '../../shared/time-contract.ts';
 
 export const MAX_BODY_BYTES = 64 * 1024;
 /** Launcher-only: lets `pnpm start` check that the app already on the port is really this one. */
@@ -122,6 +123,12 @@ export type GateDecision =
   | { action: 'auth-code' }
   /** A page visit without a session: show the plain "open it from the launcher" page. */
   | { action: 'launcher' }
+  /**
+   * `GET TOOLBOX_CALLBACK_PATH` (plan 2026-11-28-time-my-day, decision 4): Toolbox sends the browser back
+   * here after Allow. A cross-site top-level navigation, so no session cookie (SameSite=Strict) and a
+   * foreign `Sec-Fetch-Site`; the one-time `state` authorises it, checked by the time service.
+   */
+  | { action: 'toolbox-callback' }
   /** One of the files the installed app needs before sign-in (decision 5): serve it, or 404. */
   | { action: 'public' }
   /**
@@ -219,8 +226,9 @@ function reject(status: number, code: ApiErrorCode, message: string): GateDecisi
 
 /**
  * Decide what to do with a request before any route runs. Order matters: Host first (defeats DNS
- * rebinding), then any foreign Origin, then the sign-in and public paths, then the session cookie, then
- * the rules for changing requests.
+ * rebinding), then the Toolbox callback (GET only, authorised by its `state`, so it must come before the
+ * foreign-Origin refusal: decision 23), then any foreign Origin, then the sign-in and public paths, then
+ * the session cookie, then the rules for changing requests.
  */
 export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   const method = req.method.toUpperCase();
@@ -228,6 +236,12 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
 
   if (!isAllowedHost(header(req.headers, 'host'), ctx.port)) {
     return reject(403, 'forbidden', `Open TDS Cortex at http://${APP_HOST}:${ctx.port} from its launcher.`);
+  }
+
+  if (req.path === TOOLBOX_CALLBACK_PATH) {
+    return method === 'GET'
+      ? { action: 'toolbox-callback' }
+      : reject(405, 'bad-request', 'That is not something this page does.');
   }
 
   const origin = header(req.headers, 'origin');

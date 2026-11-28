@@ -52,8 +52,10 @@ export function readSettings(dataDir: string): AppSettings {
   try {
     const parsed: unknown = JSON.parse(readFileSync(join(dataDir, SETTINGS_FILE), 'utf8'));
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const brainPath = nonEmptyString((parsed as Record<string, unknown>).brainPath);
-    return brainPath ? { brainPath } : {};
+    const raw = parsed as Record<string, unknown>;
+    const brainPath = nonEmptyString(raw.brainPath);
+    const toolboxUrl = nonEmptyString(raw.toolboxUrl);
+    return { ...(brainPath ? { brainPath } : {}), ...(toolboxUrl ? { toolboxUrl } : {}) };
   } catch {
     return {};
   }

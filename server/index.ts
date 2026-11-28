@@ -41,7 +41,7 @@ import {
   signInUrl,
 } from './launcher.ts';
 import { startPurgeTimer } from './purge-timer.ts';
-import { mergeSettings } from './settings.ts';
+import { mergeSettings, readSettings } from './settings.ts';
 import {
   createEngineHealth,
   createSetupBrain,
@@ -60,6 +60,8 @@ import { createContextReadingStore } from './store/context-readings.ts';
 import { createKitShadowStore } from './store/kit-shadow.ts';
 import { createPageCopies, type PageCopyStore } from './store/page-copies.ts';
 import { createTokenSavingsStore } from './store/token-savings.ts';
+import { cardRestricted } from './time/chat-titles.ts';
+import { createTimeService } from './time/index.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
@@ -148,6 +150,7 @@ function buildBrainSide(path: string | null) {
       sessions: createSetupSessions(),
       pageCopies: null,
       kitTracker: null,
+      time: undefined,
     };
   }
   // Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
@@ -192,6 +195,9 @@ function buildBrainSide(path: string | null) {
     },
     log,
   });
+  // One store each, shared by the chats and My day, so My day always reads what the chats saved.
+  const chatKinds = createChatKindStore(config.dataDir, log);
+  const chatPlaces = createChatPlaceStore(config.dataDir, log);
   const sessions = createSessionManager({
     ...levelOptions,
     kitTracker,
@@ -207,9 +213,9 @@ function buildBrainSide(path: string | null) {
     log,
     uploads,
     dataDir: config.dataDir,
-    chatKinds: createChatKindStore(config.dataDir, log),
+    chatKinds,
     // Each chat's client and project (Projects R2 phase 1, decision 3), in the data folder, never the brain.
-    chatPlaces: createChatPlaceStore(config.dataDir, log),
+    chatPlaces,
     // The projects index, to check a chat's project and find its folder (decision 1).
     ...(brain.projectsIndex ? { projectsIndex: brain.projectsIndex } : {}),
     // Each chat's newest context reading (plan 2026-11-14-context-management), in the data folder.
@@ -218,10 +224,40 @@ function buildBrainSide(path: string | null) {
     // A branded copy's CDN scripts and Google Fonts, fetched once into the data folder (R8).
     assets: createAssetCache({ dataDir: config.dataDir }),
   });
-  return { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker };
+  // My day (plan 2026-11-28-time-my-day): owners and scouts only (the routes check). Never in demo mode,
+  // which makes no network calls.
+  const time = demoMode
+    ? undefined
+    : createTimeService({
+        dataDir: config.dataDir,
+        brainRoot: path,
+        env: process.env,
+        port: config.port,
+        personName: async () => (await brain.identity()).name || null,
+        readSettings: () => readSettings(config.dataDir),
+        mergeSettings: (patch) => mergeSettings(config.dataDir, patch),
+        chatPlaces,
+        chatKinds,
+        projectTitle: async (key) => (await brain.projectsIndex?.())?.byKey(key)?.title ?? null,
+        // Decision 32 and A: the same sessions list the chats use (the session manager's listPast). View only.
+        chatTitles: async () =>
+          new Map(
+            (await engine.listSessions({ dir: path }))
+              .filter((p) => typeof p.sessionId === 'string')
+              // Only the custom or AI title: `summary` and `firstPrompt` can be prompt text (chat-titles.ts).
+              .map((p) => [p.sessionId, { customTitle: p.customTitle }]),
+          ),
+        // No projects index, or no card for the key: nothing can be known, so it counts as restricted.
+        projectRestricted: async (key) => cardRestricted((await brain.projectsIndex?.())?.byKey(key)),
+        clientNames: async () => new Map((await brain.clients()).map((c) => [c.slug, c.name])),
+        openBrowser: (url) => openLink(url),
+        log,
+      });
+  return { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker, time };
 }
 
-const { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker } = buildBrainSide(brainPath);
+const { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker, time } =
+  buildBrainSide(brainPath);
 // The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
 void store
   .get()
@@ -291,6 +327,7 @@ const app = createAppServer({
   log,
   clientPickTally: createClientPickTally(config.dataDir),
   savings,
+  ...(time ? { time } : {}),
 });
 
 app.server.on('error', (err: NodeJS.ErrnoException) => {

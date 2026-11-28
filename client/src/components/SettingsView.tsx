@@ -36,6 +36,7 @@ import { useUpdate } from '../state/update.ts';
 import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
 import { HealthPanel } from './HealthPanel.tsx';
+import { ToolboxAddress } from './ToolboxAddress.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
@@ -218,6 +219,7 @@ export function SettingsView({ tab, checks }: SettingsViewProps) {
                 </p>
               </div>
             </div>
+            {identity.role === 'owner' || identity.role === 'scout' ? <ToolboxAddress /> : null}
           </div>
         </section>
       ) : null}

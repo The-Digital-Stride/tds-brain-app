@@ -108,6 +108,13 @@ const PATHS: Record<IconName, ReactNode> = {
   folder: (
     <path d="M3 6a1 1 0 0 1 1-1h3.8l1.7 2H16a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 9.5h14" />
   ),
+  // A clock face: My day.
+  clock: (
+    <>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v4l2.5 2" />
+    </>
+  ),
   // A rising line over an axis: Ad Manager.
   chart: <path d="M3.5 4v12.5h13M6.5 13l3-3.5 2.5 2L16 6.5M13 6.5h3V9.5" />,
   inbox: <path d="M3.5 11l2-6.5h9l2 6.5v4.5h-13zM3.5 11h4l1 2h3l1-2h4" />,

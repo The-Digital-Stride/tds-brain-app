@@ -11,6 +11,7 @@ import type {
   LibraryItem,
   LiveSession,
   PastSession,
+  Role,
   SkillInfo,
   TodoItem,
   TodoList,
@@ -403,7 +404,9 @@ export type IconName =
   /** A circling arrow: check for updates. */
   | 'refresh'
   /** An arrow down into a tray: install an update. */
-  | 'update';
+  | 'update'
+  /** A clock face: My day. */
+  | 'clock';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {
@@ -554,6 +557,11 @@ export interface AppSlot {
    * the app's lazy UI chunk.
    */
   search: SearchSource | null;
+  /**
+   * Who sees the app (the rail, "Go to", the sheet). Missing means everyone. An app held back from a role is as
+   * good as absent for it: its view shows Home. My day is owners and scouts only (plan 2026-11-28-time-my-day).
+   */
+  roles?: readonly Role[];
   /** The app's body for the right panel. With one, the panel can open while the app is on the sheet. */
   Panel?: ComponentType;
   /** The right panel's heading while this app is on the sheet. Default: the app's title. */
@@ -702,6 +710,8 @@ export interface SearchContext {
    * nothing. Missing means shown.
    */
   skillsHidden?: boolean;
+  /** This person's role, so "Go to" leaves out apps held back from it. Missing means no restriction. */
+  role?: Role;
   /** The team skill levels are on for this person: "Go to" lists the Skill levels tab. Missing means no. */
   hasSkillLevels?: boolean;
   /** The ads summary (store `ads`), for tools that search it; null or missing until it has loaded. */

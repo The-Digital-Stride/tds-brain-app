@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { Role } from '../../../shared/contract.ts';
 import { helpForContext } from '../help/context.ts';
 import type { HelpContext } from '../help/contract.ts';
 import { helpLibrary } from '../help/library.ts';
@@ -31,7 +32,7 @@ import {
   toggleRail,
 } from '../state/shell.ts';
 import { type Store, useStore, useToolSnapshot, type View } from '../store.tsx';
-import { APPS } from './apps.ts';
+import { appsFor } from './app-roles.ts';
 import {
   type DrawerName,
   type PanelHold,
@@ -144,11 +145,12 @@ export function homeOnSheet(
   activeChat: Store['activeChat'],
   snap: ToolSnapshot,
   helpOn: boolean,
+  role?: Role,
 ): boolean {
   if (view === 'settings' || view === 'profile') return false;
   if (view === 'guide') return !helpOn;
   // `?.`: a store test double may have no view.
-  if (view?.startsWith('app:')) return !APPS.some((a) => view === `app:${a.id}`);
+  if (view?.startsWith('app:')) return !appsFor(role).some((a) => view === `app:${a.id}`);
   if (view?.startsWith('tool:')) return !visibleToolFor(view, snap);
   return activeChat?.kind !== 'live';
 }
@@ -245,9 +247,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   };
   const liveOnSheet =
     (view === 'chat' && activeChat?.kind === 'live') ||
-    APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||
+    appsFor(role).some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||
     visibleToolFor(view, snap)?.tool.Panel !== undefined;
-  const onHome = homeOnSheet(view, activeChat, snap, helpOn);
+  const onHome = homeOnSheet(view, activeChat, snap, helpOn, role);
   const onHomeRef = useRef(onHome);
   onHomeRef.current = onHome;
   const [railOverride, setRailOverride] = useState(false);

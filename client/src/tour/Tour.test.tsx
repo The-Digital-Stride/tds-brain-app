@@ -34,8 +34,8 @@ class FakeEventSource {
 const { App } = await import('../App.tsx');
 const { startTour } = await import('./index.ts');
 const { TOUR_STEPS, TOUR_VERSION } = await import('./steps.ts');
-/** Steps that show only for some people: Working on once the brain has projects, the Workbench for Ads users. */
-const SOMETIMES = new Set(['working-on', 'workbench']);
+/** Steps that show only for some people: Working on once the brain has projects, the Workbench for Ads users, My day for owners and scouts (this test person is on the team). */
+const SOMETIMES = new Set(['working-on', 'workbench', 'my-day']);
 const ALWAYS = TOUR_STEPS.filter((s) => !SOMETIMES.has(s.id));
 
 const prefs = {

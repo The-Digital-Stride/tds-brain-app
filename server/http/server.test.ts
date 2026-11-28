@@ -7,10 +7,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROUTES, SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { SETUP_ROUTES } from '../../shared/install-contract.ts';
 import { LIBRARY_UPLOAD_MESSAGES } from '../../shared/library-upload-contract.ts';
+import { type CallbackOutcome, type TimeService, TOOLBOX_CALLBACK_PATH } from '../../shared/time-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { cookieValueFor, createAuthCodes, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
-import { type AppServer, createAppServer, LAUNCHER_PAGE, SIGNED_OUT_COPY } from './server.ts';
+import {
+  type AppServer,
+  createAppServer,
+  LAUNCHER_PAGE,
+  SIGNED_OUT_COPY,
+  TOOLBOX_CALLBACK_COPY,
+  TOOLBOX_CALLBACK_CSP,
+} from './server.ts';
 
 // Only ever sent as the Host header; the server listens on a free port the OS picks.
 const PORT = 45877;
@@ -98,13 +106,13 @@ interface Reply {
 /** Sends `path` byte for byte, so the server's own URL parsing is what gets tested. */
 function send(
   path: string,
-  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  opts: { method?: string; headers?: Record<string, string>; body?: string; port?: number } = {},
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = request(
       {
         host: '127.0.0.1',
-        port: listenPort,
+        port: opts.port ?? listenPort,
         path,
         method: opts.method ?? 'GET',
         headers: { host: HOST, ...opts.headers },
@@ -413,5 +421,105 @@ describe('setup routes behind the gate (setup-screen decision 4)', () => {
     // The answer has been read in full, so the response has finished and the restart has run.
     await new Promise((r) => setImmediate(r));
     expect(setupCalls.restart).toBe(1);
+  });
+});
+
+describe('the Toolbox callback (plan 2026-11-28-time-my-day, decisions 4 and 23)', () => {
+  let timeApp: AppServer;
+  let timePort: number;
+  const seen: string[] = [];
+  let next: CallbackOutcome | 'throw' = { ok: true };
+
+  beforeAll(async () => {
+    const time = {
+      callback: async (query: URLSearchParams) => {
+        seen.push(query.toString());
+        if (next === 'throw') throw new Error('boom');
+        return next;
+      },
+    } as Partial<TimeService> as TimeService;
+    timeApp = createAppServer({
+      port: PORT,
+      clientDir,
+      launchToken: TOKEN,
+      authCodes: createAuthCodes(TOKEN),
+      appVersion: '0',
+      underService: false,
+      brain: createBrainReaders(copyFixture()),
+      store: {} as never,
+      sessions: { onChange: () => () => {} } as never,
+      thumbs: {} as never,
+      uploads: {} as never,
+      engineHealth: () => ({}) as never,
+      appState: { kind: 'ready' },
+      setup: {} as never,
+      time,
+    });
+    await new Promise<void>((done) => timeApp.server.listen(0, '127.0.0.1', done));
+    timePort = (timeApp.server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    timeApp.stop();
+    await new Promise((done) => timeApp.server.close(done));
+  });
+
+  const path = `${TOOLBOX_CALLBACK_PATH}?code=${'a'.repeat(64)}&state=abc`;
+  const crossSite = {
+    'sec-fetch-site': 'cross-site',
+    'sec-fetch-mode': 'navigate',
+    origin: 'https://toolbox.example',
+  };
+
+  it('works cross-site, with a foreign Origin and no cookie, and passes the query on', async () => {
+    seen.length = 0;
+    next = { ok: true };
+    const r = await send(path, { port: timePort, headers: crossSite });
+    expect(r.status).toBe(200);
+    expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.success.heading);
+    expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.success.paragraphs[0]);
+    expect(r.headers['cache-control']).toBe('no-store');
+    expect(r.headers['referrer-policy']).toBe('no-referrer');
+    expect(r.headers['content-security-policy']).toBe(TOOLBOX_CALLBACK_CSP);
+    expect(r.headers['set-cookie']).toBeUndefined();
+    expect(seen).toEqual([`code=${'a'.repeat(64)}&state=abc`]);
+  });
+
+  it('shows each failure in its own words, never the code or state', async () => {
+    for (const reason of ['state', 'expired', 'denied', 'exchange', 'too-many', 'storage'] as const) {
+      next = { ok: false, reason };
+      const r = await send(path, { port: timePort, headers: crossSite });
+      expect(r.status).toBe(400);
+      expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.failureHeading);
+      expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.tryAgain);
+      expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.failures[reason].replace(/'/g, '&#39;'));
+      expect(r.body).not.toContain('a'.repeat(64));
+      expect(r.body).not.toContain('abc');
+    }
+  });
+
+  it('a service that throws gets the plain failure page', async () => {
+    next = 'throw';
+    const r = await send(path, { port: timePort });
+    expect(r.status).toBe(400);
+    expect(r.body).toContain(TOOLBOX_CALLBACK_COPY.failures.exchange);
+  });
+
+  it('is GET only, and the Host check still applies', async () => {
+    seen.length = 0;
+    const post = await send(path, { port: timePort, method: 'POST', headers: crossSite });
+    expect(post.status).toBe(405);
+    const head = await send(path, { port: timePort, method: 'HEAD' });
+    expect(head.status).toBe(405);
+    const badHost = await send(path, { port: timePort, headers: { host: 'evil.example' } });
+    expect(badHost.status).toBe(403);
+    const rebound = await send(path, { port: timePort, headers: { host: `localhost:${PORT}` } });
+    expect(rebound.status).toBe(403);
+    expect(seen).toEqual([]);
+  });
+
+  it('answers 404 when no time service is wired', async () => {
+    const r = await send(path, { headers: crossSite });
+    expect(r.status).toBe(404);
   });
 });

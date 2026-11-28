@@ -7,7 +7,7 @@ import { changedTodos } from '../state/todo-changed.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { useStore, useToolSnapshot } from '../store.tsx';
 import { useTourOpen } from '../tour/request.ts';
-import { APPS } from './apps.ts';
+import { appsFor } from './app-roles.ts';
 import type { DrawerName, IconName } from './contract.ts';
 import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
@@ -190,9 +190,10 @@ export function Rail({ inert = false }: { inert?: boolean }) {
       changedTodos(todos, askedState === 'loaded' ? asked : null, boot.identity, boot.prefs, now).total
     : 0;
   const sections = visibleSections(snap);
-  const app = APPS.find((a) => view === `app:${a.id}`);
-  const topApps = APPS.filter((a) => TOP_APPS.has(a.id));
-  const groupApps = APPS.filter((a) => !TOP_APPS.has(a.id));
+  const visibleApps = appsFor(boot.identity.role);
+  const app = visibleApps.find((a) => view === `app:${a.id}`);
+  const topApps = visibleApps.filter((a) => TOP_APPS.has(a.id));
+  const groupApps = visibleApps.filter((a) => !TOP_APPS.has(a.id));
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);
   const drawer = (name: DrawerName) => ({ name, open: state.drawer === name });
   const choose = () => hover.current?.choose();

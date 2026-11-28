@@ -5,7 +5,7 @@ const OFFLINE_URL = '/offline.html';
 const FILES = [OFFLINE_URL, '/offline.css', '/icons/brain.svg'];
 // The offline page's own style and mark: network first, cached copy when the server is down.
 const ASSETS = ['/offline.css', '/icons/brain.svg'];
-const SKIPPED = [/^\/api(\/|$)/, /^\/auth(\/|$)/, /^\/manifest\.webmanifest$/, /^\/sw\.js$/];
+const SKIPPED = [/^\/api(\/|$)/, /^\/auth(\/|$)/, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/toolbox-callback$/];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

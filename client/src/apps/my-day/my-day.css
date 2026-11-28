@@ -1,0 +1,288 @@
+@layer features {
+  /* My day (client/src/apps/my-day). Built from the shared pieces: .lib layout, .tray and .card, .line rows, .kv,
+   .field, .btn, .badge, .chip, .notice. Only what they do not cover is here. */
+
+  .myday {
+    gap: var(--sp-12);
+  }
+  /* A tick with its words, as `.proj-check`. `.tick-hit` is only for a tick standing alone. */
+  .myday-check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-height: 24px;
+    font-size: var(--fs-control);
+    cursor: pointer;
+  }
+  .myday-check + .hint {
+    margin-top: calc(-1 * var(--sp-8));
+  }
+  .myday-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-16);
+  }
+  .myday-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  /* The shared chevron points down: turn it to point back (previous day) or on (next day). */
+  .myday-prev .icon {
+    transform: rotate(90deg);
+  }
+  .myday-next .icon {
+    transform: rotate(-90deg);
+  }
+  .myday-title {
+    margin: 0;
+    font: 600 var(--fs-body) / 1.25 var(--head);
+    color: var(--navy);
+  }
+  .myday-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4) var(--sp-6);
+  }
+  /* Its parts are separated by " · ", as a row's meta line is. */
+  .myday-summary .todo-sep {
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .myday-sum {
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .myday-sum strong {
+    color: var(--navy);
+  }
+  .myday-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+    margin-left: auto;
+  }
+  /* Narrow: the date and the buttons share the first row and the summary wraps beneath them. */
+  @container (max-width: 1000px) {
+    .myday-nav {
+      order: 1;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .myday-actions {
+      order: 2;
+    }
+    .myday-summary {
+      order: 3;
+      flex-basis: 100%;
+      flex-wrap: wrap;
+    }
+  }
+  /* Very narrow: the date takes a row, so the buttons share the next one with the summary, never alone. */
+  @container (max-width: 560px) {
+    .myday-nav {
+      flex-basis: 100%;
+    }
+    .myday-summary {
+      order: 2;
+      flex: 1 1 0;
+    }
+    .myday-actions {
+      order: 3;
+    }
+  }
+  .myday-reason,
+  .myday-note {
+    margin: 0;
+    padding: var(--sp-4) 0;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .card > .myday-note {
+    padding-inline: var(--sp-8);
+  }
+  /* A live region that is empty takes no room: it cancels the gap it would add. */
+  .myday-live:empty {
+    margin-bottom: calc(-1 * var(--sp-12));
+  }
+  .myday-connected {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-12);
+  }
+
+  /* Rows */
+  .myday-row {
+    padding: 0;
+  }
+  .myday-open {
+    appearance: none;
+    display: flex;
+    align-items: flex-start;
+    flex: 1;
+    gap: var(--sp-12);
+    min-width: 0;
+    padding: var(--sp-8);
+    border: 0;
+    border-radius: var(--r-10);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .myday-time {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 96px;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--navy);
+  }
+  .myday-mins {
+    font-weight: 400;
+    color: var(--iron);
+  }
+  /* The chat's own title, a quiet second line while the entry has no description (plan decision 32). */
+  .myday-hint {
+    display: block;
+    font-size: var(--fs-small);
+    color: var(--iron);
+    overflow-wrap: anywhere;
+  }
+  /* Open the chat (decision A): a sibling of the row's button, lined up with its first line. */
+  .myday-chat {
+    align-self: flex-start;
+    margin: var(--sp-4) var(--sp-4) 0 0;
+  }
+  .myday-chips:empty {
+    display: none;
+  }
+  /* An empty description reads as something to do, not as data. */
+  .myday-placeholder {
+    font-weight: 400;
+    color: var(--iron);
+  }
+  .myday-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-6);
+    margin-top: var(--sp-4);
+  }
+  .myday-problem {
+    display: block;
+    margin-top: var(--sp-4);
+  }
+  /* A gap between entries: quiet, and not a button. It starts where the times do. */
+  .myday-gap {
+    padding: var(--sp-4) var(--sp-8);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+
+  /* Totals by work item */
+  /* `.kv` is a two-column grid for bare dt/dd pairs; here each pair is wrapped in a row, so the rows
+     must not be laid into its 112px label column. */
+  .myday-totals {
+    display: block;
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .myday-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--sp-12);
+    padding: var(--sp-6) 0;
+  }
+  .myday-total-row + .myday-total-row {
+    border-top: 1px solid var(--line);
+  }
+  .myday-totals .myday-total-row dt,
+  .myday-totals .myday-total-row dd {
+    padding: 0;
+    border-top: 0;
+  }
+  .myday-totals .myday-total-row dd {
+    white-space: nowrap;
+  }
+
+  /* Wide: Totals sits beside the entries; below that the two stack. */
+  /* `.lib` is the container; `.myday .lib-tray` outranks the shared one-column `.lib .lib-tray`. */
+  @container (min-width: 1100px) {
+    .myday .tray.lib-tray {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      align-items: start;
+    }
+  }
+  .myday .card-head .icon-btn[data-variant="primary"] {
+    margin-left: auto;
+  }
+
+  /* The edit panel */
+  .myday-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-12);
+  }
+  .myday-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-12);
+  }
+  .myday-form-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-8);
+  }
+  .myday-form-head h3 {
+    margin: 0;
+    font: 600 var(--fs-body) / 1.25 var(--head);
+    color: var(--navy);
+  }
+  .myday-form-when {
+    margin: var(--sp-2) 0 0;
+    font-size: var(--fs-control);
+    font-variant-numeric: tabular-nums;
+    color: var(--iron);
+  }
+  /* The chat title under Description, with "Use as description" beside it when both fit, beneath it when not.
+     The title never grows, so a short one leaves room for the button on its line. */
+  .myday-title-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4) var(--sp-8);
+  }
+  .myday-title-hint .hint {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .myday-step {
+    display: flex;
+    gap: var(--sp-4);
+  }
+  /* Item action (Delete) on the left, Save and Cancel on the right. */
+  .myday-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .myday-form-main {
+    display: flex;
+    gap: var(--sp-8);
+  }
+  .myday-form-actions[data-item] .myday-form-main {
+    margin-left: auto;
+  }
+}

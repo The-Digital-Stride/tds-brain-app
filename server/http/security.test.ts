@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROUTES, SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { AUTH_COOKIE_MAX_AGE_SECONDS, PUBLIC_PATHS } from '../../shared/install-contract.ts';
+import { TOOLBOX_CALLBACK_PATH } from '../../shared/time-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import {
@@ -914,5 +915,65 @@ describe('the page preview through the real server', () => {
     expect(csps(refused.raw)).toHaveLength(1);
     expect(csps(refused.raw)[0]).toContain("frame-ancestors 'self'");
     expect(refused.body).toMatch(/^<!doctype html>/);
+  });
+});
+
+describe('the Toolbox callback (plan 2026-11-28-time-my-day, decisions 4 and 23)', () => {
+  const noCookie = { cookie: undefined };
+
+  it('a GET needs no cookie and passes cross-site, with a foreign Origin', () => {
+    for (const headers of [
+      noCookie,
+      { ...noCookie, 'sec-fetch-site': 'cross-site' },
+      { ...noCookie, 'sec-fetch-site': 'cross-site', origin: 'https://toolbox.example' },
+      { ...noCookie, origin: 'null' },
+      {},
+    ]) {
+      expect(checkRequest(req({ path: TOOLBOX_CALLBACK_PATH, headers }), ctx)).toEqual({
+        action: 'toolbox-callback',
+      });
+    }
+  });
+
+  it('any other method is 405, even with a session and the app Origin', () => {
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']) {
+      expect(
+        checkRequest(
+          req({
+            method,
+            path: TOOLBOX_CALLBACK_PATH,
+            headers: { origin: ORIGIN, 'content-type': 'application/json' },
+          }),
+          ctx,
+        ),
+      ).toMatchObject({ action: 'reject', status: 405 });
+    }
+  });
+
+  it('the Host check still comes first', () => {
+    for (const host of ['evil.example', `localhost:${PORT}`, `127.0.0.1:${PORT + 1}`, undefined]) {
+      expect(
+        checkRequest(
+          req({ path: TOOLBOX_CALLBACK_PATH, headers: { host, 'sec-fetch-site': 'cross-site' } }),
+          ctx,
+        ),
+      ).toMatchObject({ action: 'reject', status: 403 });
+    }
+  });
+
+  it('only the exact path: lookalikes get the usual rules', () => {
+    for (const path of [
+      `${TOOLBOX_CALLBACK_PATH}/`,
+      `${TOOLBOX_CALLBACK_PATH}x`,
+      '/Toolbox-callback',
+      `/api${TOOLBOX_CALLBACK_PATH}`,
+    ]) {
+      const d = checkRequest(
+        req({ path, headers: { cookie: undefined, origin: 'https://toolbox.example' } }),
+        ctx,
+      );
+      expect(d, path).toMatchObject({ action: 'reject', status: 403 });
+      expect(checkRequest(req({ path, headers: noCookie }), ctx).action, path).not.toBe('toolbox-callback');
+    }
   });
 });

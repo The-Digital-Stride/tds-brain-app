@@ -76,6 +76,35 @@ describe('readSettings', () => {
   });
 });
 
+describe('toolboxUrl', () => {
+  it('reads a saved toolboxUrl beside brainPath, trimmed', () => {
+    const dir = tempDir();
+    writeFileSync(
+      join(dir, 'settings.json'),
+      JSON.stringify({ brainPath: '/b', toolboxUrl: ' https://toolbox.example ' }),
+    );
+    expect(readSettings(dir)).toEqual({ brainPath: '/b', toolboxUrl: 'https://toolbox.example' });
+  });
+
+  it('drops a toolboxUrl that is not a non-empty string', () => {
+    for (const toolboxUrl of [42, null, '', '  ', ['https://a.example']]) {
+      const dir = tempDir();
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ toolboxUrl }));
+      expect(readSettings(dir)).toEqual({});
+    }
+  });
+
+  it('is set and removed through mergeSettings without touching brainPath', () => {
+    const dir = tempDir();
+    writeSettings(dir, { brainPath: '/b' });
+    mergeSettings(dir, { toolboxUrl: 'http://localhost:3000' });
+    expect(readSettings(dir)).toEqual({ brainPath: '/b', toolboxUrl: 'http://localhost:3000' });
+    mergeSettings(dir, { toolboxUrl: undefined });
+    expect(readSettings(dir)).toEqual({ brainPath: '/b' });
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ brainPath: '/b' });
+  });
+});
+
 describe('writeSettings', () => {
   it('creates the folder 0700 and the file 0600, and round-trips', () => {
     const dataDir = join(tempDir(), 'TDS Brain', 'data');

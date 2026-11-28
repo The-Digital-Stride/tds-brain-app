@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { appsFor } from './app-roles.ts';
 import { APPS } from './apps.ts';
 import { searchSources } from './search-sources.ts';
 import { SECTIONS } from './sections.ts';
@@ -9,13 +10,15 @@ import { SECTIONS } from './sections.ts';
  * needs a reason a reviewer would accept, e.g. "holds nothing a person would look up".
  */
 const NULL_SEARCH_REASONS: Record<string, string> = {
+  'my-day':
+    "Entries are the person's own work notes, shown one day at a time; nothing there is looked up across the app (plan 2026-11-28-time-my-day).",
   projects:
     'Projects have their own group in search-sources.ts (plan 2026-11-20-projects-system, decision 14).',
 };
 
 describe('APPS', () => {
-  it('holds the library apps and Projects in a normal build; the library apps each have a panel', () => {
-    expect(APPS.map((a) => a.id)).toEqual(['images', 'documents', 'projects']);
+  it('holds the library apps, Projects and My day in a normal build; the library apps each have a panel', () => {
+    expect(APPS.map((a) => a.id)).toEqual(['images', 'documents', 'projects', 'my-day']);
     expect(APPS[0]?.Panel).toBeDefined();
     expect(APPS[0]?.panelLabel).toBe('Image details');
     expect(APPS[1]?.Panel).toBeDefined();
@@ -69,8 +72,27 @@ describe('APPS and the global search', () => {
       skills: [],
       pins: [],
       clients: [],
+      role: 'owner',
     });
     expect(go?.map((h) => h.label)).toEqual(expect.arrayContaining(APPS.map((a) => a.title)));
+  });
+
+  it('My day is for owners and scouts only: the team and unknown people neither see it nor get it from "Go to"', () => {
+    const myDay = APPS.find((a) => a.id === 'my-day');
+    expect(myDay).toBeDefined();
+    if (!myDay) return;
+    expect(appsFor('owner')).toContain(myDay);
+    expect(appsFor('scout')).toContain(myDay);
+    expect(appsFor('team')).not.toContain(myDay);
+    expect(appsFor('unknown')).not.toContain(myDay);
+    expect(appsFor(undefined)).not.toContain(myDay);
+    const ctx = { me: '', todos: null, live: [], past: [], skills: [], pins: [], clients: [] };
+    const labels = (role: 'team' | 'scout') =>
+      searchSources()[0]
+        ?.idle?.({ ...ctx, role })
+        ?.map((h) => h.label) ?? [];
+    expect(labels('team')).not.toContain('My day');
+    expect(labels('scout')).toContain('My day');
   });
 });
 

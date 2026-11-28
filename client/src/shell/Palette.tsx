@@ -87,6 +87,7 @@ function PaletteDialog() {
       pins: boot?.prefs.pins ?? [],
       clients: boot?.clients ?? [],
       helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
+      role: boot?.identity.role ?? 'unknown',
       skillsHidden: !skillsMenuVisible(boot?.identity.role ?? 'unknown'),
       hasSkillLevels: Boolean(skillLevels),
       ads,

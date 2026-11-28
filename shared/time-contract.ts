@@ -303,6 +303,8 @@ export const TIME_ROUTES = {
   status: '/api/time/status',
   connect: '/api/time/connect',
   disconnect: '/api/time/disconnect',
+  /** `POST { url: string | null }` → TimeStatus. Owners and scouts; decision 2 rules; changing it disconnects. */
+  address: '/api/time/address',
   workItems: '/api/time/work-items',
   day: (date: string) => `/api/time/day/${date}`,
   refresh: (date: string) => `/api/time/day/${date}/refresh`,
@@ -323,6 +325,8 @@ export type ConnectionState =
 /** `GET status`. */
 export interface TimeStatus {
   connection: ConnectionState;
+  /** The Toolbox address in use and where it came from (`TDS_TOOLBOX_URL` wins and can't be changed in Settings). */
+  address: { url: string | null; source: 'env' | 'settings' | 'default' };
   /** Earliest day the screen offers (today minus 62 days), YYYY-MM-DD. */
   earliest: string;
   today: string;
@@ -426,6 +430,8 @@ export interface TimeService {
   status(): Promise<TimeStatus>;
   connect(): Promise<ConnectAnswer>;
   disconnect(): Promise<TimeStatus>;
+  /** Throws TimeServiceError `bad-request` for an address decision 2 refuses. */
+  setAddress(url: string | null): Promise<TimeStatus>;
   /** Public loopback callback (decision 4). */
   callback(query: URLSearchParams): Promise<CallbackOutcome>;
   workItems(refresh: boolean): Promise<WorkItemsAnswer>;

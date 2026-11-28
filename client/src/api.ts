@@ -109,6 +109,16 @@ import type {
   TidyApply,
   TidyList,
 } from '../../shared/projects-contract.ts';
+import {
+  type AddEntryRequest,
+  type ConfirmAnswer,
+  type ConnectAnswer,
+  type DayView,
+  type EntryPatchRequest,
+  TIME_ROUTES,
+  type TimeStatus,
+  type WorkItemsAnswer,
+} from '../../shared/time-contract.ts';
 import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../../shared/update-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
@@ -138,7 +148,7 @@ export interface SendOptions {
 }
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   raw?: { body: BodyInit; headers: Record<string, string> },
@@ -428,6 +438,22 @@ export const api = {
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
   updateStart: () =>
     request<UpdateStatus>('POST', UPDATE_ROUTES.start, { confirm: true } satisfies StartUpdateRequest),
+  // My day (plan 2026-11-28-time-my-day): owners and scouts only; anyone else gets a 404.
+  timeStatus: () => request<TimeStatus>('GET', TIME_ROUTES.status),
+  timeConnect: () => request<ConnectAnswer>('POST', TIME_ROUTES.connect),
+  timeDisconnect: () => request<TimeStatus>('POST', TIME_ROUTES.disconnect),
+  timeAddress: (url: string | null) => request<TimeStatus>('POST', TIME_ROUTES.address, { url }),
+  timeWorkItems: (refresh = false) =>
+    request<WorkItemsAnswer>('GET', `${TIME_ROUTES.workItems}${refresh ? '?refresh=1' : ''}`),
+  timeDay: (date: string) => request<DayView>('GET', TIME_ROUTES.day(date)),
+  timeRefresh: (date: string) => request<DayView>('POST', TIME_ROUTES.refresh(date)),
+  timeAddEntry: (date: string, req: AddEntryRequest) =>
+    request<DayView>('POST', TIME_ROUTES.entries(date), req),
+  timeChangeEntry: (date: string, id: string, req: EntryPatchRequest) =>
+    request<DayView>('PATCH', TIME_ROUTES.entry(date, id), req),
+  timeDeleteEntry: (date: string, id: string, asPrivate: boolean) =>
+    request<DayView>('DELETE', `${TIME_ROUTES.entry(date, id)}${asPrivate ? '?private=1' : ''}`),
+  timeConfirm: (date: string) => request<ConfirmAnswer>('POST', TIME_ROUTES.confirm(date)),
   getSetupCandidates: () => request<SetupCandidatesResponse>('GET', SETUP_ROUTES.candidates),
   saveBrainFolder: (path: string) =>
     request<SetBrainResponse>('PUT', SETUP_ROUTES.brain, { path } satisfies SetBrainRequest),

@@ -7,7 +7,7 @@ import { ProfileView } from './components/ProfileView.tsx';
 import { SettingsSheet } from './components/SettingsSheet.tsx';
 import { SetupView } from './components/SetupView.tsx';
 import { helpVisible } from './help/visibility.ts';
-import { APPS } from './shell/apps.ts';
+import { appsFor } from './shell/app-roles.ts';
 import { ChatDrawer } from './shell/ChatDrawer.tsx';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import { CustomiseHome } from './shell/CustomiseHome.tsx';
@@ -109,7 +109,7 @@ function SheetContent() {
     );
   }
   if (view.startsWith('app:')) {
-    const app = APPS.find((a) => view === `app:${a.id}`);
+    const app = appsFor(boot?.identity.role).find((a) => view === `app:${a.id}`);
     if (!app) return <Home />;
     return (
       <>
@@ -195,7 +195,7 @@ function Shell() {
   const DrawerBody = DRAWER_BODIES[drawer];
 
   // An app with a panel of its own fills the right dock while it is on the sheet.
-  const app = APPS.find((a) => view === `app:${a.id}`);
+  const app = appsFor(boot?.identity.role).find((a) => view === `app:${a.id}`);
   // A tool with a panel of its own does the same, once it is visible.
   const tool = visibleToolFor(view, snap)?.tool;
   const sheetApp = app ?? tool;

@@ -308,5 +308,17 @@
     "crop": "section.card:has(.restricted-badge)",
     "pad": 6,
     "alt": "The project list, with a Restricted mark beside one project's title."
+  },
+  {
+    "id": "my-day",
+    "scene": "my-day",
+    "crop": ".myday",
+    "callouts": [
+      {
+        "n": 1,
+        "target": ".myday-actions .btn[data-variant=\"primary\"]"
+      }
+    ],
+    "alt": "My day, with a day of entries from chats and the Confirm day button."
   }
 ]

@@ -41,7 +41,8 @@ describe('the tour keeps up with Cortex', () => {
     const step = TOUR_STEPS.find((s) => s.id === 'task-updates');
     expect(step?.text).toMatch(/updates, finishes or hands back/);
     expect(TOUR_HISTORY[TOUR_VERSION]).toContain('task-updates');
-    expect(TOUR_HISTORY[TOUR_VERSION - 1]).not.toContain('task-updates');
+    expect(TOUR_HISTORY[5]).toContain('task-updates');
+    expect(TOUR_HISTORY[4]).not.toContain('task-updates');
   });
 
   it('never reuses a step id', () => {

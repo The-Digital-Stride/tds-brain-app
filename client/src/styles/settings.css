@@ -178,6 +178,15 @@
   .levels-actions .field {
     width: 140px;
   }
+  /* The Toolbox address (Settings, General): the field and its Save button side by side. */
+  .toolbox-address-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .toolbox-address-controls .field {
+    width: 260px;
+  }
   @media (max-width: 599px) {
     .page.settings {
       padding: var(--sp-16) var(--sheet-gutter);

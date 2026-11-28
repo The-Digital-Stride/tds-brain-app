@@ -1,0 +1,155 @@
+@layer features {
+  /* My day (client/src/apps/my-day). Built from the shared pieces: .lib layout, .tray and .card, .line rows, .kv,
+   .field, .btn, .badge, .chip, .notice. Only what they do not cover is here. */
+
+  .myday {
+    gap: var(--sp-12);
+  }
+  .myday-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-16);
+  }
+  .myday-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  /* The shared chevron points down: turn it to point back (previous day) or on (next day). */
+  .myday-prev .icon {
+    transform: rotate(90deg);
+  }
+  .myday-next .icon {
+    transform: rotate(-90deg);
+  }
+  .myday-title {
+    margin: 0;
+    font: 600 var(--fs-body) / 1.25 var(--head);
+    color: var(--navy);
+  }
+  .myday-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-12);
+  }
+  .myday-sum {
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .myday-sum strong {
+    color: var(--navy);
+  }
+  .myday-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+    margin-left: auto;
+  }
+  .myday-reason,
+  .myday-note {
+    margin: 0;
+    padding: var(--sp-4) 0;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .card > .myday-note {
+    padding-inline: var(--sp-8);
+  }
+  .myday-connect {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    align-items: flex-start;
+    padding-bottom: var(--sp-12);
+  }
+  .myday-connected {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-12);
+  }
+
+  /* Rows */
+  .myday-row {
+    padding: 0;
+  }
+  .myday-open {
+    appearance: none;
+    display: flex;
+    align-items: flex-start;
+    flex: 1;
+    gap: var(--sp-12);
+    min-width: 0;
+    padding: var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .myday-time {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 96px;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--navy);
+  }
+  .myday-mins {
+    font-weight: 400;
+    color: var(--iron);
+  }
+  .myday-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-6);
+    margin-top: var(--sp-4);
+  }
+  .myday-problem {
+    display: block;
+    margin-top: var(--sp-4);
+  }
+  /* A gap between entries: quiet, and not a button. */
+  .myday-gap {
+    padding: var(--sp-4) var(--sp-8) var(--sp-4) calc(var(--sp-8) + 96px + var(--sp-12));
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+
+  /* Totals by work item */
+  .myday-totals {
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .myday-total-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-12);
+    padding: var(--sp-4) 0;
+  }
+
+  /* The edit panel */
+  .myday-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-12);
+  }
+  .myday-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-12);
+  }
+  .myday-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+  .myday-form-actions > [data-variant="danger"] {
+    margin-left: auto;
+  }
+}

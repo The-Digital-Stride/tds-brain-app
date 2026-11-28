@@ -14,6 +14,7 @@ import { projectPageRequest } from '../state/client-choice.ts';
 import { projectText, todoPlaceParts } from '../state/projects.ts';
 import { matchRank } from '../state/search-match.ts';
 import { doneStore } from '../state/todo-done.ts';
+import { appVisibleTo } from './app-roles.ts';
 import { APPS } from './apps.ts';
 import type {
   DrawerName,
@@ -370,7 +371,7 @@ function goToEntries(ctx?: SearchContext): GoTo[] {
         run: (a) => (a.openSettings ? a.openSettings(t.id) : a.openView('settings')),
       }),
     ),
-    ...APPS.map(
+    ...APPS.filter((app) => appVisibleTo(app, ctx?.role)).map(
       (app): GoTo => ({
         id: `go-app-${app.id}`,
         label: app.title,

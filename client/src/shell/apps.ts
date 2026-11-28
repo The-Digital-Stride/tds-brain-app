@@ -47,9 +47,25 @@ function projectsApp(): AppSlot {
   };
 }
 
+function myDayApp(): AppSlot {
+  const ui = () => import('../apps/my-day/ui.ts');
+  return {
+    id: 'my-day',
+    title: 'My day',
+    icon: 'clock',
+    // Owners and scouts only until release (plan 2026-11-28-time-my-day, decision 1).
+    roles: ['owner', 'scout'],
+    Sheet: lazy(() => ui().then((m) => ({ default: m.MyDaySheet }))),
+    Panel: lazy(() => ui().then((m) => ({ default: m.MyDayPanel }))),
+    panelLabel: 'Edit entry',
+    // Entries hold the person's own work notes; the global search doesn't read them.
+    search: null,
+  };
+}
+
 /**
  * Apps on the rail. The rail shows an "Apps" group only when this has entries, and the view
  * `app:<id>` shows the matching `Sheet`. A new app needs a tour step too (`client/src/tour/steps.ts`);
  * `client/src/tour/steps.test.ts` fails until it has one.
  */
-export const APPS: AppSlot[] = [imagesApp(), documentsApp(), projectsApp()];
+export const APPS: AppSlot[] = [imagesApp(), documentsApp(), projectsApp(), myDayApp()];

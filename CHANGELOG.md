@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.97.2 — 2026-11-28
+
+- **test**: the brain folder watcher (`server/brain/watch.ts`) has its own tests: which changes reach the library, projects and Ad Manager, the 400 ms wait, and stopping
+
 ## v0.97.1 — 2026-11-27
 
 - **fix**: keep a task you asked for in Asked when its holder passes it on

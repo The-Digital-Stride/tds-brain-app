@@ -13,6 +13,7 @@ import {
   MINUTES_PER_DAY,
   type WireWorkItem,
 } from '../../shared/time-contract.ts';
+import { privateAllowed } from './changes.ts';
 import { londonDate, londonDayBounds } from './day-store.ts';
 
 const MIN = 60_000;
@@ -181,6 +182,6 @@ export function dayView(
     dayProblems,
     confirmBlocked,
     captureNotes: opts.captureNotes ?? [],
-    privateAllowed: draft.revision === 0,
+    privateAllowed: privateAllowed(draft),
   };
 }

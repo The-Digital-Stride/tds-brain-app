@@ -265,3 +265,32 @@ describe('canAutoRefresh', () => {
     ).toBe(false);
   });
 });
+
+describe('mergeCapture: entries capture did not make', () => {
+  it('never counts chat time again over an entry from Toolbox or one the person added', () => {
+    // A lost draft rebuilt from Toolbox: the stored entry has no captured interval.
+    const stored: DraftEntry = {
+      id: '11111111-1111-4111-8111-111111111111',
+      source: 'cortex-chat',
+      certainty: 'certain',
+      values: { startAt: t('09:00'), minutes: 30, workItemId: WI, description: 'Audit', billable: true },
+      captured: null,
+      edited: [],
+      place: null,
+      missing: false,
+      fromToolbox: true,
+      confirmed: { startAt: t('09:00'), minutes: 30, workItemId: WI, description: 'Audit', billable: true },
+      deleted: false,
+    };
+    const out = mergeCapture(
+      fresh({ entries: [stored], revision: 1, status: 'confirmed' }),
+      [block('c1', '09:00', '09:30'), block('c1', '09:40', '09:50')],
+      assignFn,
+      NOW,
+      { newId },
+    );
+    const live = out.entries.filter((e) => !e.deleted);
+    expect(live.reduce((sum, e) => sum + e.values.minutes, 0)).toBe(40);
+    expect(live.map(span)).toEqual(['undefined 09:00 30', 'c1 09:40 10']);
+  });
+});

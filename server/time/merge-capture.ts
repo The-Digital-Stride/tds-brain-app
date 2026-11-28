@@ -173,9 +173,13 @@ export function mergeCapture(
   const updated = new Map<string, DraftEntry>();
   const created: CaptureBlock[] = [];
 
+  // Live entries capture didn't make (added by the person, or from Toolbox after a lost draft) already
+  // account for their time: chat time is cut around them so it is never counted twice (review, 2026-11-28).
+  const uncaptured = entries.filter((e) => e.captured === null && !e.deleted).flatMap(frozenSpans);
+
   for (const chatId of [...chatIds].sort()) {
     const mine = entries.filter((e) => e.captured?.chatId === chatId);
-    const frozen = mine.filter((e) => !untouched(e)).flatMap(frozenSpans);
+    const frozen = [...mine.filter((e) => !untouched(e)).flatMap(frozenSpans), ...uncaptured];
     const pieces = dayBlocks
       .filter((b) => b.chatId === chatId)
       .flatMap((b) =>

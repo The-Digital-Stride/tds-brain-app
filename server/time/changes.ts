@@ -23,6 +23,22 @@ import { londonDate, parseInstant } from './day-store.ts';
 export const MSG_ENTRY_NOT_FOUND = "That entry isn't in this day any more.";
 export const MSG_PRIVATE_TOO_LATE =
   "Toolbox already holds the earlier wording, so it can't be removed here. An admin can remove it later.";
+export const MSG_PRIVATE_PENDING =
+  "A send is waiting with the earlier wording, so it can't be removed here. An admin can remove it from Toolbox later.";
+
+/**
+ * Private removal is honest only while nothing holding the wording has left or is waiting to leave: the day
+ * was never confirmed AND no send is pending (a pending body is resent unchanged, decision 19).
+ */
+export function privateAllowed(draft: DayDraft): boolean {
+  return draft.revision === 0 && draft.pending === null;
+}
+
+function privateRefusal(draft: DayDraft): EditResult | null {
+  if (draft.revision !== 0) return refuse('bad-request', MSG_PRIVATE_TOO_LATE);
+  if (draft.pending !== null) return refuse('bad-request', MSG_PRIVATE_PENDING);
+  return null;
+}
 const MSG_MINUTES = `Minutes must be a whole number from 1 to ${MINUTES_PER_DAY}.`;
 const MSG_START = 'The start time must be a time on this day (UK time), or empty.';
 const MSG_WORK_ITEM = "That work item isn't one Toolbox would know.";
@@ -261,7 +277,10 @@ export function editEntry(
   const index = draft.entries.findIndex((e) => e.id === id && !e.deleted);
   const current = draft.entries[index];
   if (!current) return refuse('not-found', MSG_ENTRY_NOT_FOUND);
-  if (patch.privateEdit && draft.revision !== 0) return refuse('bad-request', MSG_PRIVATE_TOO_LATE);
+  if (patch.privateEdit) {
+    const refused = privateRefusal(draft);
+    if (refused) return refused;
+  }
 
   const pickedItem = patch.workItemId !== undefined && patch.workItemId !== current.values.workItemId;
   const raw: EntryValues = {
@@ -306,7 +325,10 @@ export function deleteEntry(draft: DayDraft, id: string, opts: { private?: boole
   const current = draft.entries[index];
   if (!current) return refuse('not-found', MSG_ENTRY_NOT_FOUND);
   const priv = opts.private === true;
-  if (priv && draft.revision !== 0) return refuse('bad-request', MSG_PRIVATE_TOO_LATE);
+  if (priv) {
+    const refused = privateRefusal(draft);
+    if (refused) return refused;
+  }
 
   const entry: DraftEntry = priv
     ? {

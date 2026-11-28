@@ -123,14 +123,29 @@
   }
 
   /* Totals by work item */
+  /* `.kv` is a two-column grid for bare dt/dd pairs; here each pair is wrapped in a row, so the rows
+     must not be laid into its 112px label column. */
   .myday-totals {
+    display: block;
     padding: 0 var(--sp-8) var(--sp-8);
   }
   .myday-total-row {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: var(--sp-12);
-    padding: var(--sp-4) 0;
+    padding: var(--sp-6) 0;
+  }
+  .myday-total-row + .myday-total-row {
+    border-top: 1px solid var(--line);
+  }
+  .myday-totals .myday-total-row dt,
+  .myday-totals .myday-total-row dd {
+    padding: 0;
+    border-top: 0;
+  }
+  .myday-totals .myday-total-row dd {
+    white-space: nowrap;
   }
 
   /* The edit panel */

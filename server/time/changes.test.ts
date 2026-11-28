@@ -16,6 +16,7 @@ import {
   deriveStatus,
   editEntry,
   encodeValue,
+  privateAllowed,
 } from './changes.ts';
 import { emptyDraft } from './day-store.ts';
 
@@ -260,6 +261,29 @@ describe('editEntry', () => {
     const r = editEntry(d, E1, { description: 'x', privateEdit: true }, ITEMS, NOW);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('bad-request');
+  });
+  it('refuses private removal while a send is waiting, since the waiting body is resent unchanged', () => {
+    const pending = {
+      submissionId: '33333333-3333-4333-8333-333333333333',
+      body: {
+        version: 1 as const,
+        submissionId: '33333333-3333-4333-8333-333333333333',
+        workDate: DATE,
+        baseRevision: 0,
+        entries: [],
+        changes: [],
+      },
+    };
+    const d = day([entry()], { pending, status: 'not-sent' });
+    expect(privateAllowed(d)).toBe(false);
+    expect(privateAllowed(day([entry()]))).toBe(true);
+    const edit = editEntry(d, E1, { description: 'x', privateEdit: true }, ITEMS, NOW);
+    expect(edit.ok).toBe(false);
+    if (!edit.ok) expect(edit.message).toMatch(/send is waiting/);
+    const del = deleteEntry(d, E1, { private: true }, NOW);
+    expect(del.ok).toBe(false);
+    // A plain edit is still allowed (it goes in the next confirm).
+    expect(editEntry(d, E1, { description: 'x' }, ITEMS, NOW).ok).toBe(true);
   });
   it('unknown or deleted entries are not found', () => {
     const r = editEntry(day([entry({ deleted: true })]), E1, { minutes: 5 }, ITEMS, NOW);

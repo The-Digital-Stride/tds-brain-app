@@ -271,3 +271,54 @@ describe('TimeService: confirm', () => {
     expect(answer.day.revision).toBe(2);
   });
 });
+
+describe('TimeService: review follow-ups', () => {
+  const otherMac: StoredDay = {
+    personId: 'p',
+    workDate: DAY,
+    revision: 3,
+    entries: [
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        personId: 'p',
+        workDate: DAY,
+        startAt: '2026-11-28T10:00:00.000Z',
+        minutes: 10,
+        workItemId: ITEM.id,
+        description: 'Confirmed on the other Mac',
+        billable: true,
+        source: 'cortex-chat',
+        certainty: 'certain',
+        deleted: false,
+      },
+    ],
+  };
+
+  it("opens a day this Mac never confirmed from Toolbox's copy, without counting its chat time twice", async () => {
+    const time = service({ fetch: fakeToolbox({ stored: () => otherMac }).fetchFn });
+    const day = await time.day(DAY);
+    expect(day.revision).toBe(3);
+    expect(day.entries.map((e) => e.values.description)).toContain('Confirmed on the other Mac');
+    const after = await time.refresh(DAY);
+    // The chat (09:58-10:08) overlaps the stored 10:00-10:10 entry: only the 2 minutes outside it are new.
+    expect(after.totalMinutes).toBe(12);
+  });
+
+  it('treats a 401 from Toolbox as a lost connection', async () => {
+    const toolbox = fakeToolbox({ submit: () => ({ status: 401, json: { error: 'unauthorised' } }) });
+    const time = service({ fetch: toolbox.fetchFn });
+    const id = (await time.day(DAY)).entries[0]?.id as string;
+    await time.changeEntry(DAY, id, { workItemId: ITEM.id });
+    const answer = await time.confirm(DAY);
+    expect(answer.outcome).toBe('not-connected');
+    expect((await time.status()).connection.state).toBe('lost');
+  });
+
+  it('never offers a saved job list from a different Toolbox', async () => {
+    const first = service({ fetch: fakeToolbox({}).fetchFn });
+    expect((await first.workItems(true)).items).toHaveLength(1);
+    // Same data folder, a new address, not connected to it: the old list must not come back.
+    const second = service({ connected: false, env: { TDS_TOOLBOX_URL: 'https://toolbox.example.com' } });
+    expect((await second.workItems(false)).items).toEqual([]);
+  });
+});

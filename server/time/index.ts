@@ -153,9 +153,12 @@ export function createTimeService(deps: TimeServiceDeps): TimeService {
     if (items !== null) return;
     try {
       const raw = JSON.parse(await fsp.readFile(itemsFile, 'utf8')) as {
+        origin?: unknown;
         items?: unknown;
         fetchedAt?: unknown;
       };
+      // A list from another Toolbox (the address changed) is never offered (review, 2026-11-28).
+      if (raw.origin !== connection.address().url) return;
       if (Array.isArray(raw.items)) {
         items = raw.items.filter(
           (w): w is WireWorkItem =>
@@ -172,7 +175,8 @@ export function createTimeService(deps: TimeServiceDeps): TimeService {
     try {
       await fsp.mkdir(dirname(itemsFile), { recursive: true, mode: 0o700 });
       const tmp = `${itemsFile}.${process.pid}.tmp`;
-      await fsp.writeFile(tmp, JSON.stringify({ items: list, fetchedAt: at }), { mode: 0o600 });
+      const origin = connection.connectedOrigin();
+      await fsp.writeFile(tmp, JSON.stringify({ origin, items: list, fetchedAt: at }), { mode: 0o600 });
       await fsp.chmod(tmp, 0o600);
       await fsp.rename(tmp, itemsFile);
     } catch {

@@ -178,6 +178,67 @@
   .levels-actions .field {
     width: 140px;
   }
+  /* Settings → Performance: the status line, the daily bars and the table blocks. */
+  .perf-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-12);
+    min-height: var(--sp-32);
+  }
+  .perf-status-text {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .perf-spinner {
+    width: var(--sp-16);
+    height: var(--sp-16);
+    flex: none;
+  }
+  .perf-days {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .perf-day {
+    display: grid;
+    grid-template-columns: 56px 1fr 72px;
+    align-items: center;
+    gap: var(--sp-8);
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-small);
+  }
+  .perf-day-track {
+    display: block;
+    height: var(--sp-8);
+    border-radius: var(--sp-4);
+    background: var(--tint-04);
+    overflow: hidden;
+  }
+  .perf-day-bar {
+    display: block;
+    height: 100%;
+    background: var(--navy);
+    border-radius: var(--sp-4);
+  }
+  .perf-day-val {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .perf-day-val[data-zero="true"] {
+    color: var(--iron);
+  }
+  .perf-table + .perf-table {
+    margin-top: var(--sp-16);
+  }
+  .perf-verdict {
+    margin: 0 0 var(--sp-8);
+    font-weight: 600;
+  }
   @media (max-width: 599px) {
     .page.settings {
       padding: var(--sp-16) var(--sheet-gutter);

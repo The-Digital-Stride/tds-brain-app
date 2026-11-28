@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useMemo, useState } from 'react';
 import {
   EFFORT_LEVELS,
   type EffortLevel,
@@ -37,6 +37,10 @@ import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
 import { HealthPanel } from './HealthPanel.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
+
+const PerformanceSection = lazy(() =>
+  import('./PerformanceSection.tsx').then((m) => ({ default: m.PerformanceSection })),
+);
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
@@ -280,6 +284,12 @@ export function SettingsView({ tab, checks }: SettingsViewProps) {
           skills={boot.skills}
           save={(skill, tier) => void setSkillLevel(skill, tier)}
         />
+      ) : null}
+
+      {tab === 'performance' ? (
+        <Suspense fallback={<StateNote kind="loading" />}>
+          <PerformanceSection />
+        </Suspense>
       ) : null}
 
       {tab === 'about' ? (

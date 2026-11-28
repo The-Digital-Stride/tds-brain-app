@@ -10,6 +10,7 @@ import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-ag
 import { APP_HOST, DEFAULT_PORT } from '../shared/contract.ts';
 import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
 import type { LevelSources } from '../shared/levels-contract.ts';
+import { PERFORMANCE_VIEWERS } from '../shared/performance-contract.ts';
 import { createAppUsage } from './brain/app-usage.ts';
 import { appStateFor, decideBrain } from './brain/decide.ts';
 import { createBrainReaders } from './brain/index.ts';
@@ -40,6 +41,10 @@ import {
   openBrowser as openLink,
   signInUrl,
 } from './launcher.ts';
+import { createDemoPerformance } from './performance/demo.ts';
+import { createPerformanceService, logsRootFor } from './performance/refresh.ts';
+import { createPerformanceStore } from './performance/store.ts';
+import { startPerformanceTimer } from './performance/timer.ts';
 import { startPurgeTimer } from './purge-timer.ts';
 import { mergeSettings } from './settings.ts';
 import {
@@ -230,6 +235,17 @@ void store
     return sessions.setEngineChoice({ model, effort, levelMode });
   })
   .catch(() => {});
+// Settings → Performance: this Mac's Claude Code use from its session logs. Demo mode shows a made-up sample and
+// never reads the logs; setup mode has no brain, so no role to check and no timer.
+const performanceService = demoMode
+  ? createDemoPerformance()
+  : createPerformanceService({
+      logsRoot: logsRootFor(process.env, home),
+      store: createPerformanceStore(config.dataDir),
+      home,
+      brainPaths: [...(brainPath ? [brainPath] : []), join(home, 'agencybrain')],
+      log,
+    });
 const engineHealth = createEngineHealth(brainPath, config.claudePath, home, resolvePermissionMode);
 
 const setup = createSetupService({
@@ -283,6 +299,7 @@ const app = createAppServer({
   store,
   sessions,
   skillLevels,
+  performance: performanceService,
   thumbs,
   uploads,
   engineHealth,
@@ -316,6 +333,8 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 
+let performanceTimer: { stop(): void } | null = null;
+
 app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
   sweepPageCopies();
@@ -327,6 +346,16 @@ app.server.listen(config.port, APP_HOST, () => {
   startPurgeTimer({
     purge: () => brain.purgeDeletedFiles?.() ?? Promise.resolve(0),
     enabled: brainPath !== null,
+    log,
+  });
+  // Today's Performance figures, checked hourly and only for an owner or scout; never in demo or setup mode.
+  performanceTimer = startPerformanceTimer({
+    service: performanceService,
+    enabled: !demoMode && brainPath !== null,
+    canRun: async () => {
+      const who = await brain.identity();
+      return (PERFORMANCE_VIEWERS as readonly string[]).includes(who.role);
+    },
     log,
   });
   log(`TDS Cortex ${config.appVersion} is running at ${appUrl}`);
@@ -410,6 +439,7 @@ async function shutdown(): Promise<void> {
   // Stops the timer and any update, and lets a rollback finish; the 20 s timer above bounds it.
   await updater.abort().catch(() => {});
   runner.killAll();
+  performanceTimer?.stop();
   app.stop();
   uploads.close();
   app.server.close();

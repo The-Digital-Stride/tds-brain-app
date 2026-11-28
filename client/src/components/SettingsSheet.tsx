@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { PERFORMANCE_VIEWERS } from '../../../shared/performance-contract.ts';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { SheetTabs } from '../shell/SheetTabs.tsx';
 import { type SettingsTab, settingsTabOrDefault, visibleSettingsTabs } from '../shell/settings-tabs.ts';
@@ -19,7 +20,11 @@ export function SettingsSheet() {
   const { boot, streamUp, lists, skillLevels, settingsTab, openSettings, settingsFocus, clearSettingsFocus } =
     useStore();
   const { lastSync, now } = useLastSync();
-  const tabCtx = { hasSkillLevels: Boolean(skillLevels) };
+  const role = boot?.identity.role;
+  const tabCtx = {
+    hasSkillLevels: Boolean(skillLevels),
+    hasPerformance: role !== undefined && (PERFORMANCE_VIEWERS as readonly string[]).includes(role),
+  };
   const tab: SettingsTab = settingsTabOrDefault(settingsTab, tabCtx);
   const checks = boot ? healthChecks({ boot, streamUp, lists, lastSync, now }) : undefined;
   const summary = checks ? healthSummary(checks) : null;

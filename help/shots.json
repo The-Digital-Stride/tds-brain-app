@@ -289,6 +289,12 @@
     "alt": "The Skill levels list in Settings."
   },
   {
+    "id": "performance",
+    "scene": "performance",
+    "crop": "section[aria-labelledby=\"perf-summary-h\"]",
+    "alt": "The Performance tab in Settings, with the summary for the last 30 days."
+  },
+  {
     "id": "help-drawer",
     "scene": "help-drawer",
     "crop": "#drawer",

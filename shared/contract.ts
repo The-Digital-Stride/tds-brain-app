@@ -2315,6 +2315,10 @@ export const ROUTES = {
    * the file itself.
    */
   skillLevels: '/api/skill-levels',
+  /** Settings → Performance (shared/performance-contract.ts): GET the report; owners and scouts only. */
+  performance: '/api/performance',
+  /** POST: start a refresh unless one is running. */
+  performanceRefresh: '/api/performance/refresh',
   /**
    * `POST` ChatLevelRequest → `{ level: TurnLevel }`: the person picks a tier for the rest of this
    * chat (null = back to automatic). Applies from the next message. 404 `not-found` for an unknown

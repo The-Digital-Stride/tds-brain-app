@@ -33,7 +33,8 @@ export interface InstallDeps {
   settings: {
     resolveDataDir(env: Record<string, string | undefined>, home: string): string;
     readSettings(dataDir: string): { brainPath?: string };
-    writeSettings(dataDir: string, settings: { brainPath?: string }): void;
+    /** Changes only the keys given, so settings made in the app (such as the Toolbox address) survive a reinstall. */
+    mergeSettings(dataDir: string, settings: { brainPath?: string }): void;
   };
   checkBrain(path: string, ctx: BrainCheckContext): Promise<BrainCheck>;
   launchctl: Launchctl;
@@ -154,7 +155,7 @@ export async function install(options: InstallOptions, d: InstallDeps): Promise<
     d.log(`Copied your old data to ${dataDir}.`);
   }
 
-  d.settings.writeSettings(dataDir, { brainPath: check.path });
+  d.settings.mergeSettings(dataDir, { brainPath: check.path });
   const token = d.loadLaunchToken(dataDir);
 
   writeSigninApp(p.signinApp, d.appRoot);

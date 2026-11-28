@@ -105,7 +105,8 @@ database from a portal run on Ian's Mac.
    local change list, the last confirmed revision and submission, and the status. Refreshing capture
    (`mergeCapture`) adds new blocks, updates a captured block's times only while the person hasn't edited them,
    and never removes an entry the person touched. A captured block that vanishes, untouched, is kept and marked
-   "no longer found". Entry ids are lower-case `crypto.randomUUID()`, kept for the life of the entry.
+   "no longer found", except as decision 32 (an untouched, never-confirmed entry whose minutes the same chat's
+   other entries already wholly count is removed, so nothing is counted twice). Entry ids are lower-case `crypto.randomUUID()`, kept for the life of the entry.
    Plain: your corrections are never undone by a refresh.
 10. **Change history.** Every save in the edit drawer records one `LocalChange` per changed field (description,
     workItemId, startAt, minutes, billable), plus create and delete, with the Mac's time. Typing is not recorded
@@ -190,7 +191,8 @@ Six blocking items, all folded in. The contract already carries them.
     Plain: one pick assigns the project's whole day.
 28. **Overlaps include personal chats**, so personal time isn't credited to a client; their minutes are then dropped.
     Ties go to a chat with a place, then the lower chat id. A chat since marked personal loses its untouched,
-    unconfirmed entries; other vanished captures stay, flagged in the row and beside Confirm.
+    unconfirmed entries; other vanished captures stay, flagged in the row and beside Confirm, except as
+    decision 32 (an untouched entry wholly counted by its chat's other entries is removed).
 29. **Keychain (overseer decision a).** `security -i` with the command on stdin, token checked against
     `^tds_time_[0-9a-f]{64}$` and origin validated first, every value quoted, `-U`, read back and compared, 5 s
     timeout, cached in memory, behind `TokenStore`. No file fallback: if saving fails, revoke the new token and
@@ -267,4 +269,14 @@ Toolbox on the test database, security expert, design expert review.
 
 ## Review outcomes
 
-(to be added)
+| Round | Review | Found | Outcome |
+|---|---|---|---|
+| Before build | Overseer | 6 blocking (Claude's long runs counted as the person's time; confirm could drop entries Toolbox held; pending body rebuilt on retry; conflict handling; private removal after first confirm; team seams) | Folded in as decisions 17–31 |
+| 1 | Security | Private removal still offered while a send was waiting; the retry would send the original wording | Fixed (8638914): offered only at revision 0 with nothing pending |
+| 1 | Correctness | Same private finding; chat time counted twice after a lost draft was rebuilt from Toolbox; stale work-item list after an address change; facade untested | Fixed (8638914) |
+| 1 | Lead, in the browser | Totals squashed into the `.kv` label column | Fixed (8638914) |
+| 2 | Design expert | 15 (4 blocking: rows indistinguishable, fragmented entries, slow edit path with no unsaved guard, not connected meant no work items) | Fixed (af4a940); fragmentation answered by decisions 32 and A, joining deferred (B) |
+| 2 | Accessibility and copy | Focus lost after the form closed; focus not moved into a docked form; confirms losing focus; errors not tied to fields; durations read as clock times; live regions; Refresh promised on confirmed days | Fixed (af4a940) |
+| 2 | Lead, in the browser | Billable tick laid out as a lone `.tick-hit`; totals column overridden by `.lib .lib-tray` | Fixed (af4a940) |
+| 3 | Correctness and privacy | SDK `summary` falls back to the latest prompt, so prompt text could show as a title; double count when an edited entry lost its block after decision 32 | Fixed (d227cba), tests first |
+| 3 | Design re-check | All 15 fixed; rows three lines with repeated meta; header run-on; stepper exception not named; empty panel became a blank modal when narrowed | Fixed (d227cba) |

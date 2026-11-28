@@ -414,6 +414,12 @@ describe('mergeCapture: blocks that join never count time twice (review, 2026-11
     expect(live(out).map(span)).toEqual(['c1 09:00 60']);
   });
 
+  it('an untouched entry only partly covered by the same chat stays, marked missing', () => {
+    // 09:45–10:00 loses its block; the new 09:00–09:50 block covers only 5 of its 15 minutes.
+    const out = mergeCapture(two(), [block('c1', '09:00', '09:50')], assignFn, NOW, { newId });
+    expect(live(out).map(span)).toEqual(['c1 09:00 50', 'c1 09:45 15 missing']);
+  });
+
   it('two described entries of a joined block are both kept, with the time shared out once', () => {
     const d = describeEntry(describeEntry(two(), 0, 'Audit'), 1, 'Homepage copy');
     const out = mergeCapture(d, [block('c1', '09:00', '10:00')], assignFn, NOW, { newId });

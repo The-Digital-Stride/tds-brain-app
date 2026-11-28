@@ -291,7 +291,7 @@ named here or it isn't one.
     exceptions, both because the dock header has no slot for previous / next: the Ads proposal stepper sits in
     the panel's fixed band (`.drawer-split` > `.drawer-tools`) above the scrolling proposal, uses the same icons
     and has no P and N keys; My day's edit panel steps between entries with buttons in its own form head
-    (`.myday-step`), with P and N while focus is not in a field. Its "Discard your changes?" strip sticks to the top of the proposal's scroller, as a project form's does.
+    (`.myday-step`), with P and N while focus is not in a field. The Ads proposal's "Discard your changes?" strip sticks to the top of its scroller, as a project form's does.
 12. **Busy** buttons are `aria-disabled`, never `disabled`, so focus never drops to the page. A control with
     nothing to act on yet may be `disabled` (Send while the box is empty); a busy control never is.
 
